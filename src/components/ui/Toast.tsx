@@ -16,7 +16,7 @@ export function Toast({ message, type = "info", duration = 3000, onClose }: Toas
   useEffect(() => {
     const timer = setTimeout(() => {
       setVisible(false);
-      setTimeout(onClose, 200);
+      setTimeout(onClose, 300);
     }, duration);
     return () => clearTimeout(timer);
   }, [duration, onClose]);
@@ -24,8 +24,8 @@ export function Toast({ message, type = "info", duration = 3000, onClose }: Toas
   return (
     <div
       className={cn(
-        "fixed bottom-6 right-6 z-50 rounded-md px-4 py-3 text-sm font-medium shadow-lg transition-opacity",
-        visible ? "opacity-100" : "opacity-0",
+        "fixed bottom-6 right-6 z-50 rounded-md px-5 py-3.5 text-sm font-medium shadow-2xl transition-all duration-300",
+        visible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-2",
         type === "success" && "bg-success text-bg-primary",
         type === "error" && "bg-error text-bg-primary",
         type === "info" && "bg-bg-elevated text-text-primary border border-border",

@@ -11,9 +11,9 @@ interface FilePreviewProps {
 
 export function FilePreview({ fileName, fileSize, previewUrl, label }: FilePreviewProps) {
   return (
-    <div className="flex flex-col items-center gap-2 rounded-lg border border-border bg-bg-secondary p-4">
+    <div className="flex flex-col items-center gap-3 rounded-lg border border-border bg-bg-elevated p-5">
       {label && (
-        <span className="text-xs font-medium text-text-muted uppercase tracking-wide">
+        <span className="text-xs font-medium text-text-muted uppercase tracking-wider">
           {label}
         </span>
       )}
@@ -21,10 +21,10 @@ export function FilePreview({ fileName, fileSize, previewUrl, label }: FilePrevi
         <img
           src={previewUrl}
           alt={fileName}
-          className="max-h-48 rounded object-contain"
+          className="max-h-48 rounded-md object-contain"
         />
       )}
-      <p className="text-sm text-text-primary truncate max-w-full">{fileName}</p>
+      <p className="text-sm font-medium text-text-primary truncate max-w-full">{fileName}</p>
       <p className="text-xs text-text-muted">{formatFileSize(fileSize)}</p>
     </div>
   );

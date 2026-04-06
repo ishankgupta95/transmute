@@ -12,20 +12,20 @@ export function MobileNav() {
     <div className="md:hidden">
       <button
         onClick={() => setOpen(!open)}
-        className="p-2 text-text-secondary hover:text-text-primary"
+        className="p-2 rounded-md text-text-secondary hover:text-text-primary hover:bg-[rgba(255,255,255,0.04)] transition-colors"
         aria-label="Toggle menu"
       >
-        {open ? <X size={24} /> : <Menu size={24} />}
+        {open ? <X size={22} /> : <Menu size={22} />}
       </button>
       {open && (
-        <div className="fixed inset-0 top-14 z-40 bg-bg-primary px-4 py-8">
-          <nav className="flex flex-col gap-4">
+        <div className="fixed inset-0 top-16 z-40 bg-[rgba(8,8,10,0.95)] backdrop-blur-xl px-4 py-8">
+          <nav className="flex flex-col gap-2 max-w-sm mx-auto">
             {categories.map((cat) => (
               <Link
                 key={cat.slug}
                 href={`/${cat.slug}`}
                 onClick={() => setOpen(false)}
-                className="text-lg text-text-secondary hover:text-text-primary transition-colors"
+                className="rounded-md px-4 py-3.5 text-lg font-medium text-text-secondary hover:text-text-primary hover:bg-[rgba(255,255,255,0.04)] transition-all"
               >
                 {cat.name}
               </Link>

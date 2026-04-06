@@ -15,7 +15,7 @@ export function DownloadButton({ blob, fileName, className }: DownloadButtonProp
     <button
       onClick={() => triggerDownload(blob, fileName)}
       className={cn(
-        "inline-flex items-center gap-2 rounded-md bg-accent px-5 py-2.5 text-sm font-medium text-bg-primary hover:bg-accent-hover transition-colors",
+        "inline-flex items-center gap-2 rounded-md bg-accent px-6 py-3 text-sm font-bold text-bg-primary shadow-lg shadow-accent/15 transition-all duration-200 hover:opacity-90 hover:-translate-y-px hover:shadow-[0_6px_24px_rgba(86,184,230,0.25)] active:translate-y-0",
         className,
       )}
     >

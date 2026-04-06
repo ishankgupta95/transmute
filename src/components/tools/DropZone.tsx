@@ -41,17 +41,27 @@ export function DropZone({ accept, multiple = false, onFiles, className }: DropZ
       onDragLeave={() => setDragging(false)}
       onDrop={handleDrop}
       className={cn(
-        "flex flex-col items-center justify-center gap-3 rounded-lg border-2 border-dashed p-8 cursor-pointer transition-colors",
+        "group relative flex flex-col items-center justify-center gap-4 rounded-lg border-2 border-dashed p-10 cursor-pointer transition-all duration-300",
         dragging
           ? "border-accent bg-accent-muted"
-          : "border-border hover:border-border-hover hover:bg-bg-hover",
+          : "border-border hover:border-[rgba(86,184,230,0.3)] hover:bg-[rgba(255,255,255,0.015)]",
         className,
       )}
     >
-      <Upload className="text-text-muted" size={32} />
-      <span className="text-sm text-text-secondary">
-        Drag & drop or <span className="text-accent underline">browse</span>
-      </span>
+      <div className={cn(
+        "flex items-center justify-center rounded-md p-3 transition-all duration-300",
+        dragging
+          ? "bg-accent-muted text-accent scale-110"
+          : "bg-bg-elevated text-text-muted group-hover:text-accent group-hover:bg-accent-muted",
+      )}>
+        <Upload size={28} />
+      </div>
+      <div className="text-center">
+        <span className="text-sm text-text-secondary">
+          Drag & drop or{" "}
+          <span className="text-accent font-medium">browse files</span>
+        </span>
+      </div>
       <input
         type="file"
         accept={accept}

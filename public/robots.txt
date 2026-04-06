@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://ishankgupta95.github.io/transmute/sitemap.xml

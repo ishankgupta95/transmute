@@ -27,6 +27,11 @@ export function getMimeType(fileName: string): string {
     pdf: "application/pdf",
     mp3: "audio/mpeg",
     wav: "audio/wav",
+    mp4: "video/mp4",
+    webm: "video/webm",
+    mov: "video/quicktime",
+    avi: "video/x-msvideo",
+    mkv: "video/x-matroska",
   };
   return map[ext] ?? "application/octet-stream";
 }

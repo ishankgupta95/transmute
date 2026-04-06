@@ -19,6 +19,18 @@ export const categories: Category[] = [
     icon: "FileText",
   },
   {
+    name: "Audio Tools",
+    slug: "audio-tools",
+    description: "Convert, trim, and merge audio files — all in your browser.",
+    icon: "Music",
+  },
+  {
+    name: "Video Tools",
+    slug: "video-tools",
+    description: "Convert, trim, compress, and record video — powered by FFmpeg.wasm.",
+    icon: "Video",
+  },
+  {
     name: "Developer Tools",
     slug: "developer-tools",
     description: "Format JSON, encode Base64, generate hashes, and more.",

@@ -416,4 +416,77 @@ export const faqs: ToolFAQs = {
     PRIVACY_FAQ,
     { question: "Can I remove pages while reordering?", answer: "This tool focuses on reordering. To remove pages, use the Split PDF tool to extract only the pages you want to keep." },
   ],
+
+  // ── Audio Tools ──────────────────────────────────────────────────
+  "mp3-to-wav": [
+    { question: "Why convert MP3 to WAV?", answer: "WAV is an uncompressed format required by many audio editors, DAWs, and professional workflows. While converting MP3 to WAV won't restore quality lost during MP3 compression, it gives you a lossless container for further editing without additional quality degradation." },
+    PRIVACY_FAQ,
+    { question: "Will the WAV file be larger than the MP3?", answer: "Yes, significantly. A typical 3-minute MP3 at 192 kbps is about 4 MB, while the equivalent WAV is roughly 30 MB. WAV stores uncompressed PCM audio data." },
+    { question: "What sample rate and bit depth is the output WAV?", answer: "The output WAV matches the sample rate of your input MP3 (usually 44.1 kHz) and uses 16-bit PCM encoding — CD quality." },
+  ],
+  "wav-to-mp3": [
+    { question: "What bitrate should I choose?", answer: "128 kbps is fine for speech and podcasts. 192 kbps is a good balance for music. 256-320 kbps is nearly indistinguishable from the original for most listeners." },
+    PRIVACY_FAQ,
+    { question: "How much smaller will the MP3 be?", answer: "Typically 80-90% smaller. A 30 MB WAV file at 192 kbps becomes about 4 MB as MP3." },
+    { question: "Is there any quality loss?", answer: "Yes, MP3 is a lossy format — it discards audio data that's less perceptible to human hearing. At 192 kbps or higher, the difference is very hard to notice for most listeners." },
+  ],
+  "m4a-to-mp3": [
+    { question: "What is M4A?", answer: "M4A is an audio container format used by Apple. It typically contains AAC (Advanced Audio Coding) data. iPhones use M4A for voice memos, and iTunes/Apple Music downloads are M4A files." },
+    PRIVACY_FAQ,
+    { question: "Why convert M4A to MP3?", answer: "While M4A offers better compression than MP3, some older devices, car stereos, and media players don't support it. MP3 is universally compatible with virtually every device and application." },
+    { question: "Can I convert iPhone voice memos?", answer: "Yes! iPhone voice memos are saved as M4A files. Simply transfer the file to your computer (via AirDrop, email, or Files app) and upload it here." },
+  ],
+  "audio-trimmer": [
+    { question: "What audio formats are supported?", answer: "You can trim MP3, WAV, OGG, M4A, FLAC, and AAC files — any format your browser can decode. The trimmed output is available as either MP3 or WAV." },
+    PRIVACY_FAQ,
+    { question: "Can I preview before trimming?", answer: "Yes. After uploading your file, you can play the audio and adjust start/end times. The playback lets you verify your selection before exporting." },
+    { question: "Is there a maximum file duration?", answer: "There is no hard limit, but very long files (over 30 minutes) may take longer to process since all decoding happens in your browser." },
+  ],
+  "merge-audio": [
+    { question: "Can I merge different audio formats?", answer: "Yes! You can mix MP3, WAV, OGG, M4A, FLAC, and other formats. Each file is decoded to raw audio before merging, so the input format doesn't matter." },
+    PRIVACY_FAQ,
+    { question: "What if my files have different sample rates?", answer: "The tool automatically resamples all files to match the highest sample rate among your inputs, ensuring consistent quality throughout the merged output." },
+    { question: "Can I reorder the files before merging?", answer: "Yes. After uploading, you can drag and drop the files to arrange them in the order you want before merging." },
+    { question: "Is there a limit on how many files I can merge?", answer: "There is no fixed limit. However, since all processing happens in your browser, merging many large files may be slower on devices with limited memory." },
+  ],
+
+  // ── Video Tools ──────────────────────────────────────────────────
+  "video-to-gif": [
+    { question: "What video formats are supported?", answer: "MP4, WebM, MOV, AVI, and MKV. The tool uses FFmpeg.wasm which supports a wide range of video codecs." },
+    PRIVACY_FAQ,
+    { question: "Why is my GIF so large?", answer: "GIFs are inherently large because they use lossless frame-by-frame encoding. Reduce the width, lower the frame rate (10-15 fps is usually smooth enough), and keep clips short to minimize file size." },
+    { question: "How do I get the best GIF quality?", answer: "This tool uses FFmpeg's palettegen filter which analyzes your video to create an optimal 256-color palette, producing much better quality than simple color quantization." },
+    { question: "Is there a duration limit?", answer: "No hard limit, but GIFs longer than 10-15 seconds become very large. For longer clips, consider keeping the video format and using lower resolution." },
+  ],
+  "video-trimmer": [
+    { question: "What video formats can I trim?", answer: "MP4, WebM, MOV, AVI, and MKV. The trimmed output uses the same format as your input." },
+    PRIVACY_FAQ,
+    { question: "Is the video re-encoded when trimming?", answer: "No. The tool uses stream copy mode (-c copy) which copies the video and audio data without re-encoding. This is nearly instant and preserves original quality." },
+    { question: "Why doesn't the trim start exactly where I set it?", answer: "Stream copy mode can only cut at keyframes. The actual start time may be slightly before your requested time. For frame-accurate trimming, re-encoding would be needed." },
+  ],
+  "mp4-to-mp3": [
+    { question: "What bitrate should I choose?", answer: "128 kbps is fine for speech and podcasts. 192 kbps is a good balance for music. 256-320 kbps provides near-transparent quality for audiophiles." },
+    PRIVACY_FAQ,
+    { question: "Can I extract audio from non-MP4 videos?", answer: "Yes! Despite the name, this tool accepts MP4, WebM, MOV, AVI, and MKV files. Any video with an audio track can be converted to MP3." },
+    { question: "What if the video has no audio?", answer: "FFmpeg will report an error if there is no audio stream to extract. Make sure your video file contains an audio track." },
+  ],
+  "webm-to-mp4": [
+    { question: "Why convert WebM to MP4?", answer: "WebM is great for web playback but has limited support on iOS, some Android apps, and many video editors. MP4 (H.264/AAC) is the most universally compatible video format." },
+    PRIVACY_FAQ,
+    { question: "Will the quality change?", answer: "There will be minimal quality difference. The tool uses CRF 23 which provides a good balance between file size and visual quality. The output may be slightly larger or smaller depending on the content." },
+    { question: "How long does conversion take?", answer: "It depends on the video length and your device. A 1-minute WebM typically converts in 30-60 seconds on a modern computer. The FFmpeg.wasm engine runs in your browser using WebAssembly." },
+  ],
+  "compress-video": [
+    { question: "Which preset should I choose?", answer: "WhatsApp: optimized for mobile sharing (720p, ~1 Mbps). Email: small enough for email attachments (480p, ~500 kbps). Web: balanced quality for websites and social media (original resolution, higher bitrate)." },
+    PRIVACY_FAQ,
+    { question: "How much smaller will my video get?", answer: "Results vary by content. Typical reductions: WhatsApp preset 60-80% smaller, Email preset 70-90% smaller, Web preset 30-60% smaller than the original." },
+    { question: "Is there a file size limit?", answer: "The tool accepts files up to 100 MB. Larger files may cause the browser tab to run out of memory since all processing happens locally." },
+  ],
+  "screen-recorder": [
+    { question: "Do I need to install anything?", answer: "No. This tool uses the browser's built-in Screen Capture API (getDisplayMedia). It works in Chrome, Edge, Firefox, and other modern browsers without any extensions." },
+    PRIVACY_FAQ,
+    { question: "Can I record with audio?", answer: "Yes. You can include microphone audio for narration. System audio capture depends on your browser and OS — Chrome on Windows and macOS supports it when sharing a tab." },
+    { question: "What format is the recording?", answer: "Recordings are saved as WebM (VP8/VP9 video with Opus audio), which is the native format for browser MediaRecorder. Use our WebM to MP4 tool if you need MP4." },
+    { question: "Is there a recording time limit?", answer: "No built-in limit. Recording length is only constrained by your device's available memory and disk space. Very long recordings (30+ minutes) may use significant memory." },
+  ],
 };

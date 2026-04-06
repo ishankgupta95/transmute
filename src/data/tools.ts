@@ -40,7 +40,18 @@ export type ToolType =
   | "images-to-pdf"
   | "rotate-pdf"
   | "add-page-numbers"
-  | "pdf-page-reorder";
+  | "pdf-page-reorder"
+  | "mp3-to-wav"
+  | "wav-to-mp3"
+  | "m4a-to-mp3"
+  | "audio-trimmer"
+  | "merge-audio"
+  | "video-to-gif"
+  | "video-trimmer"
+  | "mp4-to-mp3"
+  | "webm-to-mp4"
+  | "compress-video"
+  | "screen-recorder";
 
 export interface Tool {
   name: string;
@@ -826,6 +837,153 @@ export const tools: Tool[] = [
     subtitle: "Drag and drop page thumbnails to rearrange your PDF — no upload needed.",
     relatedTools: ["split-pdf", "merge-pdf", "rotate-pdf", "compress-pdf"],
     aboutText: "Need to rearrange the pages in a PDF? Upload your file and you'll see thumbnail previews of every page. Drag and drop them into the order you want, then download the reordered PDF. Everything runs locally in your browser — no files are uploaded to any server.",
+  },
+
+  // ── Audio Tools ──────────────────────────────────────────────────
+  {
+    name: "MP3 to WAV",
+    slug: "mp3-to-wav",
+    category: "audio-tools",
+    toolType: "mp3-to-wav",
+    description: "Convert MP3 files to WAV format — lossless, uncompressed audio. Free, browser-based.",
+    keywords: ["mp3 to wav", "convert mp3 to wav", "mp3 converter", "mp3 to wav online"],
+    h1: "Convert MP3 to WAV Online — Free & Instant",
+    subtitle: "Decode MP3 to uncompressed WAV for editing, mixing, or archival.",
+    acceptFormats: ".mp3",
+    relatedTools: ["wav-to-mp3", "m4a-to-mp3", "audio-trimmer", "merge-audio"],
+    aboutText: "WAV is the standard uncompressed audio format used in professional audio editing, music production, and archiving. Converting MP3 to WAV restores a lossless container — note that quality lost during MP3 compression cannot be recovered, but WAV is required by many audio editors and DAWs. This tool decodes your MP3 using the Web Audio API and re-encodes it as a PCM WAV file, entirely in your browser. No files are uploaded anywhere.",
+  },
+  {
+    name: "WAV to MP3",
+    slug: "wav-to-mp3",
+    category: "audio-tools",
+    toolType: "wav-to-mp3",
+    description: "Convert WAV files to MP3 with adjustable bitrate. Shrink audio files up to 90%. Free, no upload.",
+    keywords: ["wav to mp3", "convert wav to mp3", "wav converter", "wav to mp3 online", "compress wav"],
+    h1: "Convert WAV to MP3 Online — Free & Adjustable Bitrate",
+    subtitle: "Compress WAV files to MP3 with selectable bitrate — 128, 192, 256, or 320 kbps.",
+    acceptFormats: ".wav",
+    relatedTools: ["mp3-to-wav", "m4a-to-mp3", "audio-trimmer", "merge-audio"],
+    aboutText: "WAV files are uncompressed and can be very large — a 3-minute song at CD quality is roughly 30 MB. Converting to MP3 can reduce the file size by 80-90% while retaining good listening quality. This tool uses the lamejs MP3 encoder running entirely in your browser via JavaScript. Choose your preferred bitrate: 128 kbps for small files, 192 kbps for a good balance, 256–320 kbps for near-transparent quality. Your audio never leaves your device.",
+  },
+  {
+    name: "M4A to MP3",
+    slug: "m4a-to-mp3",
+    category: "audio-tools",
+    toolType: "m4a-to-mp3",
+    description: "Convert M4A (AAC) files to MP3 format. Works with iPhone voice memos and iTunes files. Free, browser-based.",
+    keywords: ["m4a to mp3", "convert m4a to mp3", "aac to mp3", "iphone audio converter", "m4a converter"],
+    h1: "Convert M4A to MP3 Online — Free & Instant",
+    subtitle: "Turn iPhone voice memos and iTunes M4A files into universally compatible MP3.",
+    acceptFormats: ".m4a,.aac",
+    relatedTools: ["wav-to-mp3", "mp3-to-wav", "audio-trimmer", "merge-audio"],
+    aboutText: "M4A is Apple's preferred audio format — used by iTunes, Apple Music, and iPhone voice memos. While M4A (AAC) offers better compression than MP3 at the same bitrate, MP3 remains the most universally compatible audio format. This tool decodes M4A using your browser's built-in AAC decoder (via the Web Audio API) and re-encodes to MP3 with lamejs. No plugins, no uploads, no server processing. Choose your preferred bitrate and convert instantly.",
+  },
+  {
+    name: "Audio Trimmer",
+    slug: "audio-trimmer",
+    category: "audio-tools",
+    toolType: "audio-trimmer",
+    description: "Trim audio files by setting start and end times. Export as MP3 or WAV. Free, browser-based.",
+    keywords: ["audio trimmer", "trim audio online", "cut audio", "audio cutter", "trim mp3", "cut mp3 online"],
+    h1: "Trim Audio Online — Free Audio Cutter",
+    subtitle: "Upload any audio file, set start and end times, and download the trimmed clip.",
+    acceptFormats: ".mp3,.wav,.ogg,.m4a,.flac,.aac",
+    relatedTools: ["mp3-to-wav", "wav-to-mp3", "m4a-to-mp3", "merge-audio"],
+    aboutText: "Need to cut a section from an audio file? Upload your MP3, WAV, OGG, M4A, or FLAC file, set the start and end times, and download the trimmed clip as MP3 or WAV. The tool decodes your audio using the Web Audio API, slices the AudioBuffer to the specified time range, and re-encodes it. Everything runs in your browser — no files are uploaded to any server. Perfect for creating ringtones, sound effects, or extracting a specific part of a recording.",
+  },
+  {
+    name: "Merge Audio",
+    slug: "merge-audio",
+    category: "audio-tools",
+    toolType: "merge-audio",
+    description: "Merge multiple audio files into one. Arrange order, export as MP3 or WAV. Free, browser-based.",
+    keywords: ["merge audio", "combine audio files", "join audio", "audio merger", "concatenate audio online"],
+    h1: "Merge Audio Files Online — Free Audio Joiner",
+    subtitle: "Upload multiple audio files, arrange the order, and download a single merged file.",
+    acceptFormats: ".mp3,.wav,.ogg,.m4a,.flac,.aac",
+    relatedTools: ["audio-trimmer", "wav-to-mp3", "mp3-to-wav", "m4a-to-mp3"],
+    aboutText: "Need to combine multiple audio files into one? Upload your files (MP3, WAV, OGG, M4A, FLAC), drag to reorder them, and download a single merged file as MP3 or WAV. The tool decodes each file using the Web Audio API, resamples them to a consistent sample rate if needed, concatenates the AudioBuffers, and re-encodes the result. All processing happens in your browser — your audio files are never uploaded anywhere.",
+  },
+
+  // ── Video Tools ──────────────────────────────────────────────────
+  {
+    name: "Video to GIF",
+    slug: "video-to-gif",
+    category: "video-tools",
+    toolType: "video-to-gif",
+    description: "Convert video clips to animated GIFs. Set start/end time, frame rate, and width. Free, browser-based.",
+    keywords: ["video to gif", "mp4 to gif", "convert video to gif", "gif maker", "gif converter online"],
+    h1: "Convert Video to GIF Online — Free GIF Maker",
+    subtitle: "Upload a video, select a clip range, and download an animated GIF — all in your browser.",
+    acceptFormats: ".mp4,.webm,.mov,.avi,.mkv",
+    relatedTools: ["video-trimmer", "compress-video", "mp4-to-mp3", "webm-to-mp4"],
+    aboutText: "Want to turn a video clip into a GIF? Upload your MP4, WebM, or MOV file, set the start and end time, choose your frame rate and width, and download a high-quality animated GIF. The tool uses FFmpeg.wasm to generate optimized GIFs with palettegen for the best color reproduction. Everything runs in your browser using WebAssembly — no files are uploaded to any server.",
+  },
+  {
+    name: "Video Trimmer",
+    slug: "video-trimmer",
+    category: "video-tools",
+    toolType: "video-trimmer",
+    description: "Trim video clips by setting start and end times. Export in the same format. Free, browser-based.",
+    keywords: ["video trimmer", "trim video online", "cut video", "video cutter", "trim mp4 online"],
+    h1: "Trim Video Online — Free Video Cutter",
+    subtitle: "Upload a video, set start and end times, and download the trimmed clip instantly.",
+    acceptFormats: ".mp4,.webm,.mov,.avi,.mkv",
+    relatedTools: ["video-to-gif", "compress-video", "mp4-to-mp3", "webm-to-mp4"],
+    aboutText: "Need to cut a section from a video? Upload your file, set the start and end times using the video player, and download just the clip you need — in the same format as the original. The trimming uses stream copy mode for near-instant processing without re-encoding, preserving original quality. Powered by FFmpeg.wasm running entirely in your browser.",
+  },
+  {
+    name: "MP4 to MP3",
+    slug: "mp4-to-mp3",
+    category: "video-tools",
+    toolType: "mp4-to-mp3",
+    description: "Extract audio from MP4 video files as MP3. Adjustable bitrate. Free, no upload needed.",
+    keywords: ["mp4 to mp3", "extract audio from video", "video to audio", "mp4 audio extractor", "convert mp4 to mp3"],
+    h1: "Extract Audio from MP4 — Convert to MP3 Online",
+    subtitle: "Pull the audio track from any video file and download it as an MP3.",
+    acceptFormats: ".mp4,.webm,.mov,.avi,.mkv",
+    relatedTools: ["video-trimmer", "video-to-gif", "wav-to-mp3", "m4a-to-mp3"],
+    aboutText: "Want just the audio from a video? Upload your MP4 or other video file and extract the audio track as an MP3 with your preferred bitrate. Perfect for saving music from videos, extracting podcast audio, or converting video lectures to audio-only files. Uses FFmpeg.wasm to decode the video and encode the audio stream, entirely in your browser. Your files never leave your device.",
+  },
+  {
+    name: "WebM to MP4",
+    slug: "webm-to-mp4",
+    category: "video-tools",
+    toolType: "webm-to-mp4",
+    description: "Convert WebM screen recordings to MP4 format. Universal compatibility. Free, browser-based.",
+    keywords: ["webm to mp4", "convert webm to mp4", "webm converter", "screen recording to mp4"],
+    h1: "Convert WebM to MP4 Online — Free & Instant",
+    subtitle: "Turn WebM screen recordings into universally compatible MP4 files.",
+    acceptFormats: ".webm",
+    relatedTools: ["video-trimmer", "compress-video", "video-to-gif", "screen-recorder"],
+    aboutText: "WebM is the default format for browser screen recordings, but many devices, social media platforms, and video editors prefer MP4. This tool transcodes your WebM file to H.264/AAC MP4 — the most widely supported video format. Uses FFmpeg.wasm running entirely in your browser via WebAssembly. No files are uploaded, and processing happens on your device.",
+  },
+  {
+    name: "Compress Video",
+    slug: "compress-video",
+    category: "video-tools",
+    toolType: "compress-video",
+    description: "Reduce video file size with presets for WhatsApp, Email, and Web. Free, browser-based.",
+    keywords: ["compress video", "reduce video size", "video compressor", "compress mp4", "video for whatsapp"],
+    h1: "Compress Video Online — Free Video Compressor",
+    subtitle: "Shrink video files with presets optimized for WhatsApp, Email, or Web sharing.",
+    acceptFormats: ".mp4,.webm,.mov,.avi,.mkv",
+    relatedTools: ["video-trimmer", "webm-to-mp4", "video-to-gif", "mp4-to-mp3"],
+    aboutText: "Video files too large to share? Choose a compression preset optimized for your use case: WhatsApp (720p, ~1 Mbps), Email (480p, ~500 kbps), or Web (original resolution, balanced quality). The tool re-encodes your video using H.264 with FFmpeg.wasm, reducing file size while maintaining reasonable visual quality. Everything runs in your browser — no files are uploaded anywhere.",
+  },
+  {
+    name: "Screen Recorder",
+    slug: "screen-recorder",
+    category: "video-tools",
+    toolType: "screen-recorder",
+    description: "Record your screen directly in the browser. No extension needed. Save as WebM or MP4.",
+    keywords: ["screen recorder", "record screen online", "screen capture", "browser screen recorder", "screen recording tool"],
+    h1: "Screen Recorder — Free Browser-Based Screen Capture",
+    subtitle: "Record your screen, a window, or a tab — no extensions or downloads needed.",
+    acceptFormats: "",
+    relatedTools: ["webm-to-mp4", "video-trimmer", "compress-video", "video-to-gif"],
+    aboutText: "Record your screen directly from your browser using the native Screen Capture API. Choose to record your entire screen, a specific window, or a browser tab. Optionally include audio from your microphone or system. Preview the recording before saving, and download as WebM. No browser extensions, no installs, no sign-ups — just click record. Your recording stays on your device and is never uploaded to any server.",
   },
 ];
 

@@ -24,6 +24,21 @@ import {
   PdfPageReorderClient,
 } from "@/components/tools/PdfToolClients";
 import {
+  Mp3ToWavClient,
+  WavToMp3Client,
+  M4aToMp3Client,
+  AudioTrimmerClient,
+  MergeAudioClient,
+} from "@/components/tools/AudioToolClients";
+import {
+  VideoToGifClient,
+  VideoTrimmerClient,
+  Mp4ToMp3Client,
+  WebmToMp4Client,
+  CompressVideoClient,
+  ScreenRecorderClient,
+} from "@/components/tools/VideoToolClients";
+import {
   JsonFormatterClient,
   JsonToCsvClient,
   CsvToJsonClient,
@@ -100,6 +115,28 @@ function ToolClient({ tool }: { tool: (typeof tools)[number] }) {
       return <AddPageNumbersClient />;
     case "pdf-page-reorder":
       return <PdfPageReorderClient />;
+    case "mp3-to-wav":
+      return <Mp3ToWavClient tool={tool} />;
+    case "wav-to-mp3":
+      return <WavToMp3Client tool={tool} />;
+    case "m4a-to-mp3":
+      return <M4aToMp3Client tool={tool} />;
+    case "audio-trimmer":
+      return <AudioTrimmerClient />;
+    case "merge-audio":
+      return <MergeAudioClient />;
+    case "video-to-gif":
+      return <VideoToGifClient />;
+    case "video-trimmer":
+      return <VideoTrimmerClient />;
+    case "mp4-to-mp3":
+      return <Mp4ToMp3Client />;
+    case "webm-to-mp4":
+      return <WebmToMp4Client />;
+    case "compress-video":
+      return <CompressVideoClient />;
+    case "screen-recorder":
+      return <ScreenRecorderClient />;
     case "json-formatter":
       return <JsonFormatterClient />;
     case "json-to-csv":

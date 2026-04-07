@@ -1,6 +1,31 @@
 import Link from "next/link";
 import { categories } from "@/data/categories";
 
+const BASE_URL = "https://transmute.tools";
+
+const websiteSchema = {
+  "@context": "https://schema.org",
+  "@type": "WebSite",
+  name: "Transmute",
+  url: BASE_URL,
+  description:
+    "Free, private, browser-based file conversion tools. Convert images, PDFs, audio, video, and more — no uploads, no sign-ups.",
+  potentialAction: {
+    "@type": "SearchAction",
+    target: `${BASE_URL}/?q={search_term_string}`,
+    "query-input": "required name=search_term_string",
+  },
+};
+
+const organizationSchema = {
+  "@context": "https://schema.org",
+  "@type": "Organization",
+  name: "Transmute",
+  url: BASE_URL,
+  description:
+    "Free, private, browser-based file conversion tools.",
+};
+
 const categoryIcons: Record<string, React.ReactNode> = {
   "image-tools": (
     <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
@@ -43,6 +68,15 @@ const categoryIcons: Record<string, React.ReactNode> = {
 export default function HomePage() {
   return (
       <main className="flex-1 flex flex-col">
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(websiteSchema) }}
+        />
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(organizationSchema) }}
+        />
+
         {/* Hero Section */}
         <section className="relative flex flex-col items-center justify-center px-4 pt-24 pb-20 overflow-hidden">
           {/* Gradient orbs — matching portfolio blue */}

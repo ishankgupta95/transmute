@@ -4,7 +4,7 @@ import { categories } from "@/data/categories";
 
 export const dynamic = "force-static";
 
-const BASE_URL = "https://ishankgupta95.github.io/transmute";
+const BASE_URL = "https://transmute.tools";
 
 export default function sitemap(): MetadataRoute.Sitemap {
   const toolPages = tools.map((tool) => ({

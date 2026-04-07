@@ -1,4 +1,4 @@
-const BASE_URL = "https://ishankgupta95.github.io/transmute";
+const BASE_URL = "https://transmute.tools";
 
 interface BreadcrumbItem {
   name: string;

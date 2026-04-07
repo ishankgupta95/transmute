@@ -16,6 +16,12 @@ export const metadata: Metadata = {
     "rotate pdf",
     "pdf tools online",
   ],
+  alternates: { canonical: "/pdf-tools" },
+  openGraph: {
+    title: "PDF Tools — Merge, Split & Manipulate PDFs | Transmute",
+    description: "Free browser-based PDF tools. Merge, split, compress, convert, rotate, and more — no uploads needed.",
+    url: "/pdf-tools",
+  },
 };
 
 export default function PdfToolsPage() {

@@ -16,6 +16,12 @@ export const metadata: Metadata = {
     "regex tester",
     "css gradient generator",
   ],
+  alternates: { canonical: "/developer-tools" },
+  openGraph: {
+    title: "Developer Tools — JSON, Base64, Hashes & More | Transmute",
+    description: "Free browser-based developer tools. Format, encode, generate, and test — no sign-up required.",
+    url: "/developer-tools",
+  },
 };
 
 const SECTIONS = [

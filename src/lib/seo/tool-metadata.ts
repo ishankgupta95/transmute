@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { getToolBySlug } from "@/data/tools";
 
-const BASE_URL = "https://ishankgupta95.github.io/transmute";
+const BASE_URL = "https://transmute.tools";
 
 export const DEFAULT_HOW_TO_STEPS = [
   "Upload your file by dragging it into the drop zone or clicking to browse.",

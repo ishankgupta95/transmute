@@ -16,13 +16,47 @@ const outfit = Outfit({
   display: "swap",
 });
 
+const BASE_URL = "https://transmute.tools";
+
 export const metadata: Metadata = {
+  metadataBase: new URL(BASE_URL),
   title: {
     default: "Transmute — Free Online File Conversion Tools",
     template: "%s | Transmute",
   },
   description:
-    "Free, private, browser-based file conversion tools. Convert images, PDFs, audio, and more — no uploads, no sign-ups. Everything runs locally in your browser.",
+    "Free, private, browser-based file conversion tools. Convert images, PDFs, audio, video, and more — no uploads, no sign-ups. Everything runs locally in your browser.",
+  keywords: [
+    "file converter",
+    "online converter",
+    "free file conversion",
+    "browser-based tools",
+    "image converter",
+    "pdf tools",
+    "audio converter",
+    "video converter",
+    "developer tools",
+    "privacy-first",
+    "no upload",
+  ],
+  alternates: {
+    canonical: BASE_URL,
+  },
+  openGraph: {
+    title: "Transmute — Free Online File Conversion Tools",
+    description:
+      "Convert images, PDFs, audio, video, and more — free, private, and entirely in your browser. No uploads, no sign-ups.",
+    url: BASE_URL,
+    siteName: "Transmute",
+    type: "website",
+    locale: "en_US",
+  },
+  twitter: {
+    card: "summary",
+    title: "Transmute — Free Online File Conversion Tools",
+    description:
+      "Convert images, PDFs, audio, video, and more — free, private, and entirely in your browser.",
+  },
 };
 
 export default function RootLayout({

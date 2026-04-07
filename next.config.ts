@@ -2,7 +2,6 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   output: "export",
-  basePath: "/transmute", // For GitHub Pages subpath during development
   images: {
     unoptimized: true, // Required for static export
   },
@@ -15,6 +14,4 @@ const nextConfig: NextConfig = {
     },
   },
 };
-
-// NOTE: Remove basePath when switching to custom domain (transmute.tools)
 export default nextConfig;

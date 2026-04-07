@@ -16,6 +16,12 @@ export const metadata: Metadata = {
     "screen recorder",
     "video tools online",
   ],
+  alternates: { canonical: "/video-tools" },
+  openGraph: {
+    title: "Video Tools — Convert, Trim, Compress & Record | Transmute",
+    description: "Free browser-based video tools. Convert to GIF, trim, compress, and record your screen — no uploads needed.",
+    url: "/video-tools",
+  },
 };
 
 export default function VideoToolsPage() {

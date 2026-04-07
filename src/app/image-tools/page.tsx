@@ -16,6 +16,12 @@ export const metadata: Metadata = {
     "webp to jpg",
     "image tools online",
   ],
+  alternates: { canonical: "/image-tools" },
+  openGraph: {
+    title: "Image Tools — Convert, Compress, Resize & More | Transmute",
+    description: "Free browser-based image tools. Convert formats, compress, resize, crop, and more — no uploads needed.",
+    url: "/image-tools",
+  },
 };
 
 export default function ImageToolsPage() {

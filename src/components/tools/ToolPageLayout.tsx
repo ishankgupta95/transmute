@@ -28,6 +28,8 @@ export function ToolPageLayout({
   const categoryNames: Record<string, string> = {
     "image-tools": "Image Tools",
     "pdf-tools": "PDF Tools",
+    "audio-tools": "Audio Tools",
+    "video-tools": "Video Tools",
     "developer-tools": "Developer Tools",
   };
   const categoryName = categoryNames[tool.category] ?? tool.category;
@@ -40,7 +42,13 @@ export function ToolPageLayout({
 
   return (
     <main className="flex-1 px-4 py-14 max-w-4xl mx-auto w-full">
-      <ToolSchema toolName={tool.name} howToSteps={howToSteps} faqs={faqs} />
+      <ToolSchema
+        toolName={tool.name}
+        toolDescription={tool.description}
+        toolSlug={tool.slug}
+        howToSteps={howToSteps}
+        faqs={faqs}
+      />
       <BreadcrumbSchema items={breadcrumbs} />
 
       {/* Breadcrumbs */}

@@ -16,6 +16,12 @@ export const metadata: Metadata = {
     "merge audio",
     "audio tools online",
   ],
+  alternates: { canonical: "/audio-tools" },
+  openGraph: {
+    title: "Audio Tools — Convert, Trim & Merge Audio | Transmute",
+    description: "Free browser-based audio tools. Convert MP3, WAV, M4A, trim clips, and merge files — no uploads needed.",
+    url: "/audio-tools",
+  },
 };
 
 export default function AudioToolsPage() {

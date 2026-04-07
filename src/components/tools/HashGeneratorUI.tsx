@@ -5,7 +5,7 @@ import { md5 as md5Lib } from "js-md5";
 import { DropZone } from "@/components/tools/DropZone";
 
 async function sha(algo: string, data: ArrayBuffer): Promise<string> {
-  const hash = await crypto.subtle.digest(algo, data);
+  const hash = await crypto.subtle.digest(algo, new Uint8Array(data));
   return Array.from(new Uint8Array(hash))
     .map((b) => b.toString(16).padStart(2, "0"))
     .join("");

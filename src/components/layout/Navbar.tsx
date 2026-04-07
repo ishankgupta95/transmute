@@ -15,6 +15,9 @@ export function Navbar() {
           <span className="text-lg font-bold font-display text-text-primary tracking-tight">
             Trans<span className="text-accent">mute</span>
           </span>
+          <span className="rounded-full bg-accent/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-accent">
+            Beta
+          </span>
         </Link>
 
         <div className="hidden md:flex items-center gap-0.5">

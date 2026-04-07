@@ -64,8 +64,9 @@ export async function resizeImage(
   destCanvas.width = outW;
   destCanvas.height = outH;
 
-  // Resize with pica (Lanczos3)
-  const pica = new Pica();
+  // Resize with pica (Lanczos3) — disable web workers to avoid
+  // worker context issues in static export builds
+  const pica = new Pica({ features: ["js"] });
   await pica.resize(srcCanvas, destCanvas, { quality: 3 });
 
   const blob = await pica.toBlob(destCanvas, "image/jpeg", options.quality);

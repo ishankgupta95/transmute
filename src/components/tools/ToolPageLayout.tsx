@@ -5,6 +5,7 @@ import type { Tool } from "@/data/tools";
 import { getToolBySlug } from "@/data/tools";
 import { ToolSchema } from "@/components/seo/ToolSchema";
 import { BreadcrumbSchema } from "@/components/seo/BreadcrumbSchema";
+import { ToolUsedTracker } from "@/components/tools/ToolUsedTracker";
 
 interface ToolPageLayoutProps {
   tool: Tool;
@@ -42,6 +43,7 @@ export function ToolPageLayout({
 
   return (
     <main className="flex-1 px-4 py-14 max-w-4xl mx-auto w-full">
+      <ToolUsedTracker slug={tool.slug} category={tool.category} />
       <ToolSchema
         toolName={tool.name}
         toolDescription={tool.description}

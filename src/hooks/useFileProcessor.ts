@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useState } from "react";
+import { trackEvent } from "@/lib/utils/analytics";
 
 export interface ProcessedResult {
   blob: Blob;
@@ -27,6 +28,12 @@ export function useFileProcessor<TOptions>(
         const output = await processFn(file, options);
         setResult(output);
         setStatus("done");
+        trackEvent({
+          action: "file_processed",
+          category: "conversion",
+          label: file.name.split(".").pop()?.toLowerCase() ?? "",
+          value: Math.round(output.newSize / 1024),
+        });
       } catch (err) {
         setError(err instanceof Error ? err.message : "Processing failed");
         setStatus("error");

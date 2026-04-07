@@ -44,11 +44,14 @@ function createMockAudioBuffer(
   channels: number,
   durationSecs: number,
   sampleRate: number,
+  channelDataArrays?: Float32Array[],
 ): AudioBuffer {
   const length = Math.floor(durationSecs * sampleRate);
-  const channelData: Float32Array[] = [];
-  for (let i = 0; i < channels; i++) {
-    channelData.push(new Float32Array(length));
+  const channelData: Float32Array[] = channelDataArrays ?? [];
+  if (!channelDataArrays) {
+    for (let i = 0; i < channels; i++) {
+      channelData.push(new Float32Array(length));
+    }
   }
   return {
     numberOfChannels: channels,
@@ -126,5 +129,48 @@ describe("trimAudio", () => {
     expect(result).toHaveProperty("originalSize");
     expect(result).toHaveProperty("newSize");
     expect(result.originalSize).toBe(mockFile.size);
+  });
+
+  it("copies the correct slice of samples from source to trimmed buffer", async () => {
+    // Use sampleRate=10 for simplicity: 10 samples per second, 100 samples for 10s
+    const sampleRate = 10;
+    const totalSamples = 100; // 10 seconds * 10 samples/sec
+
+    // Fill channel 0 with 0.0, 0.01, 0.02, ..., 0.99
+    const ch0Data = new Float32Array(totalSamples);
+    for (let i = 0; i < totalSamples; i++) {
+      ch0Data[i] = i / 100;
+    }
+    // Fill channel 1 with 1.0, 1.01, 1.02, ..., 1.99
+    const ch1Data = new Float32Array(totalSamples);
+    for (let i = 0; i < totalSamples; i++) {
+      ch1Data[i] = 1 + i / 100;
+    }
+
+    const sourceBuffer = createMockAudioBuffer(2, 10, sampleRate, [ch0Data, ch1Data]);
+    vi.mocked(decodeAudioFile).mockReset().mockResolvedValue(sourceBuffer);
+
+    let capturedBuffer: AudioBuffer | null = null;
+    vi.mocked(encodeToWav).mockImplementation((buf: AudioBuffer) => {
+      capturedBuffer = buf;
+      return new Blob(["wav-data"], { type: "audio/wav" });
+    });
+
+    // Trim from 2s to 5s: startSample=20, endSample=50, length=30
+    await trimAudio(mockFile, { startTime: 2, endTime: 5, outputFormat: "wav" });
+
+    expect(capturedBuffer).not.toBeNull();
+    expect(capturedBuffer!.length).toBe(30);
+
+    const trimmedCh0 = capturedBuffer!.getChannelData(0);
+    const trimmedCh1 = capturedBuffer!.getChannelData(1);
+
+    // Verify channel 0 contains samples[20..49] from source
+    const expectedCh0 = Array.from(ch0Data.slice(20, 50));
+    expect(Array.from(trimmedCh0)).toEqual(expectedCh0);
+
+    // Verify channel 1 contains samples[20..49] from source
+    const expectedCh1 = Array.from(ch1Data.slice(20, 50));
+    expect(Array.from(trimmedCh1)).toEqual(expectedCh1);
   });
 });

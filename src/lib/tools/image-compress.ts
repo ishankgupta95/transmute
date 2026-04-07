@@ -46,10 +46,18 @@ export async function compressImage(
     };
   }
 
+  // Track the smallest blob we've seen (fallback if we never get under target)
+  let smallestBlob = bestBlob;
+
   // Binary search: up to 10 iterations
   for (let i = 0; i < 10; i++) {
     const mid = (lo + hi) / 2;
     const candidate = await encodeToJpeg(img, mid);
+
+    // Always track the smallest result we've produced
+    if (candidate.size < smallestBlob.size) {
+      smallestBlob = candidate;
+    }
 
     if (candidate.size <= targetBytes) {
       bestBlob = candidate;
@@ -63,6 +71,11 @@ export async function compressImage(
       bestBlob = candidate;
       break;
     }
+  }
+
+  // If we never got under target, use the smallest blob we found
+  if (bestBlob.size > targetBytes) {
+    bestBlob = smallestBlob;
   }
 
   const baseName = file.name.replace(/\.[^.]+$/, "");

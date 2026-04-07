@@ -12,7 +12,6 @@ export function RegexTesterUI() {
   const [pattern, setPattern] = useState("");
   const [flags, setFlags] = useState("g");
   const [testStr, setTestStr] = useState("");
-  const [error, setError] = useState("");
 
   const flagSet = useMemo(() => new Set(flags.split("")), [flags]);
 
@@ -26,9 +25,8 @@ export function RegexTesterUI() {
     [flagSet],
   );
 
-  const { matches, highlighted } = useMemo(() => {
-    if (!pattern || !testStr) return { matches: [], highlighted: "" };
-    setError("");
+  const { matches, highlighted, regexError } = useMemo(() => {
+    if (!pattern || !testStr) return { matches: [] as Match[], highlighted: "", regexError: "" };
     try {
       const re = new RegExp(pattern, flags);
       const found: Match[] = [];
@@ -54,10 +52,9 @@ export function RegexTesterUI() {
       }
       html += escapeHtml(testStr.slice(last));
 
-      return { matches: found, highlighted: html };
+      return { matches: found, highlighted: html, regexError: "" };
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Invalid regex");
-      return { matches: [], highlighted: "" };
+      return { matches: [] as Match[], highlighted: "", regexError: e instanceof Error ? e.message : "Invalid regex" };
     }
   }, [pattern, flags, testStr]);
 
@@ -104,8 +101,8 @@ export function RegexTesterUI() {
         />
       </div>
 
-      {error && (
-        <div className="rounded-lg border border-error/30 bg-error/10 p-3 text-sm text-error">{error}</div>
+      {regexError && (
+        <div className="rounded-lg border border-error/30 bg-error/10 p-3 text-sm text-error">{regexError}</div>
       )}
 
       {/* Highlighted result */}

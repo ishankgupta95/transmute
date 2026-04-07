@@ -24,8 +24,8 @@ describe("triggerDownload", () => {
     mockRevokeObjectURL = vi.fn();
     mockTrackEvent.mockClear();
 
-    URL.createObjectURL = mockCreateObjectURL;
-    URL.revokeObjectURL = mockRevokeObjectURL;
+    URL.createObjectURL = mockCreateObjectURL as typeof URL.createObjectURL;
+    URL.revokeObjectURL = mockRevokeObjectURL as typeof URL.revokeObjectURL;
 
     // Spy on document.createElement to capture the anchor element
     const origCreateElement = document.createElement.bind(document);
@@ -33,7 +33,7 @@ describe("triggerDownload", () => {
       const el = origCreateElement(tag, options);
       if (tag === "a") {
         createdAnchor = el as HTMLAnchorElement;
-        createdAnchor.click = mockClick;
+        createdAnchor.click = mockClick as typeof createdAnchor.click;
       }
       return el;
     });

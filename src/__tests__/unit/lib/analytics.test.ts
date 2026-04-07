@@ -4,16 +4,16 @@ import { trackEvent } from "@/lib/utils/analytics";
 describe("trackEvent", () => {
   beforeEach(() => {
     // Clean up any existing gtag
-    delete (window as Record<string, unknown>).gtag;
+    delete (window as unknown as Record<string, unknown>).gtag;
   });
 
   afterEach(() => {
-    delete (window as Record<string, unknown>).gtag;
+    delete (window as unknown as Record<string, unknown>).gtag;
   });
 
   it("calls window.gtag with correct event parameters when gtag is defined", () => {
     const mockGtag = vi.fn();
-    (window as Record<string, unknown>).gtag = mockGtag;
+    (window as unknown as Record<string, unknown>).gtag = mockGtag;
 
     trackEvent({
       action: "file_processed",
@@ -43,7 +43,7 @@ describe("trackEvent", () => {
   });
 
   it("does nothing when window.gtag is not a function", () => {
-    (window as Record<string, unknown>).gtag = "not a function";
+    (window as unknown as Record<string, unknown>).gtag = "not a function";
 
     expect(() =>
       trackEvent({
@@ -54,7 +54,7 @@ describe("trackEvent", () => {
 
   it("passes undefined for optional parameters when not provided", () => {
     const mockGtag = vi.fn();
-    (window as Record<string, unknown>).gtag = mockGtag;
+    (window as unknown as Record<string, unknown>).gtag = mockGtag;
 
     trackEvent({ action: "test_action" });
 
@@ -67,7 +67,7 @@ describe("trackEvent", () => {
 
   it("handles zero as a valid value", () => {
     const mockGtag = vi.fn();
-    (window as Record<string, unknown>).gtag = mockGtag;
+    (window as unknown as Record<string, unknown>).gtag = mockGtag;
 
     trackEvent({
       action: "file_downloaded",

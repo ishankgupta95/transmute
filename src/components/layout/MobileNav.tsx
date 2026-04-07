@@ -1,27 +1,30 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { Menu, X } from "lucide-react";
 import { categories } from "@/data/categories";
 import { createPortal } from "react-dom";
 
+const subscribe = () => () => {};
+const getSnapshot = () => true;
+const getServerSnapshot = () => false;
+
 export function MobileNav() {
   const [open, setOpen] = useState(false);
   const [visible, setVisible] = useState(false);
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => setMounted(true), []);
+  const mounted = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
+  const rafRef = useRef<number>(0);
 
   useEffect(() => {
     if (open) {
-      requestAnimationFrame(() => setVisible(true));
+      rafRef.current = requestAnimationFrame(() => setVisible(true));
       document.body.style.overflow = "hidden";
     } else {
-      setVisible(false);
       document.body.style.overflow = "";
     }
     return () => {
+      cancelAnimationFrame(rafRef.current);
       document.body.style.overflow = "";
     };
   }, [open]);
@@ -39,7 +42,7 @@ export function MobileNav() {
             <Link
               key={cat.slug}
               href={`/${cat.slug}`}
-              onClick={() => setOpen(false)}
+              onClick={() => { setVisible(false); setOpen(false); }}
               className={`group flex items-center gap-3 rounded-lg px-4 py-3.5 text-lg font-medium text-text-secondary hover:text-text-primary hover:bg-[rgba(86,184,230,0.06)] transition-all duration-300 ${
                 visible
                   ? "opacity-100 translate-x-0"
@@ -59,7 +62,10 @@ export function MobileNav() {
   return (
     <div className="md:hidden">
       <button
-        onClick={() => setOpen(!open)}
+        onClick={() => {
+          if (open) setVisible(false);
+          setOpen(!open);
+        }}
         className="relative p-2 rounded-md text-text-secondary hover:text-text-primary hover:bg-[rgba(255,255,255,0.04)] transition-colors"
         aria-label="Toggle menu"
       >

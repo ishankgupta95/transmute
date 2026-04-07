@@ -48,13 +48,13 @@ function setupImageMock(naturalWidth = 200, naturalHeight = 150) {
   global.URL.createObjectURL = vi.fn().mockReturnValue("blob:mock-url");
   global.URL.revokeObjectURL = vi.fn();
 
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
   vi.spyOn(global, "Image").mockImplementation(function (this: Record<string, unknown>) {
     this.naturalWidth = naturalWidth;
     this.naturalHeight = naturalHeight;
     this.onload = null;
     this.onerror = null;
     this._src = "";
+    // eslint-disable-next-line @typescript-eslint/no-this-alias
     const self = this;
     Object.defineProperty(this, "src", {
       get() { return self._src; },
@@ -281,13 +281,13 @@ describe("convertImage", () => {
   });
 
   it("rejects when image fails to load", async () => {
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
     vi.spyOn(global, "Image").mockImplementation(function (this: Record<string, unknown>) {
       this.naturalWidth = 0;
       this.naturalHeight = 0;
       this.onload = null;
       this.onerror = null;
       this._src = "";
+      // eslint-disable-next-line @typescript-eslint/no-this-alias
       const self = this;
       Object.defineProperty(this, "src", {
         get() { return self._src; },

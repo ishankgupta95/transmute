@@ -7,9 +7,9 @@ Object.assign(navigator, {
 });
 
 // Polyfill crypto.subtle.digest for jsdom
-beforeAll(() => {
+beforeAll(async () => {
   if (!globalThis.crypto.subtle) {
-    const { webcrypto } = require("node:crypto");
+    const { webcrypto } = await import("node:crypto");
     Object.defineProperty(globalThis, "crypto", {
       value: { ...globalThis.crypto, subtle: webcrypto.subtle },
     });

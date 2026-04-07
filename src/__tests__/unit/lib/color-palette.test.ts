@@ -48,6 +48,7 @@ function setupImageMock(naturalWidth = 100, naturalHeight = 100) {
     this.onload = null;
     this.onerror = null;
     this._src = "";
+    // eslint-disable-next-line @typescript-eslint/no-this-alias
     const self = this;
     Object.defineProperty(this, "src", {
       get() { return self._src; },
@@ -67,6 +68,7 @@ function setupImageErrorMock() {
     this.onload = null;
     this.onerror = null;
     this._src = "";
+    // eslint-disable-next-line @typescript-eslint/no-this-alias
     const self = this;
     Object.defineProperty(this, "src", {
       get() { return self._src; },

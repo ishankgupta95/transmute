@@ -1,38 +1,75 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { Menu, X } from "lucide-react";
 import { categories } from "@/data/categories";
+import { createPortal } from "react-dom";
 
 export function MobileNav() {
   const [open, setOpen] = useState(false);
+  const [visible, setVisible] = useState(false);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => setMounted(true), []);
+
+  useEffect(() => {
+    if (open) {
+      requestAnimationFrame(() => setVisible(true));
+      document.body.style.overflow = "hidden";
+    } else {
+      setVisible(false);
+      document.body.style.overflow = "";
+    }
+    return () => {
+      document.body.style.overflow = "";
+    };
+  }, [open]);
+
+  const overlay = open ? (
+    <div
+      className={`fixed inset-0 top-16 transition-opacity duration-300 ${
+        visible ? "opacity-100" : "opacity-0"
+      }`}
+      style={{ zIndex: 9999, backgroundColor: "#08080a" }}
+    >
+      <nav className="px-4 py-6">
+        <div className="flex flex-col gap-0.5">
+          {categories.map((cat, i) => (
+            <Link
+              key={cat.slug}
+              href={`/${cat.slug}`}
+              onClick={() => setOpen(false)}
+              className={`group flex items-center gap-3 rounded-lg px-4 py-3.5 text-lg font-medium text-text-secondary hover:text-text-primary hover:bg-[rgba(86,184,230,0.06)] transition-all duration-300 ${
+                visible
+                  ? "opacity-100 translate-x-0"
+                  : "opacity-0 -translate-x-3"
+              }`}
+              style={{ transitionDelay: visible ? `${i * 50}ms` : "0ms" }}
+            >
+              <span className="h-1 w-1 rounded-full bg-accent opacity-0 group-hover:opacity-100 transition-opacity duration-200" />
+              {cat.name}
+            </Link>
+          ))}
+        </div>
+      </nav>
+    </div>
+  ) : null;
 
   return (
     <div className="md:hidden">
       <button
         onClick={() => setOpen(!open)}
-        className="p-2 rounded-md text-text-secondary hover:text-text-primary hover:bg-[rgba(255,255,255,0.04)] transition-colors"
+        className="relative p-2 rounded-md text-text-secondary hover:text-text-primary hover:bg-[rgba(255,255,255,0.04)] transition-colors"
         aria-label="Toggle menu"
       >
-        {open ? <X size={22} /> : <Menu size={22} />}
+        <span
+          className={`block transition-all duration-300 ${open ? "rotate-90 scale-110 text-accent" : ""}`}
+        >
+          {open ? <X size={22} /> : <Menu size={22} />}
+        </span>
       </button>
-      {open && (
-        <div className="fixed inset-0 top-16 z-40 bg-[rgba(8,8,10,0.95)] backdrop-blur-xl px-4 py-8">
-          <nav className="flex flex-col gap-2 max-w-sm mx-auto">
-            {categories.map((cat) => (
-              <Link
-                key={cat.slug}
-                href={`/${cat.slug}`}
-                onClick={() => setOpen(false)}
-                className="rounded-md px-4 py-3.5 text-lg font-medium text-text-secondary hover:text-text-primary hover:bg-[rgba(255,255,255,0.04)] transition-all"
-              >
-                {cat.name}
-              </Link>
-            ))}
-          </nav>
-        </div>
-      )}
+      {mounted && overlay && createPortal(overlay, document.body)}
     </div>
   );
 }

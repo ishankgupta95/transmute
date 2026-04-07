@@ -201,6 +201,14 @@ export const faqs: ToolFAQs = {
       answer: "Many job application portals, university admission forms, and document upload systems cap images at 200 KB. This is also a good target for email signatures and web thumbnails.",
     },
     PRIVACY_FAQ,
+    {
+      question: "Will my image look good at 200 KB?",
+      answer: "For most photos under 2000px wide, 200 KB produces very good quality. The tool automatically finds the highest quality level that fits within the limit.",
+    },
+    {
+      question: "What image formats can I compress?",
+      answer: "You can upload JPG, PNG, WebP, HEIC, BMP, and other common image formats. The compressed output is saved as JPEG, which offers the best compression for photographs.",
+    },
   ],
   "compress-image-to-1mb": [
     {
@@ -208,6 +216,14 @@ export const faqs: ToolFAQs = {
       answer: "Social media platforms like WhatsApp, some email providers, and many CMS platforms have a 1 MB limit for image uploads. This size offers a good balance between quality and file size for most photos.",
     },
     PRIVACY_FAQ,
+    {
+      question: "Will a 1 MB image look good?",
+      answer: "Yes. At 1 MB, most photos retain excellent quality with no visible artifacts. This size is sufficient for high-resolution images up to about 4000px wide.",
+    },
+    {
+      question: "What if my image is already under 1 MB?",
+      answer: "If your image is already smaller than 1 MB, the tool will still process it but the output may be similar in size to the original. There is no benefit to compressing an already-small file.",
+    },
   ],
   "resize-image": [
     {
@@ -488,5 +504,100 @@ export const faqs: ToolFAQs = {
     { question: "Can I record with audio?", answer: "Yes. You can include microphone audio for narration. System audio capture depends on your browser and OS — Chrome on Windows and macOS supports it when sharing a tab." },
     { question: "What format is the recording?", answer: "Recordings are saved as WebM (VP8/VP9 video with Opus audio), which is the native format for browser MediaRecorder. Use our WebM to MP4 tool if you need MP4." },
     { question: "Is there a recording time limit?", answer: "No built-in limit. Recording length is only constrained by your device's available memory and disk space. Very long recordings (30+ minutes) may use significant memory." },
+  ],
+
+  // ── Developer Tools FAQs (continued) ─────────────────────────────
+  "json-to-csv": [
+    { question: "Is my data sent to a server?", answer: "No. All processing happens locally in your browser. No data leaves your device." },
+    { question: "What JSON structure does this tool expect?", answer: "It expects a JSON array of objects, where each object represents a row. For example: [{\"name\": \"Alice\", \"age\": 30}, {\"name\": \"Bob\", \"age\": 25}]. Nested objects are flattened automatically." },
+    { question: "How are nested objects handled?", answer: "Nested properties are flattened using dot notation. For example, {\"address\": {\"city\": \"NYC\"}} becomes a column named \"address.city\"." },
+    { question: "What if my objects have different keys?", answer: "The tool collects all unique keys across every object. Rows missing a key will have an empty value in that column." },
+    { question: "Can I use the CSV in Excel?", answer: "Yes. The output is standard comma-separated CSV that opens directly in Excel, Google Sheets, LibreOffice Calc, and any other spreadsheet application." },
+  ],
+  "csv-to-json": [
+    { question: "Is my data sent to a server?", answer: "No. All processing happens locally in your browser. No data leaves your device." },
+    { question: "Does it use the first row as keys?", answer: "Yes. The first row of the CSV is treated as column headers and used as the property names in each JSON object." },
+    { question: "Can I paste CSV text directly?", answer: "Yes. You can paste CSV content into the text area or upload a .csv file. Both methods produce the same JSON output." },
+    { question: "How are numeric values handled?", answer: "Values that look like numbers are automatically converted to JSON numbers. Everything else is kept as a string." },
+    { question: "Does it handle quoted fields with commas?", answer: "Yes. The parser correctly handles fields enclosed in double quotes, including fields that contain commas, newlines, or escaped quotes." },
+  ],
+  "sql-formatter": [
+    { question: "Is my SQL sent to a server?", answer: "No. All processing happens locally in your browser. No data leaves your device." },
+    { question: "What SQL dialects are supported?", answer: "The formatter supports standard SQL, PostgreSQL, MySQL, MariaDB, SQLite, BigQuery, Transact-SQL (SQL Server), and PL/SQL (Oracle)." },
+    { question: "Does formatting change query behavior?", answer: "No. Formatting only changes whitespace, indentation, and capitalization of keywords. The query logic and results remain exactly the same." },
+    { question: "Can I customize the indentation style?", answer: "Yes. You can choose between spaces and tabs, adjust the indent width, and control keyword capitalization (uppercase, lowercase, or preserve)." },
+  ],
+  "markdown-to-html": [
+    { question: "Is my data sent to a server?", answer: "No. All processing happens locally in your browser. No data leaves your device." },
+    { question: "Which Markdown features are supported?", answer: "The tool supports standard Markdown including headings, bold, italic, links, images, code blocks, lists, blockquotes, tables, and horizontal rules." },
+    { question: "Can I preview the rendered HTML?", answer: "Yes. The tool shows both the raw HTML output and a live preview of how it looks rendered in a browser." },
+    { question: "Does it support GitHub-Flavored Markdown?", answer: "Yes. Features like tables, task lists, strikethrough, and fenced code blocks with syntax highlighting are all supported." },
+  ],
+  "html-to-markdown": [
+    { question: "Is my data sent to a server?", answer: "No. All processing happens locally in your browser. No data leaves your device." },
+    { question: "Why convert HTML to Markdown?", answer: "Markdown is easier to read and edit than raw HTML. It's widely used in README files, documentation, blogs, and note-taking apps like Obsidian and Notion." },
+    { question: "Does it preserve links and images?", answer: "Yes. HTML links become [text](url) and images become ![alt](src) in the Markdown output." },
+    { question: "How are complex HTML elements handled?", answer: "Tables, lists, and headings are converted to their Markdown equivalents. Elements with no Markdown equivalent (like custom divs) are simplified or kept as inline HTML." },
+  ],
+  "xml-formatter": [
+    { question: "Is my XML sent to a server?", answer: "No. All processing happens locally in your browser. No data leaves your device." },
+    { question: "Does formatting change the XML data?", answer: "No. Formatting only affects whitespace and indentation. Element names, attributes, and text content remain unchanged." },
+    { question: "Can it handle large XML files?", answer: "It works well for XML documents up to a few megabytes. Very large files may cause the browser tab to slow down due to parsing and rendering." },
+    { question: "Does it validate my XML?", answer: "The tool checks for well-formedness (proper nesting, matching tags, valid syntax) and will report parsing errors if your XML is malformed." },
+  ],
+  "url-encode-decode": [
+    { question: "Is my data sent to a server?", answer: "No. All processing happens locally in your browser. No data leaves your device." },
+    { question: "What is URL encoding?", answer: "URL encoding (percent-encoding) replaces special characters with a % followed by their hex code. For example, a space becomes %20 and an ampersand becomes %26. This ensures URLs are valid and unambiguous." },
+    { question: "When should I URL-encode text?", answer: "Encode text when including it in query parameters, form data, or any part of a URL that might contain special characters like spaces, ampersands, or non-ASCII characters." },
+    { question: "Does it handle Unicode characters?", answer: "Yes. Non-ASCII characters like emoji and international text are encoded as UTF-8 byte sequences, each byte represented as a percent-encoded value." },
+  ],
+  "html-entity-encode-decode": [
+    { question: "Is my data sent to a server?", answer: "No. All processing happens locally in your browser. No data leaves your device." },
+    { question: "What are HTML entities?", answer: "HTML entities are special codes that represent characters in HTML. For example, &lt; represents <, &amp; represents &, and &nbsp; represents a non-breaking space. They prevent browsers from interpreting characters as HTML markup." },
+    { question: "When should I use HTML entities?", answer: "Use HTML entities when displaying special characters in HTML content — especially <, >, &, and quotes — to prevent them from being interpreted as HTML tags or attributes." },
+    { question: "Does it support named and numeric entities?", answer: "Yes. The tool handles both named entities (like &amp;) and numeric entities (like &#38; or &#x26;)." },
+  ],
+  "lorem-ipsum-generator": [
+    { question: "Is my data sent to a server?", answer: "No. All processing happens locally in your browser. No data leaves your device." },
+    { question: "What is Lorem Ipsum?", answer: "Lorem Ipsum is placeholder text used in design and typesetting since the 1500s. It has a natural letter distribution similar to English, making layouts look realistic before final copy is written." },
+    { question: "Can I generate paragraphs, sentences, or words?", answer: "Yes. You can choose to generate a specific number of paragraphs, sentences, or words depending on your layout needs." },
+    { question: "Is the text random each time?", answer: "The text is shuffled from a pool of classical Lorem Ipsum phrases, so each generation produces a slightly different arrangement while maintaining natural-looking Latin text." },
+  ],
+  "css-gradient-generator": [
+    { question: "Is my data sent to a server?", answer: "No. All processing happens locally in your browser. No data leaves your device." },
+    { question: "What types of gradients can I create?", answer: "You can create linear gradients (with adjustable angle), radial gradients (circular or elliptical), and conic gradients. Each type supports multiple color stops." },
+    { question: "Do CSS gradients work in all browsers?", answer: "Yes. The linear-gradient, radial-gradient, and conic-gradient CSS functions are supported in all modern browsers including Chrome, Firefox, Safari, and Edge." },
+    { question: "Can I add more than two colors?", answer: "Yes. You can add multiple color stops to create complex multi-color gradients. Each stop can have its position adjusted along the gradient axis." },
+  ],
+  "box-shadow-generator": [
+    { question: "Is my data sent to a server?", answer: "No. All processing happens locally in your browser. No data leaves your device." },
+    { question: "What do the shadow values mean?", answer: "The box-shadow property takes: horizontal offset, vertical offset, blur radius, spread radius, and color. Blur controls softness, spread controls size, and the offsets control direction." },
+    { question: "Can I add multiple shadows?", answer: "Yes. You can layer multiple shadows on a single element to create depth effects, glows, or complex shadow compositions. Each shadow is listed comma-separated in the CSS output." },
+    { question: "What is an inset shadow?", answer: "An inset shadow appears inside the element instead of outside, creating a pressed or recessed effect. Toggle the inset option to switch between inner and outer shadows." },
+  ],
+  "cron-expression-generator": [
+    { question: "Is my data sent to a server?", answer: "No. All processing happens locally in your browser. No data leaves your device." },
+    { question: "What is a cron expression?", answer: "A cron expression is a string of five (or six) fields that defines a schedule: minute, hour, day of month, month, and day of week. It's used by Unix cron, CI/CD systems, and task schedulers to run jobs automatically." },
+    { question: "What does * mean in a cron field?", answer: "An asterisk (*) means \"every\" — so * in the minute field means every minute, and * in the day-of-week field means every day. Other special characters include , (list), - (range), and / (step)." },
+    { question: "Does this show when the next runs will be?", answer: "Yes. The tool displays the next several scheduled run times so you can verify your cron expression triggers at the correct times." },
+    { question: "What's the difference between 5-field and 6-field cron?", answer: "Standard Unix cron uses 5 fields (minute through day-of-week). Some systems like Quartz and AWS add a 6th field for seconds. This tool generates standard 5-field expressions." },
+  ],
+  "text-diff": [
+    { question: "Is my data sent to a server?", answer: "No. All processing happens locally in your browser. No data leaves your device." },
+    { question: "What diff algorithm is used?", answer: "The tool uses a standard line-by-line diff algorithm that highlights additions, deletions, and modifications — similar to what git diff produces." },
+    { question: "Can I compare code files?", answer: "Yes. The diff tool works with any plain text including source code, configuration files, JSON, XML, or prose. Line-by-line comparison makes it easy to spot changes." },
+    { question: "What do the colors mean?", answer: "Green highlights indicate added lines (present only in the second text), red highlights indicate removed lines (present only in the first text), and unchanged lines are shown without highlighting." },
+  ],
+  "text-case-converter": [
+    { question: "Is my data sent to a server?", answer: "No. All processing happens locally in your browser. No data leaves your device." },
+    { question: "What case formats are supported?", answer: "The tool supports camelCase, PascalCase, snake_case, SCREAMING_SNAKE_CASE, kebab-case, Title Case, UPPERCASE, lowercase, and Sentence case." },
+    { question: "When would I use snake_case vs camelCase?", answer: "snake_case is the convention in Python, Ruby, and SQL. camelCase is standard in JavaScript, Java, and TypeScript. PascalCase is used for class names in most languages." },
+    { question: "Does it handle multi-line text?", answer: "Yes. Each line is converted independently, so you can paste a list of variable names or phrases and convert them all at once." },
+  ],
+  "word-counter": [
+    { question: "Is my data sent to a server?", answer: "No. All processing happens locally in your browser. No data leaves your device." },
+    { question: "How are words counted?", answer: "Words are counted by splitting text on whitespace boundaries. Hyphenated words like 'well-known' count as one word, and numbers count as words." },
+    { question: "Does it show reading time?", answer: "Yes. The tool estimates reading time based on an average reading speed of about 200-250 words per minute." },
+    { question: "What statistics are displayed?", answer: "The tool shows word count, character count (with and without spaces), sentence count, paragraph count, and estimated reading time." },
   ],
 };

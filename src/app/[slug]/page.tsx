@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import { tools, getToolBySlug } from "@/data/tools";
 import { faqs } from "@/data/faqs";
-import { getToolMetadata, DEFAULT_HOW_TO_STEPS } from "@/lib/seo/tool-metadata";
+import { getToolMetadata, getHowToSteps } from "@/lib/seo/tool-metadata";
 import { ToolPageLayout } from "@/components/tools/ToolPageLayout";
 import { ImageToolClient } from "@/components/tools/ImageToolClient";
 import { ImageCompressorClient } from "@/components/tools/ImageCompressorClient";
@@ -206,7 +206,7 @@ export default async function ToolPage({
   return (
     <ToolPageLayout
       tool={tool}
-      howToSteps={DEFAULT_HOW_TO_STEPS}
+      howToSteps={getHowToSteps(tool.toolType)}
       faqs={toolFaqs}
       aboutText={tool.aboutText}
     >

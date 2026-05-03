@@ -1,0 +1,135 @@
+Merging PDFs is the most common reason people open an "online PDF tool." Tax return + receipts. Job application + portfolio + references. Lease + amendments + signatures. The use cases are mundane, but the privacy concerns aren't — most of the documents people merge are also documents they would prefer not to upload to a stranger's server.
+
+Browser-based merging solves the problem cleanly: the merge happens in your tab, the merged file downloads to your machine, and nothing leaves your device. This guide explains how that actually works, what's preserved and what isn't, and how to handle the edge cases — page reordering, large documents, password-protected files, and broken bookmarks.
+
+## What "merging" actually means
+
+A PDF file is a structured collection of objects: page descriptions, fonts, images, annotations, and a cross-reference table that lets readers seek to any object by ID. Merging two PDFs is more involved than it sounds. You can't just concatenate the bytes — the cross-reference tables would conflict, font subsets would collide, and the result would be corrupt.
+
+A proper merge does the following:
+
+1. Parses each input file into a list of pages
+2. Re-numbers all the internal object IDs to avoid collisions
+3. Copies fonts, images, and other resources, deduplicating where possible
+4. Concatenates the page tree in the order you specified
+5. Rebuilds the cross-reference table from scratch
+6. Updates internal links so they point to the right pages in the merged document
+7. Optionally rewrites bookmarks to track the new page order
+
+Most online PDF mergers do steps 1–5 well and skip 6 and 7 — which is why links and bookmarks often break in merged PDFs from generic tools.
+
+## The browser-based approach
+
+The [merge PDF tool](/merge-pdf) on Transmute uses [`mupdf-wasm`](https://github.com/ArtifexSoftware/mupdf), a WebAssembly port of the open-source MuPDF rendering and manipulation library. The merge logic runs entirely in your browser:
+
+1. Drop one or more PDFs into the drop zone
+2. Drag the file thumbnails to set the order they should appear
+3. Click Download — the merged PDF saves locally
+
+There is no upload step, no server involvement, and no temporary copy stored anywhere. Once you close the tab, the merged file is the only artifact. If you want, you can verify this by opening DevTools → Network and confirming nothing is sent during the merge.
+
+## Reordering pages within or between documents
+
+The basic merge concatenates whole files in the order you specify. If you also need to reorder pages — say, pages 1, 3, 5 from document A interleaved with pages 2, 4, 6 from document B — the workflow is:
+
+1. Use [split PDF](/split-pdf) to extract the specific pages from each source as separate files
+2. Use [merge PDF](/merge-pdf) to combine them in the order you want
+
+For pure reordering of a single document (you have the right pages, but in the wrong order), [reorder PDF pages](/pdf-page-reorder) lets you drag thumbnails to a new arrangement without splitting first.
+
+This split-then-merge pattern handles every reordering case — interleaving, reversing, rotating around a section break — without needing a more complex single-step tool.
+
+## What gets preserved
+
+A correctly implemented merge keeps:
+
+- **All page content** — text, images, vector graphics, exactly as they appear in the original
+- **Fonts** — embedded fonts are copied; substituted fonts may render slightly differently
+- **Document metadata** — title, author, subject, keywords (from the first input PDF, by default)
+- **Form fields and annotations** — usually preserved, though some tools flatten interactive forms during merging
+- **Embedded files** — attachments inside the source PDFs are copied if the merger supports it
+- **Page rotation** — pages keep their rotation flag
+
+What may not survive cleanly:
+
+- **Internal links** — if document A has a link to "page 47" and after merging that page is now page 142, the link should point to 142. Many mergers don't update this.
+- **Bookmarks (table of contents)** — bookmarks pointing to pages are usually preserved with updated page numbers, but bookmarks pointing to specific named destinations sometimes break.
+- **Document structure / tagged PDF** — accessibility tags (used by screen readers) require deep tree manipulation to merge correctly. Most mergers strip them.
+- **Digital signatures** — by definition, a digital signature is invalidated when the document is modified. Merging a signed PDF will break the signature.
+
+For routine merges (reports + appendices, contracts + amendments), all of this is fine. For accessibility-critical or signature-bearing documents, the merge step changes the document's legal status and you should consult the original signer or accessibility expert before relying on the merged version.
+
+## Handling large documents
+
+Browser memory is the constraint. Modern browsers give a tab roughly 4 GB of usable JavaScript heap on desktop, less on mobile. PDF objects expand significantly when parsed into JavaScript structures — a 100 MB PDF might use 500 MB of memory while being processed.
+
+In practice, merging up to **50 PDFs totaling under 200 MB** works comfortably in any modern desktop browser. Above that, you may hit memory limits on some configurations.
+
+If you need to merge a very large set of documents:
+
+1. **Process in batches.** Merge groups of 10 files at a time, then merge the resulting groups together. Each step uses less peak memory than merging all at once.
+2. **Strip metadata and images first.** If your input PDFs are bloated with embedded images at higher resolution than needed, [compress each PDF](/compress-pdf) before merging.
+3. **Convert images to JPG first.** A PDF that's mostly scanned pages will be significantly smaller after [PDF to JPG](/pdf-to-jpg) and [images to PDF](/images-to-pdf) round-trip with appropriate JPG quality.
+4. **Close other tabs.** A merge happens in the active tab's memory; other heavy tabs reduce what's available.
+
+## Merging PDFs that came from images
+
+A common scenario: you have several scanned receipts (as JPGs or PNGs), and you need a single PDF for your accountant. The two-step process is:
+
+1. Use [images to PDF](/images-to-pdf) to combine the images into a single PDF, one image per page
+2. If you also have a separate cover page or summary already in PDF, use [merge PDF](/merge-pdf) to combine the two
+
+The [images to PDF](/images-to-pdf) tool lets you pick page size (A4, US Letter, custom) and margins, so the output looks like a real document and not just images stuffed into PDF wrappers.
+
+## Page numbers and page references
+
+If your merged PDF needs page numbers — for example, you're combining a series of chapters into a book — use [add page numbers](/add-page-numbers) after merging. The tool gives you control over position (top/bottom, left/center/right) and starting number (in case you want to skip a cover page).
+
+Page numbers in the source PDFs are *visual content*, not structural metadata, so they don't get re-numbered automatically. If your source documents have page numbers, those will appear in the merged output exactly as they did in the originals. For a clean numbered output, either:
+
+- Strip the originals' page numbers before merging (no automated way to do this; manually edit the source documents)
+- Or accept that the source page numbers and the merged document's page numbers won't agree
+
+For most use cases, the merged page numbering you add at the end is what readers actually use to navigate, and the source numbering becomes informational.
+
+## Password-protected and signed PDFs
+
+Most browser-based mergers cannot handle password-protected PDFs without first decrypting them. The standard PDF security model uses RC4 or AES encryption keyed off the password, and the merge step needs decrypted content.
+
+The flow:
+
+1. Open each protected PDF in a viewer (Preview on Mac, Acrobat Reader, browser viewer)
+2. Save a copy with the password removed (most viewers offer this through "save as" or print-to-PDF)
+3. Merge the unprotected copies
+
+Digital signatures, as mentioned, become invalid after merging. If signature integrity matters, do not merge signed PDFs — present them separately, or have the documents re-signed after merging.
+
+## When NOT to use browser-based merging
+
+There are situations where a browser-based tool is the wrong choice:
+
+- **Hundreds of small files needing automated processing** — a server-side script with `pdf-lib` or `pypdf` is better
+- **Compliance / audit-required workflows** where the merge needs to be logged and signed
+- **Massive documents (single files over 1 GB)** — desktop tools like Acrobat Pro or scriptable command-line tools like `qpdf` handle these without memory pressure
+- **PDF/A archival format requirements** — proper PDF/A merging is rare even in desktop tools and almost never available in browser-based ones
+
+For everyday merging — combining a few documents, reordering pages, adding page numbers — a browser-based tool is faster than uploading, more private than cloud-based services, and free of the conversion-tool ad pollution that has overtaken most online PDF utilities.
+
+## A practical workflow
+
+The typical merge-then-share scenario:
+
+1. **Collect your source PDFs.** Drop them into the [merge PDF tool](/merge-pdf).
+2. **Set the order.** Drag the thumbnails. The first file in the list becomes the first pages of the merged output.
+3. **(Optional) Add page numbers.** [Add page numbers](/add-page-numbers) to the merged file. Choose a position and starting number.
+4. **(Optional) Compress.** If the result is too large for an email attachment, [compress the merged PDF](/compress-pdf). For aggressive compression, see the separate guide on [reducing PDF file size for email](/blog/reduce-pdf-file-size-for-email).
+5. **Verify.** Open the merged PDF in your local viewer. Check that the page order is correct, that internal links work, and that text is searchable.
+6. **Send.** The merged file lives only on your machine — no cleanup needed for the merge tool itself.
+
+For one-off use cases, this workflow takes under a minute. For recurring tasks (every month: merge invoice + statement + ledger), it's worth bookmarking the tools so the workflow is muscle memory.
+
+## The short version
+
+PDFs are a structured format, and merging them properly requires actual parsing — not just byte concatenation. Browser-based merging using a real PDF library handles this without uploading anything to a server, which is the right tradeoff for almost everyone.
+
+If you're merging once or twice a month, the [merge PDF tool](/merge-pdf) does what you need with no setup. If you're routinely combining and reordering pages from multiple sources, the combination of [split PDF](/split-pdf) + [merge PDF](/merge-pdf) covers any rearrangement you can describe. Page numbering and compression — [add page numbers](/add-page-numbers) and [compress PDF](/compress-pdf) — round out the workflow for documents that will be shared or archived.

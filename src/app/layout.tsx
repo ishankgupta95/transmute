@@ -55,12 +55,21 @@ export const metadata: Metadata = {
     siteName: "Transmute",
     type: "website",
     locale: "en_US",
+    images: [
+      {
+        url: "/og-image.png",
+        width: 1200,
+        height: 630,
+        alt: "Transmute — Free file conversion tools, right in your browser",
+      },
+    ],
   },
   twitter: {
-    card: "summary",
+    card: "summary_large_image",
     title: "Transmute — Free Online File Conversion Tools",
     description:
       "Convert images, PDFs, audio, video, and more — free, private, and entirely in your browser.",
+    images: ["/og-image.png"],
   },
 };
 
@@ -75,6 +84,17 @@ export default function RootLayout({
       className={`${syne.variable} ${outfit.variable} h-full antialiased`}
     >
       <head>
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+        <link rel="preconnect" href="https://www.googletagmanager.com" />
+        <link rel="preconnect" href="https://www.google-analytics.com" />
+        {ADS_ENABLED && (
+          <>
+            <link rel="preconnect" href="https://pagead2.googlesyndication.com" />
+            <link rel="preconnect" href="https://googleads.g.doubleclick.net" />
+            <link rel="preconnect" href="https://tpc.googlesyndication.com" />
+          </>
+        )}
         <Script
           src={`https://www.googletagmanager.com/gtag/js?id=${GA_ID}`}
           strategy="afterInteractive"

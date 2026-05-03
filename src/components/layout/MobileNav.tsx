@@ -54,6 +54,19 @@ export function MobileNav() {
               {cat.name}
             </Link>
           ))}
+          <Link
+            href="/blog"
+            onClick={() => { setVisible(false); setOpen(false); }}
+            className={`group flex items-center gap-3 rounded-lg px-4 py-3.5 text-lg font-medium text-text-secondary hover:text-text-primary hover:bg-[rgba(86,184,230,0.06)] transition-all duration-300 ${
+              visible
+                ? "opacity-100 translate-x-0"
+                : "opacity-0 -translate-x-3"
+            }`}
+            style={{ transitionDelay: visible ? `${categories.length * 50}ms` : "0ms" }}
+          >
+            <span className="h-1 w-1 rounded-full bg-accent opacity-0 group-hover:opacity-100 transition-opacity duration-200" />
+            Blog
+          </Link>
         </div>
       </nav>
     </div>

@@ -1,0 +1,122 @@
+Most "online developer tools" are not great. They're slow, ad-laden, frequently broken, and they ask for your data in a context where you've been trained never to give it. Pasting a JWT into a random website to decode it is the kind of thing every security-conscious developer has done at least once and then immediately regretted.
+
+The good news is that the entire category — formatters, parsers, encoders, generators — is exactly the kind of thing that works perfectly in a browser without ever talking to a server. JSON formatting, regex testing, hash computation, JWT decoding, color picking — none of these need network access. They need a parser and a UI, both of which are five lines of JavaScript.
+
+Here's a quick tour of ten utilities every developer reaches for, all of which run locally in your browser, all of which exist on Transmute as standalone tools.
+
+## 1. JSON formatter and validator
+
+JSON is the format you read more often than any other and the format that's most likely to be presented to you in a single 4 KB minified blob with no whitespace. The [JSON formatter](/json-formatter) is a parse-and-pretty-print: paste a JSON string, get back a properly indented, validated, syntax-highlighted version.
+
+The validation is the under-appreciated part. JSON has surprisingly fiddly rules — trailing commas are forbidden, keys must be quoted, only double quotes are allowed, no comments. A formatter that catches these is faster than running a `curl | jq` round-trip, and it gives you a precise error location when something's wrong.
+
+You can also minify in the other direction (strip whitespace) for cases where you need to embed JSON in a URL or attribute.
+
+## 2. Regex tester
+
+Writing a regex is mostly an exercise in iteration. You write something, test it against a representative input, see what doesn't match, and adjust. The [regex tester](/regex-tester) gives you the JavaScript regex engine with live highlighting of matches and capture groups, plus quick toggles for the standard flags (`g`, `i`, `m`, `s`, `u`).
+
+A few things make it more useful than the typical "regex101 with ads" alternative:
+
+- Named capture groups (`(?<name>...)`) display with their names, not just numbers
+- Match counts and per-match start/end indexes are visible
+- The pattern parses live as you type, so syntax errors surface immediately
+- No ads, no popups, no "register for our pro features" prompts
+
+## 3. JWT decoder
+
+A JWT (JSON Web Token) is a base64-encoded JSON header, a base64-encoded JSON payload, and a signature. Decoding the first two parts is just base64 + JSON parse — no signature verification needed for inspection.
+
+The [JWT decoder](/jwt-decoder) splits the token, decodes the parts, parses the JSON, and shows the header, payload, and signature separately. It also computes whether the token is expired (based on the `exp` claim) and shows the issue and expiry times in your local time zone.
+
+Crucially, this happens entirely in your browser. Pasting a real JWT into a server-based decoder is functionally equivalent to handing the token to whoever runs that server — even if it expires soon, it can be used for whatever its scope allows during its remaining lifetime. The Transmute decoder doesn't have that risk because it has no server.
+
+## 4. Hash generator
+
+Computing a SHA-256 of a file, a string, or a downloaded artifact comes up constantly. Verifying a downloaded ISO. Computing a content hash for a cache key. Generating a deterministic ID from a stable input.
+
+The [hash generator](/hash-generator) takes text or a file and produces MD5, SHA-1, SHA-256, and SHA-512 hashes simultaneously, all using the Web Crypto API (which is implemented natively in every modern browser, much faster than any pure-JavaScript hashing library).
+
+The "use Web Crypto" detail matters because it means the hash is computed in optimized C++ code in the browser engine, not in an interpreted JavaScript loop. For multi-megabyte files, the difference is the difference between "instant" and "noticeable wait."
+
+## 5. UUID generator
+
+Need a UUID. Doing it right is non-trivial — if you're generating in JavaScript, you want the cryptographic random source (`crypto.randomUUID()` for v4, or a v7 implementation that uses `crypto.getRandomValues`). The [UUID generator](/uuid-generator) produces both v4 (fully random) and v7 (time-ordered, useful as database primary keys for ordering) using the right source.
+
+Generating UUIDs server-side and then transmitting them is the standard pattern, but for one-off use cases — generating a stable test fixture, creating an opaque identifier for a config file, building a request ID for debugging — generating in the browser is faster and just as correct.
+
+## 6. Base64 encoder/decoder
+
+Base64 round-trips show up everywhere — embedding small assets in CSS or JSON, encoding binary data in a URL, decoding a token someone pasted into a chat. The [base64 encode/decode](/base64-encode-decode) tool does the conversion both ways with no surprises.
+
+The thing to know about base64 in 2026: there are several minor variants. Standard base64 uses `+` and `/` as the last two characters of the alphabet. URL-safe base64 (used for JWT headers/payloads) uses `-` and `_` instead, because `+` and `/` need to be percent-encoded in a URL. The tool handles both transparently.
+
+## 7. URL encoder/decoder
+
+Related to base64 but different: URL encoding (also called percent encoding) replaces special characters with `%XX` hex codes so they can appear in URLs without breaking parsing. The [URL encode/decode](/url-encode-decode) tool encodes and decodes both component-level (for query parameters) and full-URL escaping.
+
+The case that catches people: encoding a query parameter that itself contains a URL is *double-encoded*. The inner URL gets its slashes turned into `%2F`, then those `%` characters get turned into `%25`. Forgetting this is the source of approximately every "why isn't this URL working" bug. The encode/decode tool lets you do double-trip clearly.
+
+## 8. Timestamp converter
+
+Unix timestamps in seconds are 10-digit numbers. Unix timestamps in milliseconds are 13-digit numbers. JavaScript's `Date.now()` returns milliseconds. The Unix `date` command returns seconds. Most HTTP APIs use one or the other (sometimes inconsistently in the same API). When you have one number and you need the other, the [timestamp converter](/timestamp-converter) handles the conversion plus shows the value in multiple time zones simultaneously.
+
+The other use case: pasting a timestamp from a log file and asking "what time was that, in my time zone." Logs typically use UTC; you live in some other zone. The converter does this conversion both directions.
+
+## 9. Cron expression generator
+
+Cron expressions are five fields and a perfectly inscrutable mini-language: `0 9 * * 1-5` means "9 AM Monday through Friday" if you remember that the fields are minute, hour, day-of-month, month, day-of-week. The [cron expression generator](/cron-expression-generator) lets you build the schedule with a visual editor and produces both the cron expression and a plain-English description ("at 9:00 AM, Monday through Friday").
+
+The plain-English version is the test. If the expression doesn't read the way you expect when you ask the tool to describe it, you have a bug. This catches the "I forgot day-of-week starts on 0 = Sunday" class of error before the cron job runs at the wrong time.
+
+## 10. SQL formatter
+
+SQL queries embedded in code are usually un-formatted blobs you can't read. The [SQL formatter](/sql-formatter) reformats SQL with consistent indentation, keyword casing, and line breaks — and it supports multiple dialects (PostgreSQL, MySQL, SQLite, T-SQL, Snowflake, BigQuery), each with its own quirks.
+
+You can run it in two directions: format an ugly inline query for code review, or minify a formatted query for embedding in a string literal. Both are useful in different contexts.
+
+## Honorable mentions
+
+Past the "top ten," there's a long tail of utilities that are nice when you need them:
+
+- **[Markdown to HTML](/markdown-to-html) and [HTML to Markdown](/html-to-markdown)** — round-trip between the two formats, which is constantly useful for converting between blog and document tools
+- **[XML formatter](/xml-formatter)** — like the JSON formatter, but for XML; useful when working with SOAP, OPML, or RSS feeds
+- **[CSV to JSON](/csv-to-json) and [JSON to CSV](/json-to-csv)** — the two most common data-interchange formats; useful for moving between spreadsheets and APIs
+- **[Text diff](/text-diff)** — visual diff between two text blobs without setting up a `git` repo or using a desktop diff tool
+- **[Text case converter](/text-case-converter)** — switches between camelCase, snake_case, kebab-case, Title Case, etc.; useful when porting variable names between languages with different conventions
+- **[Word counter](/word-counter)** — counts words, characters, sentences, and reading time; useful for any writing with a target length
+
+## Why browser-based for these
+
+Beyond the privacy story (covered separately in [why browser-based tools are more private than online converters](/blog/why-browser-based-tools-are-private)), there are practical reasons to prefer browser-based developer tools:
+
+**Speed.** No upload latency, no queue time, no download. The tool runs the moment you paste.
+
+**Reliability.** No server to be down. No rate limits. Works on flaky internet.
+
+**Determinism.** The tool runs the same code on your machine that other people see on theirs. There's no "the server was updated yesterday and now everything's different" surprise.
+
+**Developer experience.** Open one tab, keep it pinned. The tool is just there. No login, no tier, no "free for the next 7 days."
+
+The trade-off is that browser-based tools can't easily share state across devices. A desktop tool can save preferences, frequently-used patterns, persistent history. A browser tool that doesn't use cloud sync starts fresh every session — which is mostly fine, sometimes annoying.
+
+## When to reach for a different tool
+
+Browser-based tools are great for one-off use cases. For workflow-level integration — formatting on save, validating in CI, generating in a build pipeline — you want the same logic available in your terminal or IDE.
+
+Most of the tools in this list have command-line equivalents that are basically free:
+
+- JSON: `jq`, `python -m json.tool`
+- Regex: `grep -P`, `ripgrep`
+- JWT: `jwt-cli`
+- Hash: `shasum`, `sha256sum`, `md5`
+- UUID: `uuidgen`
+- Base64: `base64`
+- Timestamps: `date -j -f`, `date -d`
+- SQL: `sql-formatter` (npm)
+
+The browser-based version is for the cases where the command-line version isn't worth it — pasting one JWT, formatting one query, decoding one base64 string. Quick, in-context, no install.
+
+## The short version
+
+Most "developer tools" don't need a server. JSON formatting, regex testing, JWT decoding, hashing, encoding, timestamp conversion — these all work fine in a browser, and running them in a browser is faster and more private than uploading the input to a stranger's site. [Transmute's developer category](/developer-tools) collects 25 of these in one place. Bookmark a few of the ones you use most, and you'll stop pasting code into ad-supported tools.

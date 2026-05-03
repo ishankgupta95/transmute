@@ -30,6 +30,12 @@ export function Navbar() {
               {cat.name}
             </Link>
           ))}
+          <Link
+            href="/blog"
+            className="px-3.5 py-2 rounded-md text-sm font-medium text-text-secondary hover:text-text-primary hover:bg-[rgba(255,255,255,0.04)] transition-all duration-200"
+          >
+            Blog
+          </Link>
         </div>
 
         <MobileNav />

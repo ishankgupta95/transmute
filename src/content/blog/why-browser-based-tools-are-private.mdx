@@ -1,0 +1,140 @@
+"Your data stays on your device" is a claim that's been worn down by overuse. Apps say it while syncing your data to their cloud. Privacy policies say it while sharing your information with twelve advertising partners. Marketing pages say it as a slogan, not a guarantee.
+
+The phrase has a precise technical meaning that most products quietly avoid: did the file you uploaded ever leave your computer? In most "online tools," the answer is yes. In a browser-based tool, the answer can actually be no — and the difference matters more than the marketing copy suggests.
+
+This piece is about what "browser-based" actually means in 2026, what changes for your privacy when a tool is server-based versus client-side, and how to verify the claim yourself with about thirty seconds of effort.
+
+## The architecture, simply
+
+A traditional online file converter works like this:
+
+1. You upload your file to a server
+2. The server processes it (converts, compresses, decodes)
+3. The server stores the output temporarily
+4. You download the output
+5. The server *might* delete both files (you have to trust them)
+
+Steps 1, 3, and 5 are where privacy leaks happen. The server has full access to your file's contents. The conversion service's logs include the file. Maintenance staff have access to the storage. The cloud provider's storage backups include the file. Compliance regimes vary; many services in jurisdictions with weaker privacy law retain user uploads for diagnostic or "abuse prevention" purposes for indefinite periods.
+
+A browser-based tool works fundamentally differently:
+
+1. The HTML, CSS, and JavaScript that *constitute the tool* are downloaded to your browser
+2. You drop a file into the tool's UI — the file is read into your browser tab's memory
+3. JavaScript code in your tab processes the file
+4. The output is offered as a download via a `Blob` URL
+5. When you close the tab, your browser releases the memory
+
+The file never leaves your machine. There is no server-side step. There is no place for the tool's operators to retain your data even if they wanted to, because they're not running a server that touches your data.
+
+The shift is real and substantial. With a server-based tool, you're trusting the operator's stated policies. With a browser-based tool, you're trusting that the tool actually does what it claims — which is something you can verify directly.
+
+## What you actually verify
+
+Browser developer tools include a Network tab that lists every HTTP request the page makes. For a true browser-based tool, the conversion step should produce **zero network requests with the file as a payload**.
+
+The verification:
+
+1. Open the tool in any browser
+2. Open developer tools (F12 or right-click → Inspect)
+3. Switch to the **Network** tab
+4. Click **Record** if it's not already recording
+5. Drop your file into the tool and run the conversion
+6. Look at the network log
+
+What you should see:
+
+- Some initial requests on page load (HTML, JS, CSS, fonts, the WASM modules the tool needs)
+- During conversion: nothing, or only requests to load additional WASM modules from a CDN (one-time, not file-bearing)
+- After conversion: nothing
+
+What would indicate the tool is *not* browser-based:
+
+- A POST or PUT request during conversion containing your file's data in the body
+- A POST request to an upload endpoint that includes the file
+- WebSocket frames carrying file data
+
+This isn't a theoretical check; it's how privacy researchers and security auditors verify these claims. You can do the same, in any browser, in under a minute.
+
+## Why this took until ~2020 to be feasible
+
+Until recently, browser-based file processing wasn't possible for most non-trivial conversions. Browsers had access to JavaScript, which is roughly 100× slower than compiled code on numeric workloads — and image, audio, video, and PDF processing are exactly the workloads where compiled code matters.
+
+Three things changed:
+
+**WebAssembly (2017).** A binary instruction format for browsers that runs at near-native speed. WebAssembly lets browser tools include compiled C, C++, and Rust code as runnable modules. FFmpeg compiled to WebAssembly is roughly the same speed as FFmpeg on the command line.
+
+**Web Codecs (2021).** A native browser API for encoding and decoding video, audio, and images using the operating system's built-in codecs. Hardware-accelerated H.264 encoding directly from a `<video>` element, with no software fallback needed.
+
+**Better Web APIs broadly.** `File` API for direct disk access. `Streams` for handling files larger than memory. `OffscreenCanvas` for image processing without main-thread blocking. `Web Crypto` for hashing and encryption at native speed.
+
+In combination, these mean a 2026 browser can do almost everything a desktop tool from 2010 could do, at comparable speed, without leaving the browser sandbox. The only meaningful limit is memory — browsers cap a single tab around 4 GB on desktop, less on mobile — and tasks that exceed that genuinely do need a desktop tool.
+
+## Where browser-based stops working
+
+There are real limits. A truly honest description of browser-based tools needs to mention them.
+
+**Tasks that need network access** can't be browser-only by definition. Geocoding an address, querying a stock price, looking up a domain's WHOIS — these need a server. Most "developer tools" that depend on these are inherently server-based.
+
+**Cross-device sync** isn't free in a browser-based architecture. If you save your preferences in one browser tab on one device, those preferences don't appear in another browser on another device unless you're using a sync mechanism that *does* talk to a server. Browser-based tools either skip persistent state entirely (every visit starts fresh) or use cloud sync as an opt-in feature.
+
+**Memory-bound operations on large files** can fail. A 4 GB video, a 1 GB PDF, a multi-million-row CSV — these can exceed what a browser tab can hold. Server-based tools can stream and process incrementally; browser-based tools need to fit everything in a single tab's memory.
+
+**CDN dependencies for one-time downloads.** Some browser-based tools need to download large WebAssembly modules from a CDN on first use. FFmpeg.wasm is ~25 MB; MuPDF is ~10 MB; the heic2any library is several MB. The download is a one-time event on first use; the browser caches it after that. But the act of downloading the module *does* mean that the CDN operator can see your IP and the fact that you used the tool. They cannot see what you're processing.
+
+The way browser-based tools handle this:
+
+- Module downloads are from public CDNs (unpkg, jsDelivr) where the same modules serve millions of users — you blend into a crowd
+- Modules are static assets, not endpoints that log which user requested them with file context
+- After cache, no further network requests are needed
+
+This is meaningfully better than a server-based tool that necessarily transmits your file content, but it's not zero-network. Honest descriptions should say so.
+
+## The compliance angle
+
+Browser-based tools resolve a number of compliance headaches that server-based tools create.
+
+**GDPR and personal data.** A server-based tool that processes personally identifiable information has to comply with GDPR's data-handling rules: lawful basis for processing, purpose limitation, data minimization, deletion on request, and breach notification. A browser-based tool sidesteps this entirely because the operator never has the data.
+
+**HIPAA and health data.** Same logic. A browser-based tool processing medical images doesn't trigger HIPAA's covered-entity rules because the tool's operator isn't holding the data.
+
+**Internal corporate data policies.** Many companies have policies prohibiting employees from uploading proprietary documents to "third-party services." A browser-based tool that doesn't upload anywhere is compliant with these policies by construction.
+
+**Audit and forensics.** A server-based tool's logs can become subject to subpoena, regulatory requests, or compelled disclosure. A browser-based tool's operator has no logs to disclose because they have nothing.
+
+For most personal use, none of this rises to the level of "actively important." For sensitive use — legal documents, medical images, internal corporate files — it can be the entire reason a tool is usable at all.
+
+## Examples in practice
+
+Some examples of when browser-based architecture matters concretely:
+
+**Decoding a JWT from a chat or log.** The JWT contains user identity and authorization scope. Pasting it into a server-based decoder means giving the decoder's operator a working session token (until it expires). The [browser-based JWT decoder](/jwt-decoder) reads the same token without the disclosure.
+
+**Hashing a file to verify a download.** Most file hashing happens on big binary downloads — ISOs, installers, software releases. A server-based hash service requires uploading the entire binary; the [browser-based hash generator](/hash-generator) reads the file with the File API, computes the hash via the Web Crypto API, and never transmits anything.
+
+**Compressing a passport-photo HEIC for a visa form.** The HEIC contains your face and EXIF metadata that may include GPS coordinates of your home. A server-based converter sees both. The [HEIC to JPG converter](/heic-to-jpg) sees neither.
+
+**Reducing a contract PDF for email.** A server-based PDF compressor sees the contract. The [browser-based PDF compressor](/compress-pdf) doesn't.
+
+**Generating a password.** A server-based generator that uses good cryptographic randomness might be fine in theory, but you have to trust both the randomness and the operator's commitment to not log the result. The [browser-based password generator](/password-generator) uses the Web Crypto API in your browser, with no possibility of the result being logged anywhere.
+
+These aren't hypothetical privacy concerns. People paste sensitive data into online tools constantly because they need a quick answer; the realization that they shouldn't have comes too late or not at all.
+
+## A pragmatic stance
+
+Not every tool needs to be browser-based. For collaborative workflows, server-based tools have legitimate advantages — multi-user sync, large-file streaming, cross-device persistence. The right framing isn't "browser-based good, server-based bad" but rather "use the architecture that matches what the tool actually needs to do."
+
+For one-off file conversion, format encoding, hashing, formatting, generation, and the dozen-or-so other developer utilities that show up daily — there's no reason for a server to ever see the data. Browser-based tools work, are faster, and remove the entire category of "did this service log my file" worry. They should be the default.
+
+When you do reach for a server-based tool, do so with eyes open: this service will see, store (at least briefly), and possibly retain my file. That tradeoff is fine for some content and not for others. Knowing it's the tradeoff being made is most of the work.
+
+## Verifying Transmute itself
+
+The same Network-tab check applies to any tool on this site. Pick a tool — say, the [HEIC to JPG converter](/heic-to-jpg), the [PDF compressor](/compress-pdf), or the [JWT decoder](/jwt-decoder) — open DevTools, drop in a file, watch the network log. There should be no upload request during the conversion step. If there's a CDN request for a WASM module on first use, that's the codec library being downloaded; it will not happen on subsequent uses.
+
+The whole codebase is open and statically exported. There is no server endpoint to verify *because there is no server*; the entire site is HTML, CSS, JavaScript, and WASM modules served as static files from GitHub Pages. The architecture itself is the privacy guarantee.
+
+## The short version
+
+Browser-based tools don't upload your files. Server-based tools do. The difference matters whenever you'd hesitate to share the file's contents with a stranger — which, for most files most people convert online, is most of the time.
+
+The category of tools that genuinely benefit from browser-based architecture covers most file-conversion and developer-utility tasks: image conversion, PDF manipulation, audio and video work, hashing, encoding, formatting. [Transmute's tools](/) all live in this category. Verify any of them yourself in 30 seconds with the Network tab; the architecture is exactly what the marketing claims, because there's no other way to build it.

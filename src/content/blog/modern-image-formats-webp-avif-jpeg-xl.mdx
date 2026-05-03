@@ -1,0 +1,141 @@
+For thirty years, JPG has been good enough for almost every use case on the internet. It still is — every browser, every operating system, every camera ships with native JPG support, and a well-encoded JPG looks fine to most people most of the time.
+
+But if you've ever tried to optimize a website for Core Web Vitals, paid for a CDN bill, or fought to fit a high-resolution photo into an email attachment limit, you know JPG leaves serious efficiency on the table. The codecs we have in 2026 — WebP, AVIF, JPEG XL, and HEIC — are all dramatically better. Picking the right one isn't obvious, and the answer changes depending on whether you're publishing to the web, archiving for the long term, or sharing a one-off photo.
+
+This guide is the practical comparison: what each format actually delivers, what its compatibility looks like in 2026, and which to reach for in different situations.
+
+## The compression backstory
+
+To compare these formats meaningfully, it helps to know what they're actually doing differently from JPG.
+
+**JPG** uses 8×8 block discrete cosine transform with 4:2:0 chroma subsampling. The algorithm has been frozen since 1992 and was designed to be decoded on a 33 MHz 486. It's astonishing the format is still competitive at all.
+
+**WebP** is Google's 2010 format, derived from the VP8 video codec. It uses a more sophisticated transform (still block-based but with intra-frame prediction and adaptive block sizes), arithmetic coding instead of Huffman, and a separate lossless mode based on prefix coding. The result is roughly 25–35% smaller files than JPG at equivalent visual quality.
+
+**HEIC** is the still-image variant of HEIF, using HEVC (H.265) compression. Per-block prediction is much richer (35 intra modes vs. WebP's 10), transform sizes go up to 32×32, and quantization is finer. Files are typically 40–60% smaller than JPG. HEIC was Apple's wager that it would become the dominant format; the bet hasn't quite paid off because of cross-platform issues.
+
+**AVIF** is the still-image variant of AV1, the Alliance for Open Media's royalty-free 2018 video codec. It builds on everything HEIC does and adds even more — recursive partition trees, more intra prediction modes, more efficient entropy coding. AVIF files are typically 50% smaller than JPG and 20% smaller than HEIC at equivalent quality.
+
+**JPEG XL** is the 2021 successor to JPG, designed by the JPEG group itself. It's the most ambitious of the bunch — it supports lossless re-encoding of existing JPGs (saving ~20% with no quality loss), progressive decoding, animation, and 32-bit-per-channel HDR. Compression is competitive with AVIF on photographs and superior on synthetic imagery.
+
+## Compression efficiency, head to head
+
+The numbers below are typical relative file sizes at equivalent perceptual quality, with JPG at quality 85 as the baseline:
+
+| Format | Photo (natural) | Screenshot / synthetic |
+| --- | --- | --- |
+| JPG (q=85) | 1.0× | 1.0× |
+| WebP (lossy, q=85) | 0.65× | 0.7× |
+| HEIC (q=85) | 0.50× | 0.55× |
+| AVIF (q=85) | 0.40× | 0.45× |
+| JPEG XL (q=85) | 0.40× | 0.30× |
+| WebP lossless | n/a | 0.25× (vs. PNG) |
+| PNG | 4–10× | 1.0× |
+
+For natural photographs, AVIF and JPEG XL are roughly tied. For synthetic imagery (screenshots, illustrations, diagrams), JPEG XL pulls ahead because it includes a near-lossless mode that handles flat color regions extremely well.
+
+These numbers are at *equivalent perceptual quality*, which is a research target — in practice, quality-equivalent encoding is hard to verify without metrics like SSIMULACRA2, which most users don't have. If you eyeball it, the differences are usually less dramatic than the table suggests.
+
+## Browser support, August 2026
+
+This is the part where reality intervenes:
+
+| Format | Chrome | Firefox | Safari | Edge | Mobile |
+| --- | --- | --- | --- | --- | --- |
+| JPG | ✓ | ✓ | ✓ | ✓ | All |
+| PNG | ✓ | ✓ | ✓ | ✓ | All |
+| WebP | ✓ | ✓ | ✓ | ✓ | All |
+| AVIF | ✓ | ✓ | ✓ (16.4+) | ✓ | iOS 16+, Android 12+ |
+| HEIC | ✗ | ✗ | ✓ (17+) | ✗ | iOS only |
+| JPEG XL | ✗* | Behind flag | ✓ (17+) | ✗* | iOS 17+, no Android |
+
+*Chrome shipped JPEG XL behind a flag in 2021, removed it in 2022 citing low adoption, then partially walked that back in 2024 with limited mobile support. Status remains in flux.
+
+The practical implications:
+
+- **WebP and AVIF are the safe modern choices.** Universal browser support, 25–50% smaller than JPG.
+- **HEIC is only useful inside the Apple ecosystem.** It will never render in Chrome on Windows.
+- **JPEG XL has a fanbase but fragmented support.** Wait until Chrome support stabilizes before deploying it widely.
+
+## When to pick each format
+
+For **publishing photos to a website** in 2026, the production format hierarchy is:
+
+1. **AVIF** for new sites — best compression, universal browser support
+2. **WebP** as a fallback — 5+ years of universal support, slightly larger files
+3. **JPG** as a final fallback — works on legacy systems
+
+The standard pattern is `<picture>` with multiple `<source>` tags letting the browser pick the best format it supports. CDNs like Cloudflare and Cloudinary will do this automatically if you let them.
+
+For **archival photo storage**, the calculus is different. You're not optimizing for download speed or bandwidth — you're optimizing for *can I open this in 30 years*. JPG is by far the safest bet for long-term readability. AVIF and JPEG XL are technically better but unproven at the timescale of decades.
+
+For **sharing photos with people** (email attachments, group chats, cloud sharing), JPG is still the right answer. Compatibility wins. Convert HEIC iPhone photos to JPG before sending — see the separate guide on [HEIC vs JPG](/blog/heic-vs-jpg).
+
+For **transparency** (logos, illustrations with cutout backgrounds), use **WebP lossless** or **PNG**. Lossy formats can do transparency but tend to produce halos around edges. WebP lossless is roughly 25% smaller than PNG on the same image.
+
+For **animation** (replacing GIFs), use **WebP animated** or **AVIF animated**. Both produce dramatically smaller files than GIF — often 90%+ reduction. See the separate guide on [video to GIF tradeoffs](/blog/video-to-gif-tradeoffs).
+
+## Lossless versus lossy
+
+Every format here has both a lossy and a lossless mode (except JPG, which is lossy-only).
+
+**Lossless** preserves every pixel exactly. The only compression is from removing redundancy: encoding "1000 blue pixels" instead of repeating "blue, blue, blue" 1000 times. The compression ratio depends entirely on how compressible the image is — a screenshot of code can compress 20:1, a photo of static may compress 1.1:1.
+
+**Lossy** discards information your eye is unlikely to notice. The compression ratio is set by the quality knob, not by the image content. A high-quality lossy encode of a photo will be roughly the same size whether the photo has a lot of detail or not.
+
+The rule of thumb:
+
+- For photos: always lossy. The visible quality difference is negligible at quality 85+, and lossless on a photo barely compresses at all.
+- For screenshots, illustrations, logos: usually lossless. Lossy compression on synthetic imagery produces visible artifacts — color bleeding, ringing around text — at file-size ratios that PNG handles cleanly.
+- For mixed content: try both, pick the smaller.
+
+## What about JPG itself?
+
+The interesting wrinkle in 2026 is that JPG itself isn't dead. JPEG XL's lossless re-encoding mode (`jxl-from-jpg`) can transcode an existing JPG to a smaller JXL file with bit-exact recoverable output. If JXL ever achieves universal browser support, it will essentially replace JPG for the storage layer of every existing image library.
+
+There's also "MozJPEG," an optimized JPG encoder that produces files 5–10% smaller than the standard libjpeg encoder at the same quality. If you're stuck on JPG for compatibility but want to squeeze every byte, MozJPEG is worth using.
+
+## A decision tree for 2026
+
+```
+What are you doing with this image?
+
+├── Publishing to a website
+│   └── Use AVIF (with WebP and JPG fallbacks)
+│
+├── Sharing with another person
+│   ├── Inside Apple ecosystem only? → HEIC is fine
+│   └── Anyone else? → Convert to JPG
+│
+├── Archiving long-term
+│   ├── Multi-platform readability matters? → JPG quality 95
+│   └── Single-platform, want efficiency? → AVIF or HEIC
+│
+├── Logo, illustration, screenshot
+│   └── PNG or WebP lossless
+│
+├── Animated content
+│   ├── Replacing a GIF? → WebP animated
+│   └── Short clip? → MP4 or WebM (much smaller than animated images)
+│
+└── Editing in Photoshop / Lightroom
+    └── Original RAW + a high-quality JPG export for sharing
+```
+
+## Conversion paths in Transmute
+
+Most tasks reduce to a small number of conversions:
+
+- **iPhone photos to web-friendly format**: [HEIC to JPG](/heic-to-jpg) → publish, or [HEIC to JPG](/heic-to-jpg) → [JPG to WebP](/jpg-to-webp) for the production pass
+- **Modernizing a legacy JPG library**: [JPG to WebP](/jpg-to-webp) for new sites; AVIF support is on the roadmap
+- **Receiving WebP from someone, need JPG for older software**: [WebP to JPG](/webp-to-jpg) preserves color and quality
+- **Receiving WebP, need PNG for transparency**: [WebP to PNG](/webp-to-png) preserves the alpha channel
+- **AVIF download from a modern site, need to use it elsewhere**: [AVIF to JPG](/avif-to-jpg) handles the broad compatibility case
+
+All of these run entirely in your browser using the relevant codec libraries. Nothing uploads. For batch conversion, drop multiple files at once into any of the converters and they'll process in sequence.
+
+## The short version
+
+If you remember nothing else: **use AVIF for production websites, JPG for sharing with people, and PNG or WebP lossless for logos and screenshots.** WebP is a fine fallback for AVIF if you need broader legacy support. HEIC is only useful inside Apple's ecosystem. JPEG XL is the future, but the future is taking a while to arrive.
+
+The format you pick is rarely the limiting factor on quality — encoding settings, source resolution, and post-processing matter much more. But picking the right format can mean a 2× difference in file size at zero perceptual cost, and on a website with a million page views a month, that's a measurable amount of bandwidth.

@@ -167,6 +167,22 @@
 - [ ] Request indexing for top 10 new URLs (blog posts + any tools that aren't yet indexed)
 - [ ] Track impressions/CTR weekly for the first month — flag pages with high impressions but low CTR for title/description rewrites
 
+### 1.7 Post-deploy verification — run only after Workstreams 0–4 are live
+
+> Manual checklist that requires a deployed, public URL. Run **once the full plan ships**, not before. None of these can be done from localhost.
+
+- [ ] **Deploy** the site (push to `master`, confirm GitHub Pages workflow finishes, hit `https://transmute.tools` in a private window)
+- [ ] **Rich Results Test** on these 6 representative URLs (one per page archetype) at <https://search.google.com/test/rich-results>; fix any reported schema errors:
+  - `https://transmute.tools/` (homepage — `WebSite` schema)
+  - `https://transmute.tools/image-tools` (category hub — `BreadcrumbList`)
+  - `https://transmute.tools/heic-to-jpg` (tool page — `SoftwareApplication`, `HowTo`, `FAQPage`, `BreadcrumbList`)
+  - `https://transmute.tools/merge-pdf` (PDF tool — same schema set, different content)
+  - `https://transmute.tools/blog` (blog index — `Blog`, `BreadcrumbList`)
+  - `https://transmute.tools/blog/heic-vs-jpg` (blog post — `Article`, `BreadcrumbList`)
+- [ ] **Search Console**: resubmit `sitemap.xml`, then request indexing for the 9 new blog URLs (the `/blog` index + 8 launch posts)
+- [ ] **Smoke-test the OG image** — paste each of the 6 URLs above into the [Twitter Card Validator](https://cards-dev.twitter.com/validator), [Facebook Sharing Debugger](https://developers.facebook.com/tools/debug/), and [LinkedIn Post Inspector](https://www.linkedin.com/post-inspector/) to confirm `/og-image.png` renders for each
+- [ ] **Address `npm audit` findings** as a separate small task: `npm audit fix` for the Vite + @xmldom transitive bumps (no-op for production), then a deliberate `next` bump to 16.2.4+ in its own commit with a full lint/tsc/test/build pass and a manual click-through of one tool per category in dev. Pre-existing as of Workstream 1; not a new regression.
+
 ---
 
 ## Workstream 2 — UI/UX polish & fixes

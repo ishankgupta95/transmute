@@ -1,0 +1,129 @@
+Most email providers cap attachments somewhere between 10 MB (older corporate Exchange setups) and 25 MB (Gmail, Outlook.com, most modern inboxes). PDFs from a phone scanner or a multi-page report routinely blow through that limit — sometimes by a factor of three or four — and the standard advice ("just use a file-sharing link") doesn't always work. Some recipients can't access shared links because of corporate policy. Some you don't trust enough to give a Drive link. Some forms outright reject anything but an attachment.
+
+This is a guide to making PDFs smaller. Specifically: small enough to email, while staying readable. There are three real techniques (and a number of dead ends), and they work in different situations.
+
+## Why PDFs get big in the first place
+
+A PDF is essentially a document container. Inside, you have text (usually small), vector graphics (small), embedded fonts (medium), and *images* (almost always the largest contributor to file size). Most "huge" PDFs are huge because they contain images that were embedded at higher quality than they needed to be — usually because:
+
+- A **scanned document** is a sequence of full-page images. A multi-page scan at 300 DPI can easily exceed 100 MB.
+- **A document exported with images** at 300 DPI when the recipient will only ever view it on a screen at 100 DPI.
+- **An export that didn't recompress** the source images, so a 5 MB photo embedded in a slide deck becomes a 5 MB image in the PDF.
+- **Redundant resources** — multiple copies of the same image, fonts that aren't subset, color profiles that aren't needed.
+
+A clean text-only PDF is rarely above 1 MB even at hundreds of pages. If your PDF is large, the first question is: how much of it is images?
+
+## Method 1: Structural compression
+
+The lowest-effort approach is to let a PDF library re-pack the document, removing redundancy without touching content. This includes:
+
+- Stripping document metadata (title, author, comments, custom XMP)
+- Removing duplicate fonts and images
+- Re-encoding the cross-reference table to use object streams (introduced in PDF 1.5, often skipped by older exporters)
+- Discarding orphaned objects (referenced from removed pages, etc.)
+
+This is what the [compress PDF tool](/compress-pdf) does by default. It's a "free" optimization — visual quality is identical to the original, and the file usually shrinks by 10–30%.
+
+Where this method shines:
+
+- PDFs that were exported by older software (Office 2007, OpenOffice 3.x)
+- Documents with extensive custom metadata or embedded XML data
+- PDFs that have been edited many times (each edit can leave residue)
+
+Where this method falls short:
+
+- **Scanned PDFs** — the structural overhead is tiny relative to the embedded images. You'll save kilobytes on a multi-megabyte file.
+- **PDFs already optimized** by Acrobat Pro or modern web exporters — the structural slack is already gone.
+
+If structural compression alone isn't enough (it usually isn't for image-heavy documents), proceed to method 2.
+
+## Method 2: Image down-sampling
+
+Most "PDF compressors" claim large compression ratios because they re-encode embedded images at lower quality and lower resolution. This is the high-leverage move for image-heavy PDFs.
+
+The technique:
+
+1. Iterate through every embedded image in the PDF
+2. Detect its actual rendered size on the page (not the stored resolution)
+3. Resample the image down to a target DPI appropriate for the use case (typically 150 DPI for screen viewing, 300 DPI for print)
+4. Re-encode the resampled image as JPG at quality 75–85
+5. Substitute the recompressed image back into the PDF
+
+This is harder to automate cleanly in a browser-based tool because each PDF library handles image re-encoding differently. Transmute's [compress PDF](/compress-pdf) currently focuses on structural optimization rather than image re-encoding — for image-heavy compression, the alternative pattern below works:
+
+1. Use [PDF to JPG](/pdf-to-jpg) to render every page as a JPG at a sensible resolution (say, 150 DPI = ~1280×1700 for US Letter)
+2. Use the JPG quality slider to pick a balance — quality 80 is usually a good default
+3. Use [images to PDF](/images-to-pdf) to repackage the JPGs into a single PDF
+
+This effectively performs the image down-sampling externally. The tradeoff: you lose the original document's text layer (if it had one), so the resulting PDF won't be searchable. For pure scans, this doesn't matter — they were never searchable anyway. For mixed content (scanned signature page in a text-based contract), it does matter, and you should keep an unsearchable copy and the original.
+
+## Method 3: Page splitting
+
+If the document is reasonably small per-page but has many pages, splitting it into two halves and emailing them separately is sometimes the cleanest answer.
+
+[Split PDF](/split-pdf) lets you select page ranges and produce multiple smaller PDFs. For a 30 MB document, splitting into pages 1–15 and 16–30 produces two 15 MB files, both well under the 25 MB Gmail cap.
+
+This is useful when:
+
+- The recipient is fine with multiple attachments
+- You don't want to recompress and lose any quality
+- The document has natural breakpoints (chapters, sections)
+
+It's not appropriate when:
+
+- The recipient explicitly wants a single document
+- The document needs to be uploaded somewhere with a strict total-size cap (some forms cap the entire submission, not per-file)
+
+## What doesn't work
+
+A few "tricks" that show up in advice posts and rarely deliver:
+
+**Renaming `.pdf` to something else.** This doesn't compress anything. It just confuses the recipient.
+
+**Putting the PDF inside a ZIP.** ZIP compression is general-purpose and PDFs are already compressed internally. The ZIP will be roughly the same size as the input.
+
+**Printing to a "smaller" PDF.** Most operating systems include a "save as PDF" option that doesn't actually re-compress images. The result is the same size or slightly larger.
+
+**Cloud-based "AI compression" services.** These are typically just method 1 + method 2 wrapped in marketing. They work but require uploading your document to a third party, which is exactly what you're trying to avoid.
+
+## A practical workflow for an email-bound PDF
+
+Here's the decision tree most situations fit into:
+
+```
+Is the PDF mostly text and small graphics?
+├── Yes: try [compress PDF](/compress-pdf) — usually enough.
+│       If still too big, split with [split PDF](/split-pdf).
+│
+├── Mostly scans (image-heavy)?
+│   └── [PDF to JPG](/pdf-to-jpg) → quality 75 → [images to PDF](/images-to-pdf)
+│       This is usually a 5–10× reduction.
+│
+└── Mixed content with searchable text?
+    └── [compress PDF](/compress-pdf) first.
+        If still too big, accept losing the text layer:
+        [PDF to JPG](/pdf-to-jpg) → quality 75 → [images to PDF](/images-to-pdf)
+```
+
+For a typical scanned-document scenario:
+
+1. **Check the size.** Right-click on the PDF, get info. If it's under 25 MB, you can email it as-is to most providers.
+2. **Try structural compression first.** Drop the PDF into [compress PDF](/compress-pdf). If the result is under your cap, you're done.
+3. **If still too large, downsample images.** Use the [PDF to JPG](/pdf-to-jpg) → [images to PDF](/images-to-pdf) round-trip with JPG quality 75. This typically achieves 5–10× compression on scans.
+4. **As a last resort, split.** [Split PDF](/split-pdf) into two or three parts and email them separately, with a note explaining the order.
+
+The combination of structural optimization and image downsampling handles the vast majority of "this PDF is too large for email" cases. The rare exceptions — a text-heavy 50 MB document with no images — usually require splitting because there's nothing left to compress.
+
+## Why this matters more than it should
+
+Email size limits are an artifact of an earlier era — a 25 MB cap was generous in 2010 and is restrictive in 2026. But changing them is hard: every increase puts more strain on already-overloaded mail servers, every change to inline-attachment rendering breaks something somewhere. So we work around them.
+
+The good news is that browser-based tools have gotten good enough at PDF manipulation that the workarounds are no longer painful. A document that took five minutes to compress with desktop software in 2018 takes about ten seconds in 2026. The privacy story is also better — none of these workflows require you to upload your tax returns, contracts, or medical records to a third-party processor.
+
+The [compress PDF](/compress-pdf), [split PDF](/split-pdf), [PDF to JPG](/pdf-to-jpg), and [images to PDF](/images-to-pdf) tools all run entirely in your browser. They handle the routine cases of needing to ship a PDF over email without exotic tooling. For more complex PDF workflows — combining multiple documents, reordering pages — see the separate guide on [merging PDFs in your browser](/blog/how-to-merge-pdfs-in-browser).
+
+## The short version
+
+Almost every "make my PDF smaller" problem is a "make the embedded images smaller" problem. The browser-based workflow is: try [compress PDF](/compress-pdf) first for an easy win, then re-encode images via [PDF to JPG](/pdf-to-jpg) → [images to PDF](/images-to-pdf) round-trip if you need more aggressive compression, and split with [split PDF](/split-pdf) only as a last resort.
+
+Most documents go from "too big to email" to "fits comfortably under the cap" with method 1 alone. The remaining cases are mostly scans, and the round-trip method handles them in a single pass.

@@ -314,11 +314,20 @@ export function getToolMetadata(slug: string): Metadata {
       url: `${BASE_URL}/${tool.slug}`,
       siteName: "Transmute",
       type: "website",
+      images: [
+        {
+          url: "/og-image.png",
+          width: 1200,
+          height: 630,
+          alt: `${tool.name} — free, browser-based tool on Transmute`,
+        },
+      ],
     },
     twitter: {
-      card: "summary",
+      card: "summary_large_image",
       title: `${tool.name} | Transmute`,
       description: tool.description,
+      images: ["/og-image.png"],
     },
   };
 }

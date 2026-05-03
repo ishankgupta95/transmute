@@ -22,6 +22,97 @@
 
 ---
 
+## Workstream 0 — Codebase cleanup (AI slop & dead code)
+
+> Audit pass on the Codex-authored codebase. **Execute first** — fewer files / less duplication makes every later workstream easier. Each finding below was verified by grepping `src/` and confirming zero non-self imports.
+
+> **Status: complete.** All items below have landed in the working tree. Verification (lint, tsc, 651 tests, build) is green.
+
+### 0.1 Tier 1 — Pure deletes (zero risk, ~250 LOC out, 5 files)
+
+- [x] Delete unused UI components (zero importers anywhere):
+  - `src/components/ui/Button.tsx`
+  - `src/components/ui/Badge.tsx`
+  - `src/components/ui/Card.tsx`
+  - `src/components/ui/Toast.tsx`
+  - Then `rmdir src/components/ui/`
+- [x] Delete `src/components/layout/Sidebar.tsx` — defined but never rendered
+- [x] Delete unused hooks:
+  - `src/hooks/useDownload.ts` — production uses `triggerDownload` directly
+  - `src/hooks/useWebWorker.ts` — no Web Workers exist in the project
+- [x] Strip dead helpers from `src/lib/utils/file-helpers.ts`:
+  - Remove `getExtension` (only its own test imports it)
+  - Remove `getMimeType` and the entire MIME map (only its own definition references it)
+  - Keep `formatFileSize` — it's the only one in use
+  - Update `src/__tests__/unit/lib/file-helpers.test.ts` to drop the corresponding `describe` blocks
+- [x] Delete dead placeholder `encodeIco` in `src/lib/tools/ico-encode.ts:5-23`:
+  - Function returns `new Blob([])`; production calls `encodeIcoAsync` only
+  - Also remove `pngBuffers` / `pngBlobs` dead locals
+  - Drop the `describe("encodeIco (sync placeholder)")` block in `src/__tests__/unit/lib/ico-encode.test.ts:179-183`
+- [x] Delete unused exported type `FrameCallbackInfo` from `src/lib/tools/video-utils.ts:44-47` — never imported
+
+### 0.2 Tier 1 — Dead dependencies
+
+- [x] Remove `browser-image-compression` from `package.json` — `grep -rln browser-image-compression src` is empty (image compression is in-house in `lib/tools/image-compress.ts`)
+- [x] Decide on `@tailwindcss/typography`:
+  - Currently installed but **not** registered in `postcss.config.mjs` and not loaded via `@plugin` in `globals.css`
+  - The single `prose prose-invert` use in `src/components/tools/MarkdownToHtmlUI.tsx:58` is silently doing nothing
+  - Either wire up the plugin OR drop both the dep and the `prose` classes
+- [x] Run `npm install` to lock the change, commit `package-lock.json`
+
+### 0.3 Tier 2 — Config / spec drift
+
+- [x] Test infra references folders that don't exist — pick one:
+  - `vitest.config.ts:14-15` includes `src/__tests__/integration/**`
+  - `playwright.config.ts:4` `testDir: "./src/__tests__/e2e"`
+  - Either create both folders with a `.gitkeep` (since Workstream 3 will fill them) or remove the dangling globs
+- [x] CLAUDE.md claims `80%` coverage threshold; `vitest.config.ts:18-23` actually sets `10`. Update CLAUDE.md to match (or raise the threshold — the plan calls for ≥80% via §3)
+- [x] `src/app/privacy/page.tsx:16` has hardcoded `Last updated: April 7, 2026`. Either lift to a `LAST_UPDATED` constant near the top of the file, or drop the line
+
+### 0.4 Tier 3 — Registry slop
+
+- [x] Fix `relatedTools` self-references in `src/data/tools.ts` (`css-gradient-generator` and `box-shadow-generator` were each listing themselves; both now point at sibling tools)
+- [x] aboutText boilerplate cleanup in `src/data/tools.ts`:
+  - Stripped trailing/standalone "Everything runs in your browser", "no sign-up", "no watermarks", "completely free", "Free to use", "no account required", "no installation needed" sentences from 63 of 66 entries (~9.3 KB removed)
+  - Remaining mid-text mentions are tool-specific context (e.g. WebAssembly explainers, sensitive-document framing) and were intentionally kept
+- [x] FAQ duplication in `src/data/faqs.ts`:
+  - `PRIVACY_FAQ` is now exported from `faqs.ts` and appended once at render time in `src/app/[slug]/page.tsx`. 41 inline duplicates removed; every tool now gets the privacy FAQ uniformly
+- [x] All 66 `description` fields rewritten to land in 120-160 chars (current min/max/avg: 124 / 155 / 135). Each rewrite swaps boilerplate for a concrete benefit, use case, or technical detail (Lanczos3, Web Crypto, FFmpeg.wasm, etc.)
+
+### 0.5 Tier 4 — Duplication refactors (do as separate PRs after the deletes land)
+
+- [x] Extract a shared `<CategoryHubPage>` component → `src/components/layout/CategoryHubPage.tsx` (98 LOC). All 5 hub pages now ~30-50 LOC each (down from 86-122), driven by a `sections: Array<{ title?, tools }>` prop
+- [x] Pull `loadImage()` and `canvasToBlob()` into `src/lib/tools/canvas-utils.ts`:
+  - 6 `loadImage` and 4 `canvasToBlob` private copies consolidated; param types unified to `Blob` (File extends Blob), quality made optional to fold in ico-encode's 2-arg variant
+- [x] Replace inline blob/download with `triggerDownload` in:
+  - `QrCodeGeneratorUI` PNG (now uses `canvasToBlob` + `triggerDownload`) and SVG paths; silent `catch {}` now surfaces errors via `setError`
+  - `CsvToJsonUI`, `JsonToCsvUI` download handlers
+  - `ScreenRecorderUI:59` was a stale plan reference — that line is the preview-video Object URL; the actual download already routes through `<DownloadButton>` → `triggerDownload`
+- [x] Decide on the 9 image-related `*Client.tsx` thin wrappers:
+  - Confirmed all 9 follow the same `"use client"` forwarder pattern. Per CLAUDE.md and saved memory (next/dynamic with ssr:false must live in a 'use client' wrapper), kept the indirection uniform across categories rather than collapsing the image variants
+
+### 0.6 Tier 5 — Layout / homepage minor
+
+- [x] `src/app/page.tsx` — `organizationSchema` dropped. `WebSite` schema retained
+- [x] `src/app/layout.tsx` — AdSense `<Script>` now gated behind `process.env.NEXT_PUBLIC_ADS_ENABLED === "true"`. Default off; flips on by setting the env var. Forward-compatible with §4.1
+
+### 0.7 Verification before closing the workstream
+
+- [x] `npm run lint` clean (0 errors; 21 pre-existing warnings)
+- [x] `tsc --noEmit` clean
+- [x] `npm test` green (651/651 across 50 files)
+- [x] `npm run build` produces a working `out/` (78 routes prerendered: 5 hubs + 64 tools + about/privacy/sitemap)
+- [x] `git diff --stat` — net LOC well past target (>−700 LOC tracked + 2 new util/component files)
+
+### 0.8 Out of scope for this workstream
+
+- Re-architecting the Server/Client three-layer pattern (works, just verbose)
+- Touching `aboutText` length itself — long form is intentional for SEO; only the *repeated boilerplate* is slop
+- Replacing analytics, AdSense, or fonts
+- Renaming files / restructuring directories beyond the deletes above
+
+---
+
 ## Workstream 1 — SEO
 
 ### 1.1 Blog (biggest remaining traffic lever)
@@ -251,14 +342,16 @@ Strict rule: **no ads above the tool**. Tool stays the hero — first paint, fir
 
 Suggested order, optimised so each workstream unblocks the next:
 
-1. **Bug triage (2.1)** — known bugs are blockers for everything else
-2. **E2E scaffolding (3.1) + a few golden-path specs** in parallel — gives a regression safety net for the polish work that follows
-3. **UI/UX consistency pass (2.2 → 2.6)** — biggest leverage on perceived quality
-4. **Full E2E suite (3.2 → 3.5)** — fill out coverage now that tools are stable
-5. **Beta exit (2.7)** — remove the Beta badge
-6. **AdSense component + flag-off rollout (4.1 → 4.4)** — ready to flip on the moment approval lands
-7. **SEO audit + blog (1.1 → 1.6)** — blog has the longest payoff curve, start it once the product is solid enough that traffic won't bounce
-8. **AdSense flag-on (4.6)** — only after blog is shipping consistent traffic, so first-week RPM data is meaningful
+1. **Codebase cleanup (0.1 → 0.3)** — Tier 1 deletes + config drift first. Mechanical, reversible, shrinks the surface area before any other workstream touches it
+2. **Codebase cleanup (0.4 → 0.6)** — registry/duplication refactors as separate PRs after the deletes land
+3. **Bug triage (2.1)** — known bugs are blockers for everything else
+4. **E2E scaffolding (3.1) + a few golden-path specs** in parallel — gives a regression safety net for the polish work that follows
+5. **UI/UX consistency pass (2.2 → 2.6)** — biggest leverage on perceived quality
+6. **Full E2E suite (3.2 → 3.5)** — fill out coverage now that tools are stable
+7. **Beta exit (2.7)** — remove the Beta badge
+8. **AdSense component + flag-off rollout (4.1 → 4.4)** — ready to flip on the moment approval lands
+9. **SEO audit + blog (1.1 → 1.6)** — blog has the longest payoff curve, start it once the product is solid enough that traffic won't bounce. The §0.4 description rewrites pair with §1.2's metadata audit — do them together
+10. **AdSense flag-on (4.6)** — only after blog is shipping consistent traffic, so first-week RPM data is meaningful
 
 ---
 

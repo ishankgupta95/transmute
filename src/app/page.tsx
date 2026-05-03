@@ -17,15 +17,6 @@ const websiteSchema = {
   },
 };
 
-const organizationSchema = {
-  "@context": "https://schema.org",
-  "@type": "Organization",
-  name: "Transmute",
-  url: BASE_URL,
-  description:
-    "Free, private, browser-based file conversion tools.",
-};
-
 const categoryIcons: Record<string, React.ReactNode> = {
   "image-tools": (
     <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
@@ -71,10 +62,6 @@ export default function HomePage() {
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: JSON.stringify(websiteSchema) }}
-        />
-        <script
-          type="application/ld+json"
-          dangerouslySetInnerHTML={{ __html: JSON.stringify(organizationSchema) }}
         />
 
         {/* Hero Section */}

@@ -19,7 +19,6 @@
     "@ffmpeg/ffmpeg": "^0.12.15",
     "@ffmpeg/util": "^0.12.2",
     "audiobuffer-to-wav": "^1.0.0",
-    "browser-image-compression": "^2.0.2",
     "clsx": "^2.1.1",
     "cropperjs": "^1.6.2",
     "diff": "^8.0.4",

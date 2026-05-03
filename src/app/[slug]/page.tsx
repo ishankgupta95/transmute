@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import { tools, getToolBySlug } from "@/data/tools";
-import { faqs } from "@/data/faqs";
+import { faqs, PRIVACY_FAQ } from "@/data/faqs";
 import { getToolMetadata, getHowToSteps } from "@/lib/seo/tool-metadata";
 import { ToolPageLayout } from "@/components/tools/ToolPageLayout";
 import { ImageToolClient } from "@/components/tools/ImageToolClient";
@@ -201,7 +201,7 @@ export default async function ToolPage({
   const tool = getToolBySlug(slug);
   if (!tool) notFound();
 
-  const toolFaqs = faqs[slug] ?? [];
+  const toolFaqs = [...(faqs[slug] ?? []), PRIVACY_FAQ];
 
   return (
     <ToolPageLayout

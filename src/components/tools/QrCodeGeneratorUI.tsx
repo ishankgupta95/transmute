@@ -2,6 +2,8 @@
 
 import { useCallback, useRef, useState } from "react";
 import QRCode from "qrcode";
+import { triggerDownload } from "@/lib/utils/download";
+import { canvasToBlob } from "@/lib/tools/canvas-utils";
 
 export function QrCodeGeneratorUI() {
   const [input, setInput] = useState("");
@@ -29,12 +31,15 @@ export function QrCodeGeneratorUI() {
     }
   }, [input, fgColor, bgColor]);
 
-  const handleDownloadPng = useCallback(() => {
-    if (!qrDataUrl) return;
-    const a = document.createElement("a");
-    a.href = qrDataUrl;
-    a.download = "qrcode.png";
-    a.click();
+  const handleDownloadPng = useCallback(async () => {
+    const canvas = canvasRef.current;
+    if (!canvas || !qrDataUrl) return;
+    try {
+      const blob = await canvasToBlob(canvas, "image/png");
+      triggerDownload(blob, "qrcode.png");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to download PNG");
+    }
   }, [qrDataUrl]);
 
   const handleDownloadSvg = useCallback(async () => {
@@ -46,14 +51,9 @@ export function QrCodeGeneratorUI() {
         color: { dark: fgColor, light: bgColor },
       });
       const blob = new Blob([svg], { type: "image/svg+xml" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = "qrcode.svg";
-      a.click();
-      URL.revokeObjectURL(url);
-    } catch {
-      // ignore
+      triggerDownload(blob, "qrcode.svg");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to download SVG");
     }
   }, [input, fgColor, bgColor]);
 

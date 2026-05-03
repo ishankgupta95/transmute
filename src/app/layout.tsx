@@ -7,6 +7,7 @@ import "./globals.css";
 
 const GA_ID = "G-TCWDH01ZSK";
 const ADSENSE_ID = "ca-pub-8318354633894162";
+const ADS_ENABLED = process.env.NEXT_PUBLIC_ADS_ENABLED === "true";
 
 const syne = Syne({
   variable: "--font-syne",
@@ -86,11 +87,13 @@ export default function RootLayout({
             gtag('config', '${GA_ID}');
           `}
         </Script>
-        <Script
-          src={`https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=${ADSENSE_ID}`}
-          crossOrigin="anonymous"
-          strategy="afterInteractive"
-        />
+        {ADS_ENABLED && (
+          <Script
+            src={`https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=${ADSENSE_ID}`}
+            crossOrigin="anonymous"
+            strategy="afterInteractive"
+          />
+        )}
       </head>
       <body className="min-h-full flex flex-col">
         <Navbar />

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useState } from "react";
+import { triggerDownload } from "@/lib/utils/download";
 
 function csvToJson(csv: string): string {
   const lines = csv.trim().split("\n");
@@ -75,12 +76,7 @@ export function CsvToJsonUI() {
 
   const handleDownload = useCallback(() => {
     const blob = new Blob([output], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "data.json";
-    a.click();
-    URL.revokeObjectURL(url);
+    triggerDownload(blob, "data.json");
   }, [output]);
 
   return (

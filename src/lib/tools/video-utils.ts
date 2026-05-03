@@ -41,11 +41,6 @@ export async function detectAudio(file: File): Promise<boolean> {
   }
 }
 
-export interface FrameCallbackInfo {
-  timestamp: number; // microseconds
-  done: boolean;
-}
-
 /**
  * Play the video and invoke `onFrame` for each presented frame via
  * `requestVideoFrameCallback`. This is the correct way to extract frames:

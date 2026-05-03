@@ -12,7 +12,7 @@ npm run build        # Static export to ./out (also copies mupdf WASM)
 npm run lint         # ESLint (flat config, v9)
 npm test             # Vitest unit/integration tests (single run)
 npm run test:watch   # Vitest in watch mode
-npm run test:coverage # Vitest with V8 coverage (80% threshold)
+npm run test:coverage # Vitest with V8 coverage (10% threshold; will rise alongside E2E)
 npm run test:e2e     # Playwright E2E (requires dev server running)
 npm run test:all     # Unit + E2E sequentially
 ```

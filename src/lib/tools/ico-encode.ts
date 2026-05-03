@@ -1,29 +1,8 @@
+import { canvasToBlob } from "./canvas-utils";
+
 /**
  * Encode multiple PNG canvas images into a single ICO file.
  * ICO format: https://en.wikipedia.org/wiki/ICO_(file_format)
- */
-export function encodeIco(images: { canvas: HTMLCanvasElement; size: number }[]): Blob {
-  // Convert each canvas to PNG ArrayBuffer
-  const pngBuffers: ArrayBuffer[] = [];
-  const pngBlobs: Promise<ArrayBuffer>[] = images.map(
-    ({ canvas }) =>
-      new Promise<ArrayBuffer>((resolve, reject) => {
-        canvas.toBlob(
-          (blob) => {
-            if (blob) blob.arrayBuffer().then(resolve).catch(reject);
-            else reject(new Error("Canvas export failed"));
-          },
-          "image/png",
-        );
-      }),
-  );
-
-  // We need sync access, so we'll use a different approach
-  return new Blob([]); // placeholder, actual impl below
-}
-
-/**
- * Async version that properly handles the canvas-to-blob pipeline.
  */
 export async function encodeIcoAsync(
   images: { canvas: HTMLCanvasElement; size: number }[],
@@ -79,14 +58,3 @@ export async function encodeIcoAsync(
   return new Blob([buffer], { type: "image/x-icon" });
 }
 
-function canvasToBlob(canvas: HTMLCanvasElement, mimeType: string): Promise<Blob> {
-  return new Promise((resolve, reject) => {
-    canvas.toBlob(
-      (blob) => {
-        if (blob) resolve(blob);
-        else reject(new Error("Canvas export failed"));
-      },
-      mimeType,
-    );
-  });
-}

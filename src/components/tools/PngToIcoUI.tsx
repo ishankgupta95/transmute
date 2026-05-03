@@ -5,6 +5,7 @@ import { DropZone } from "@/components/tools/DropZone";
 import { DownloadButton } from "@/components/tools/DownloadButton";
 import { ProgressBar } from "@/components/tools/ProgressBar";
 import { encodeIcoAsync } from "@/lib/tools/ico-encode";
+import { loadImage } from "@/lib/tools/canvas-utils";
 import { formatFileSize } from "@/lib/utils/file-helpers";
 
 const ICO_SIZES = [16, 32, 48];
@@ -116,19 +117,4 @@ export function PngToIcoUI({ acceptFormats }: PngToIcoUIProps) {
       )}
     </div>
   );
-}
-
-function loadImage(file: File): Promise<HTMLImageElement> {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.onload = () => {
-      URL.revokeObjectURL(img.src);
-      resolve(img);
-    };
-    img.onerror = () => {
-      URL.revokeObjectURL(img.src);
-      reject(new Error("Failed to load image"));
-    };
-    img.src = URL.createObjectURL(file);
-  });
 }

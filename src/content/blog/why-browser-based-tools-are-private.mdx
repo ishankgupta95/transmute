@@ -117,6 +117,10 @@ Some examples of when browser-based architecture matters concretely:
 
 **Generating a password.** A server-based generator that uses good cryptographic randomness might be fine in theory, but you have to trust both the randomness and the operator's commitment to not log the result. The [browser-based password generator](/password-generator) uses the Web Crypto API in your browser, with no possibility of the result being logged anywhere.
 
+**Trimming or converting an audio recording.** A voice memo, a recorded meeting, a draft podcast clip — all of these can be sensitive in different ways. Browser-based tools like [audio trimmer](/audio-trimmer), [merge audio](/merge-audio), and the format converters ([MP3 to WAV](/mp3-to-wav), [WAV to MP3](/wav-to-mp3), [M4A to MP3](/m4a-to-mp3)) decode and re-encode the file in your tab using the Web Audio API. The audio is never transmitted; what you hear in the preview is what's about to download.
+
+**Recording your own screen.** A [screen recorder](/screen-recorder) that uploads to the cloud is a strange privacy posture — you're capturing whatever was on your screen at the time, including private chats, draft documents, or sensitive UI states. The browser-based screen recorder uses the `MediaRecorder` API to write the video to memory and then to a file on your machine, with no upload step.
+
 These aren't hypothetical privacy concerns. People paste sensitive data into online tools constantly because they need a quick answer; the realization that they shouldn't have comes too late or not at all.
 
 ## A pragmatic stance

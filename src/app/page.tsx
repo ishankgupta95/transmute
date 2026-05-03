@@ -1,7 +1,25 @@
 import Link from "next/link";
 import { categories } from "@/data/categories";
+import { getToolBySlug, type Tool } from "@/data/tools";
 
 const BASE_URL = "https://transmute.tools";
+
+// Hand-curated until we have GA4 top-N data; mixes commercial-intent search volume
+// with category breadth (image, PDF, video, developer).
+const POPULAR_TOOL_SLUGS = [
+  "heic-to-jpg",
+  "compress-image",
+  "merge-pdf",
+  "compress-pdf",
+  "video-to-gif",
+  "json-formatter",
+  "jwt-decoder",
+  "qr-code-generator",
+];
+
+const popularTools: Tool[] = POPULAR_TOOL_SLUGS.map((slug) => getToolBySlug(slug)).filter(
+  (t): t is Tool => t !== undefined,
+);
 
 const websiteSchema = {
   "@context": "https://schema.org",
@@ -19,14 +37,14 @@ const websiteSchema = {
 
 const categoryIcons: Record<string, React.ReactNode> = {
   "image-tools": (
-    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <rect x="3" y="3" width="18" height="18" rx="3" />
       <circle cx="8.5" cy="8.5" r="1.5" />
       <path d="m21 15-5-5L5 21" />
     </svg>
   ),
   "pdf-tools": (
-    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
       <polyline points="14 2 14 8 20 8" />
       <line x1="16" y1="13" x2="8" y2="13" />
@@ -35,20 +53,20 @@ const categoryIcons: Record<string, React.ReactNode> = {
     </svg>
   ),
   "audio-tools": (
-    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <path d="M9 18V5l12-2v13" />
       <circle cx="6" cy="18" r="3" />
       <circle cx="18" cy="16" r="3" />
     </svg>
   ),
   "video-tools": (
-    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <rect x="2" y="4" width="20" height="16" rx="2" />
       <path d="m10 9 5 3-5 3z" />
     </svg>
   ),
   "developer-tools": (
-    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <polyline points="16 18 22 12 16 6" />
       <polyline points="8 6 2 12 8 18" />
       <line x1="14" y1="4" x2="10" y2="20" />
@@ -130,11 +148,49 @@ export default function HomePage() {
                   </p>
                   <div className="mt-5 inline-flex items-center gap-1.5 text-xs font-medium text-text-muted opacity-0 transition-all duration-300 group-hover:opacity-100 group-hover:text-accent group-hover:translate-x-1">
                     Explore tools
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                       <line x1="5" y1="12" x2="19" y2="12" />
                       <polyline points="12 5 19 12 12 19" />
                     </svg>
                   </div>
+                </Link>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        {/* Popular tools */}
+        <section className="border-t border-border px-4 py-20">
+          <div className="max-w-5xl mx-auto">
+            <div className="mb-10 flex items-end justify-between gap-6 flex-wrap">
+              <div>
+                <h2 className="text-2xl md:text-3xl font-bold font-display tracking-tight text-text-primary mb-2">
+                  Popular tools
+                </h2>
+                <p className="text-text-secondary leading-relaxed max-w-xl">
+                  Some of the most-reached-for utilities — handpicked across image, PDF, video, and developer categories.
+                </p>
+              </div>
+              <Link
+                href="/image-tools"
+                className="text-sm font-medium text-text-muted hover:text-accent transition-colors duration-200"
+              >
+                Browse all 66 tools →
+              </Link>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              {popularTools.map((tool) => (
+                <Link
+                  key={tool.slug}
+                  href={`/${tool.slug}`}
+                  className="group rounded-lg border border-border bg-bg-elevated p-5 transition-all duration-300 hover:bg-bg-hover hover:border-border-hover hover:-translate-y-0.5"
+                >
+                  <p className="font-semibold text-text-primary group-hover:text-accent transition-colors duration-200 mb-2">
+                    {tool.name}
+                  </p>
+                  <p className="text-sm text-text-muted line-clamp-3 leading-relaxed">
+                    {tool.description}
+                  </p>
                 </Link>
               ))}
             </div>
@@ -151,7 +207,7 @@ export default function HomePage() {
             ].map((feature) => (
               <div key={feature.title} className="text-center md:text-left">
                 <div className="inline-flex items-center justify-center rounded-md bg-accent-muted border border-[rgba(86,184,230,0.15)] p-2.5 text-accent mb-4">
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                     <path d={feature.icon} />
                   </svg>
                 </div>

@@ -62,7 +62,7 @@ export function ToolPageLayout({
           {breadcrumbs.map((crumb, i) => (
             <li key={crumb.href} className="flex items-center gap-2">
               {i > 0 && (
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="opacity-40">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="opacity-40" aria-hidden="true">
                   <polyline points="9 18 15 12 9 6" />
                 </svg>
               )}
@@ -173,6 +173,7 @@ export function ToolPageLayout({
                     strokeLinecap="round"
                     strokeLinejoin="round"
                     className="flex-shrink-0 text-text-muted transition-transform duration-200 group-open:rotate-180"
+                    aria-hidden="true"
                   >
                     <polyline points="6 9 12 15 18 9" />
                   </svg>

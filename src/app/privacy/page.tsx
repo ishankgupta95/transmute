@@ -80,7 +80,7 @@ export default function PrivacyPage() {
               href="https://www.google.com/settings/ads"
               target="_blank"
               rel="noopener noreferrer"
-              className="text-accent hover:opacity-80 transition-opacity"
+              className="text-accent underline hover:opacity-80 transition-opacity"
             >
               Google Ads Settings
             </a>
@@ -131,7 +131,7 @@ export default function PrivacyPage() {
               href="https://ishank.dev"
               target="_blank"
               rel="noopener noreferrer"
-              className="text-accent hover:opacity-80 transition-opacity"
+              className="text-accent underline hover:opacity-80 transition-opacity"
             >
               ishank.dev
             </a>

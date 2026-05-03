@@ -49,6 +49,7 @@ export function CategoryHubPage({
               strokeLinecap="round"
               strokeLinejoin="round"
               className="opacity-40"
+              aria-hidden="true"
             >
               <polyline points="9 18 15 12 9 6" />
             </svg>

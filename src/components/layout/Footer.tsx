@@ -57,7 +57,7 @@ export function Footer() {
 
         <div className="border-t border-border pt-6 text-center text-sm text-text-muted">
           &copy; {new Date().getFullYear()} Transmute &middot; Built by{" "}
-          <a href="https://ishank.dev" target="_blank" rel="noopener noreferrer" className="text-accent hover:opacity-80 transition-opacity">
+          <a href="https://ishank.dev" target="_blank" rel="noopener noreferrer" className="text-accent underline hover:opacity-80 transition-opacity">
             Ishank
           </a>
         </div>

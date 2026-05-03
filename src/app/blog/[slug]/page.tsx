@@ -113,7 +113,7 @@ export default async function BlogPostPage({
           {breadcrumbs.map((crumb, i) => (
             <li key={crumb.href} className="flex items-center gap-2">
               {i > 0 && (
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="opacity-40">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="opacity-40" aria-hidden="true">
                   <polyline points="9 18 15 12 9 6" />
                 </svg>
               )}
@@ -153,7 +153,7 @@ export default async function BlogPostPage({
               className="inline-flex items-center gap-2 rounded-md bg-accent text-bg-primary px-4 py-2 text-sm font-semibold hover:bg-accent-hover transition-colors"
             >
               Open {primaryTool.name}
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                 <line x1="5" y1="12" x2="19" y2="12" />
                 <polyline points="12 5 19 12 12 19" />
               </svg>
@@ -169,7 +169,7 @@ export default async function BlogPostPage({
       {relatedTools.length > 0 && (
         <section className="mt-16">
           <h2 className="text-xl font-bold font-display text-text-primary mb-6">
-            Tools mentioned in this post
+            Related tools
           </h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             {relatedTools.map((tool) => (

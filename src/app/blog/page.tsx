@@ -67,7 +67,7 @@ export default function BlogIndexPage() {
             </Link>
           </li>
           <li className="flex items-center gap-2">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="opacity-40">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="opacity-40" aria-hidden="true">
               <polyline points="9 18 15 12 9 6" />
             </svg>
             <span className="text-text-secondary">Blog</span>

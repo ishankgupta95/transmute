@@ -23,6 +23,55 @@ export function tinyPng(size = 8, rgb: [number, number, number] = [86, 184, 230]
 }
 
 /**
+ * Non-square PNG variant. Required for tests where the aspect-ratio math
+ * actually has to mean something — a square input makes width-locking a
+ * tautology.
+ */
+export function tinyRectPng(
+  width: number,
+  height: number,
+  rgb: [number, number, number] = [86, 184, 230],
+): FixtureFile {
+  const bytes = buildPng(width, height, rgb);
+  return {
+    name: `sample-${width}x${height}.png`,
+    mimeType: "image/png",
+    buffer: bytes,
+  };
+}
+
+/**
+ * Two-tone PNG: the left half is `left`, the right half is `right`. Used by
+ * the color-palette extractor test so we can assert the palette captures more
+ * than one bucket.
+ */
+export function twoColorPng(
+  width = 32,
+  height = 32,
+  left: [number, number, number] = [220, 30, 40],
+  right: [number, number, number] = [30, 60, 200],
+): FixtureFile {
+  const stride = 1 + width * 3;
+  const raw = Buffer.alloc(stride * height);
+  for (let y = 0; y < height; y++) {
+    raw[y * stride] = 0;
+    for (let x = 0; x < width; x++) {
+      const o = y * stride + 1 + x * 3;
+      const c = x < width / 2 ? left : right;
+      raw[o] = c[0];
+      raw[o + 1] = c[1];
+      raw[o + 2] = c[2];
+    }
+  }
+  const bytes = wrapPng(width, height, raw);
+  return {
+    name: `sample-2color-${width}x${height}.png`,
+    mimeType: "image/png",
+    buffer: bytes,
+  };
+}
+
+/**
  * 1x1 baseline JPEG (verified-good) — accepted by every browser decoder.
  * Source: smallest-valid-image testing lore (the same blob used widely as a
  * 1px tracking GIF's JPEG cousin).
@@ -197,7 +246,10 @@ function buildPng(width: number, height: number, rgb: [number, number, number]):
       raw[o + 2] = rgb[2];
     }
   }
+  return wrapPng(width, height, raw);
+}
 
+function wrapPng(width: number, height: number, raw: Buffer): Buffer {
   // Wrap in zlib stored-blocks (no compression). Avoids depending on a
   // compressor while still being a valid PNG.
   const zlibData = zlibStored(raw);

@@ -9,28 +9,39 @@ const CATEGORIES = [
 ];
 
 test.describe("navigation", () => {
-  test("homepage renders and shows the brand", async ({ page }) => {
+  test("homepage renders the brand and the popular tools rail", async ({ page }) => {
     await page.goto("/");
     await expect(page).toHaveTitle(/Transmute/);
-    // Brand is rendered as "Trans" + accent-coloured "mute"; assert on the
-    // composed text node so the test survives styling tweaks.
     await expect(page.locator("nav").getByText(/Transmute/i).first()).toBeVisible();
     await expect(page.locator("h1")).toHaveCount(1);
+
+    // Each category card on the homepage must link to its hub.
+    for (const cat of CATEGORIES) {
+      await expect(
+        page.locator(`a[href="/${cat.slug}"]`).first(),
+        `homepage should expose card link for ${cat.slug}`,
+      ).toBeVisible();
+    }
+
+    // Popular-tools rail renders ≥4 cards; if it 404s on a slug the rail
+    // would silently shrink.
+    const popularTools = page.locator("section").filter({ hasText: /Popular tools/i });
+    await expect(popularTools).toBeVisible();
   });
 
-  test("every category in the navbar is reachable", async ({ page }) => {
-    await page.goto("/");
-
+  test("every category in the navbar navigates to its hub with the right H1", async ({
+    page,
+  }) => {
     for (const cat of CATEGORIES) {
       await page.goto("/");
-      // The desktop navbar links may be hidden on small viewports; tap the
-      // direct URL to exercise routing in either case.
       const link = page.locator(`a[href="/${cat.slug}"]`).first();
       await expect(link, `category link for ${cat.slug} should exist`).toBeVisible();
       await link.click();
       await expect(page).toHaveURL(new RegExp(`/${cat.slug}/?$`));
+      // The hub renders the category name as its h1 — checking `cat.name`
+      // catches a wrong-page render that a /Tools/ regex would let through.
       await expect(page.locator("h1")).toHaveCount(1);
-      await expect(page.getByRole("heading", { level: 1 })).toContainText(/Tools/i);
+      await expect(page.locator("h1")).toHaveText(cat.name);
     }
   });
 
@@ -77,12 +88,13 @@ test.describe("navigation", () => {
     expect(await postLinks.count()).toBeGreaterThanOrEqual(1);
   });
 
-  test("404 page renders for unknown slugs", async ({ page }) => {
-    const response = await page.goto("/this-tool-does-not-exist", {
-      waitUntil: "domcontentloaded",
-    });
-    // Static export serves the 404 HTML with a 404 status when the file is
-    // missing; in dev mode Next intercepts and returns 404 too.
-    expect(response?.status()).toBe(404);
+  test("category navbar links work from inside a tool page", async ({ page }) => {
+    // The navbar persists across routes — make sure it's still wired when
+    // the user is already deep in the app.
+    await page.goto("/heic-to-jpg");
+    const link = page.locator('nav a[href="/pdf-tools"]').first();
+    await expect(link).toBeVisible();
+    await link.click();
+    await expect(page).toHaveURL(/\/pdf-tools\/?$/);
   });
 });

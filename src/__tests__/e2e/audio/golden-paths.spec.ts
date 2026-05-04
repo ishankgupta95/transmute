@@ -62,7 +62,54 @@ test.describe("audio golden paths", () => {
     // encoding path.
     await page.goto("/mp3-to-wav");
     await expect(page.locator("h1")).toHaveCount(1);
-    await expect(page.locator('input[type="file"]').first()).toBeAttached();
+    const input = page.locator('input[type="file"]').first();
+    await expect(input).toBeAttached();
+    // The accept attribute is what tells the browser which formats to surface
+    // in the OS file picker; a regression here breaks the tool silently.
+    await expect(input).toHaveAttribute("accept", ".mp3");
+  });
+
+  test("m4a-to-mp3: page renders with a dropzone scoped to .m4a (binary fixture not shipped)", async ({
+    page,
+  }) => {
+    await page.goto("/m4a-to-mp3");
+    await expect(page.locator("h1")).toHaveCount(1);
+    const input = page.locator('input[type="file"]').first();
+    await expect(input).toBeAttached();
+    await expect(input).toHaveAttribute("accept", ".m4a,.aac");
+  });
+
+  test("audio-trimmer: trims a 1s WAV to a sub-second WAV (functional path)", async ({
+    page,
+  }) => {
+    test.setTimeout(60_000);
+    await page.goto("/audio-trimmer");
+    await uploadFile(page, tinyWav(1));
+
+    // Wait for the audio element to read its duration; the "Selected:" line
+    // only appears once endTime > startTime.
+    await expect(page.getByText(/Duration:/)).toBeVisible({ timeout: 10_000 });
+
+    // The end-time number input is the second number input on the page; set
+    // a sub-second range so the encoded output is meaningfully shorter.
+    const numbers = page.locator('input[type="number"]');
+    await numbers.first().fill("0.2");
+    await numbers.nth(1).fill("0.7");
+
+    // WAV output keeps the test off the slow lamejs encoder.
+    await page.getByRole("button", { name: "WAV", exact: true }).click();
+    await page.getByRole("button", { name: "Trim", exact: true }).click();
+
+    const { suggestedFilename, download } = await waitForDownload(
+      page,
+      downloadButton(page),
+      30_000,
+    );
+    expect(suggestedFilename).toMatch(/\.wav$/i);
+    const bytes = await downloadBytes(download);
+    // RIFF/WAVE header magic.
+    expect(bytes.subarray(0, 4).toString("ascii")).toBe("RIFF");
+    expect(bytes.subarray(8, 12).toString("ascii")).toBe("WAVE");
   });
 
   test("audio-trimmer: page renders, dropzone accepts audio", async ({ page }) => {

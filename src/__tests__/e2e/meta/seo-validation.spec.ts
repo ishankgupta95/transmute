@@ -3,27 +3,56 @@ import { assertSeoBasics } from "../helpers";
 
 /**
  * SEO contract: every page archetype renders the canonical, OG, JSON-LD and
- * meta-description scaffolding the unit tests assume. Sample 10 tool pages
- * across categories so we don't burn CI on all 64 — the unit suite already
- * structurally validates every entry in tools.ts.
+ * meta-description scaffolding the unit tests assume. Sample tools picked to
+ * cover every distinct toolType (different client component / SEO injector)
+ * so a regression in the metadata pipeline for any one client is caught.
+ * The all-tools sweep (`all-tools.spec.ts`) covers raw page-load coverage.
  */
 
 const SAMPLE_TOOLS = [
-  // image
+  // image — converter, compressor variant, resizer, cropper, exif, base64,
+  // ico, favicon, palette
   "heic-to-jpg",
   "compress-image",
+  "compress-image-to-200kb",
   "resize-image",
-  // pdf
+  "crop-image",
+  "exif-viewer",
+  "image-to-base64",
+  "png-to-ico",
+  "favicon-generator",
+  "image-color-palette",
+  // pdf — every distinct pdf toolType
   "merge-pdf",
+  "split-pdf",
   "compress-pdf",
+  "pdf-to-jpg",
+  "images-to-pdf",
+  "rotate-pdf",
+  "add-page-numbers",
+  "pdf-page-reorder",
   // audio
   "wav-to-mp3",
+  "mp3-to-wav",
+  "m4a-to-mp3",
   "audio-trimmer",
+  "merge-audio",
   // video
+  "video-to-gif",
+  "video-trimmer",
   "compress-video",
-  // dev
+  "screen-recorder",
+  "mp4-to-mp3",
+  "webm-to-mp4",
+  // dev — sample across formatter/encoder/generator/utility families
   "json-formatter",
+  "csv-to-json",
+  "base64-encode-decode",
+  "jwt-decoder",
+  "uuid-generator",
+  "qr-code-generator",
   "regex-tester",
+  "color-picker",
 ];
 
 test.describe("SEO validation", () => {

@@ -116,4 +116,62 @@ test.describe("PDF golden paths", () => {
     const bytes = await downloadBytes(download);
     expect(bytes.subarray(0, 5).toString("ascii")).toBe("%PDF-");
   });
+
+  test("pdf-to-jpg: rasterises every page and downloads JPEG bytes", async ({ page }) => {
+    test.setTimeout(60_000);
+    await page.goto("/pdf-to-jpg");
+    const pdf = await tinyPdf(2);
+    await uploadFile(page, pdf);
+
+    await page
+      .getByRole("button", { name: /Convert to Images/, exact: true })
+      .click();
+
+    // The result grid renders one card per page; the "N pages converted"
+    // label only appears once rasterisation finishes. Wait for it.
+    await expect(page.getByText(/2 pages converted/i)).toBeVisible({ timeout: 30_000 });
+
+    // Use the per-page download icon button to capture the first image. The
+    // grid's per-card download button is an icon-only <button> next to the
+    // "Page N" label — target the closest "Download All" CTA which carries
+    // a stable accessible name instead.
+    const { suggestedFilename, download } = await waitForDownload(
+      page,
+      page.getByRole("button", { name: /Download All/i }),
+      30_000,
+    );
+    // "Download All" iterates downloads serially via triggerDownload — the
+    // first one fired is the one Playwright captures.
+    expect(suggestedFilename).toMatch(/\.jpg$/i);
+    const bytes = await downloadBytes(download);
+    // JPEG SOI marker.
+    expect(bytes.subarray(0, 2).toString("hex")).toBe("ffd8");
+  });
+
+  test("pdf-page-reorder: loads pages, allows save, and downloads a reordered PDF", async ({
+    page,
+  }) => {
+    test.setTimeout(60_000);
+    await page.goto("/pdf-page-reorder");
+    const pdf = await tinyPdf(3);
+    await uploadFile(page, pdf);
+
+    // The header line reports the page count; wait for it before clicking save.
+    await expect(page.getByText(/3 pages\. Drag thumbnails/)).toBeVisible({
+      timeout: 30_000,
+    });
+
+    await page
+      .getByRole("button", { name: /Save Reordered PDF/, exact: true })
+      .click();
+
+    const { suggestedFilename, download } = await waitForDownload(
+      page,
+      downloadButton(page),
+      30_000,
+    );
+    expect(suggestedFilename).toMatch(/-reordered\.pdf$/);
+    const bytes = await downloadBytes(download);
+    expect(bytes.subarray(0, 5).toString("ascii")).toBe("%PDF-");
+  });
 });

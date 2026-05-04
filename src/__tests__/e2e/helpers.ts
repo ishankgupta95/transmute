@@ -88,6 +88,12 @@ export async function assertSeoBasics(
      * longer copy and only need to be present + non-trivial.
      */
     descriptionRange?: [number, number];
+    /**
+     * Static pages (about, privacy) intentionally don't ship JSON-LD —
+     * they're plain content. Set this to opt out of the JSON-LD assertion
+     * while keeping the rest of the SEO contract.
+     */
+    requireJsonLd?: boolean;
   } = {},
 ): Promise<void> {
   // Exactly one H1 — checked structurally in the unit suite, but worth
@@ -121,11 +127,15 @@ export async function assertSeoBasics(
   await expect(page.locator('meta[name="twitter:card"]')).toHaveCount(1);
 
   // JSON-LD blocks parse as JSON. If a caller passed expected @type values,
-  // confirm at least one block carries each.
+  // confirm at least one block carries each. Static pages (privacy, about)
+  // can opt out via `requireJsonLd: false`.
+  const requireJsonLd = options.requireJsonLd ?? true;
   const ldBlocks = await page
     .locator('script[type="application/ld+json"]')
     .allTextContents();
-  expect(ldBlocks.length, "at least one JSON-LD block expected").toBeGreaterThan(0);
+  if (requireJsonLd) {
+    expect(ldBlocks.length, "at least one JSON-LD block expected").toBeGreaterThan(0);
+  }
   const parsed = ldBlocks.map((raw) => JSON.parse(raw) as unknown);
 
   for (const expected of options.expectedJsonLdTypes ?? []) {

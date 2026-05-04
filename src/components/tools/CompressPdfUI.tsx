@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useState } from "react";
+import { ErrorMessage } from "@/components/tools/ErrorMessage";
 import { DropZone } from "@/components/tools/DropZone";
 import { DownloadButton } from "@/components/tools/DownloadButton";
 import { ProgressBar } from "@/components/tools/ProgressBar";
@@ -44,8 +45,8 @@ export function CompressPdfUI() {
         <DropZone accept=".pdf" onFiles={handleFiles} />
       ) : (
         <>
-          {status === "processing" && <ProgressBar progress={50} />}
-          {error && <p className="text-sm text-error">{error}</p>}
+          {status === "processing" && <ProgressBar progress={null} />}
+          {error && <ErrorMessage message={error} />}
 
           {result && (
             <div className="rounded-lg border border-border bg-bg-secondary p-5 space-y-3">

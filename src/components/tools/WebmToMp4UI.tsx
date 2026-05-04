@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useState } from "react";
+import { ErrorMessage } from "@/components/tools/ErrorMessage";
 import { DropZone } from "@/components/tools/DropZone";
 import { FilePreview } from "@/components/tools/FilePreview";
 import { DownloadButton } from "@/components/tools/DownloadButton";
@@ -71,7 +72,7 @@ export function WebmToMp4UI() {
           )}
 
           {status === "error" && (
-            <p className="text-sm text-error text-center">{error}</p>
+            <ErrorMessage message={error} />
           )}
 
           <div className="flex items-center justify-center gap-3">

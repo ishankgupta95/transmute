@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useState, useEffect, useRef } from "react";
+import { ErrorMessage } from "@/components/tools/ErrorMessage";
 import { DropZone } from "@/components/tools/DropZone";
 import { DownloadButton } from "@/components/tools/DownloadButton";
 import { ProgressBar } from "@/components/tools/ProgressBar";
@@ -152,8 +153,8 @@ export function PdfPageReorderUI() {
         </div>
       )}
 
-      {(status === "loading" || status === "processing") && <ProgressBar progress={50} />}
-      {error && <p className="text-sm text-error">{error}</p>}
+      {(status === "loading" || status === "processing") && <ProgressBar progress={null} />}
+      {error && <ErrorMessage message={error} />}
 
       <div className="flex items-center gap-3">
         {order.length > 0 && status !== "done" && (

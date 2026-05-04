@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useRef, useState } from "react";
+import { ErrorMessage } from "@/components/tools/ErrorMessage";
 import QRCode from "qrcode";
 import { triggerDownload } from "@/lib/utils/download";
 import { canvasToBlob } from "@/lib/tools/canvas-utils";
@@ -92,7 +93,7 @@ export function QrCodeGeneratorUI() {
       </div>
 
       {error && (
-        <div className="rounded-lg border border-error/30 bg-error/10 p-3 text-sm text-error">{error}</div>
+        <ErrorMessage message={error} />
       )}
 
       {/* Canvas (hidden until generated) */}

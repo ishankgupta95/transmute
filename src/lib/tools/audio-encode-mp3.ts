@@ -1,4 +1,4 @@
-import { Mp3Encoder } from "lamejs";
+import { Mp3Encoder } from "@breezystack/lamejs";
 import type { ProcessedResult } from "@/hooks/useFileProcessor";
 
 export interface Mp3EncodeOptions {
@@ -18,7 +18,10 @@ export function encodeToMp3(buffer: AudioBuffer, bitrate: number): Blob {
   const right = channels > 1 ? floatTo16Bit(buffer.getChannelData(1)) : undefined;
 
   const chunkSize = 1152; // MP3 frame size
-  const chunks: Int8Array[] = [];
+  // @breezystack/lamejs returns Uint8Array from encodeBuffer/flush; the
+  // upstream zhuker/lamejs typed it as Int8Array. Either is fine inside a
+  // Blob — the on-wire bytes are identical.
+  const chunks: Uint8Array[] = [];
 
   for (let i = 0; i < left.length; i += chunkSize) {
     const leftChunk = left.subarray(i, i + chunkSize);

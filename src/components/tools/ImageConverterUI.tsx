@@ -5,8 +5,11 @@ import { DropZone } from "@/components/tools/DropZone";
 import { FilePreview } from "@/components/tools/FilePreview";
 import { DownloadButton } from "@/components/tools/DownloadButton";
 import { ProgressBar } from "@/components/tools/ProgressBar";
+import { ErrorMessage } from "@/components/tools/ErrorMessage";
+import { StatusMessage } from "@/components/tools/StatusMessage";
 import { convertImage, type ImageConvertOptions } from "@/lib/tools/image-convert";
 import { useFileProcessor } from "@/hooks/useFileProcessor";
+import { useObjectUrl } from "@/hooks/useObjectUrl";
 
 interface ImageConverterUIProps {
   acceptFormats: string;
@@ -30,10 +33,14 @@ export function ImageConverterUI({
 
   const { status, result, error, process, reset } = useFileProcessor(processFn);
 
+  const resultPreviewUrl = useObjectUrl(result?.blob);
+
   const handleFiles = useCallback(
     (files: File[]) => {
       const f = files[0];
       if (!f) return;
+      // Revoke any prior preview URL before replacing.
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
       setFile(f);
       reset();
 
@@ -41,7 +48,7 @@ export function ImageConverterUI({
       const url = URL.createObjectURL(f);
       setPreviewUrl(url);
     },
-    [reset],
+    [previewUrl, reset],
   );
 
   const handleConvert = useCallback(() => {
@@ -56,12 +63,14 @@ export function ImageConverterUI({
     reset();
   }, [previewUrl, reset]);
 
-  const resultPreviewUrl = result ? URL.createObjectURL(result.blob) : null;
-
   return (
     <div className="space-y-6">
       {!file ? (
-        <DropZone accept={acceptFormats} onFiles={handleFiles} />
+        <DropZone
+          accept={acceptFormats}
+          onFiles={handleFiles}
+          label={`Upload a ${sourceFormat.toUpperCase()} image to convert`}
+        />
       ) : (
         <>
           {/* Preview row */}
@@ -109,15 +118,13 @@ export function ImageConverterUI({
           {/* Progress */}
           {status === "processing" && (
             <div className="space-y-2">
-              <ProgressBar progress={50} />
-              <p className="text-sm text-text-muted text-center">Converting...</p>
+              <ProgressBar progress={null} label="Converting image" />
+              <StatusMessage>Converting...</StatusMessage>
             </div>
           )}
 
           {/* Error */}
-          {status === "error" && (
-            <p className="text-sm text-error text-center">{error}</p>
-          )}
+          {status === "error" && error && <ErrorMessage message={error} />}
 
           {/* Actions */}
           <div className="flex items-center justify-center gap-3">

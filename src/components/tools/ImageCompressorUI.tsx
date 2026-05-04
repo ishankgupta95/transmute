@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useState } from "react";
+import { ErrorMessage } from "@/components/tools/ErrorMessage";
 import { DropZone } from "@/components/tools/DropZone";
 import { FilePreview } from "@/components/tools/FilePreview";
 import { DownloadButton } from "@/components/tools/DownloadButton";
@@ -158,13 +159,13 @@ export function ImageCompressorUI({
           {/* Progress */}
           {isProcessing && (
             <div className="space-y-2">
-              <ProgressBar progress={50} />
+              <ProgressBar progress={null} />
               <p className="text-sm text-text-muted text-center">Compressing...</p>
             </div>
           )}
 
           {/* Error */}
-          {error && <p className="text-sm text-error text-center">{error}</p>}
+          {error && <ErrorMessage message={error} />}
 
           {/* Results */}
           {results.length > 0 && (

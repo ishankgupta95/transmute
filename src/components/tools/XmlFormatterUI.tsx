@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useState } from "react";
+import { ErrorMessage } from "@/components/tools/ErrorMessage";
 
 function formatXml(xml: string): string {
   const parser = new DOMParser();
@@ -96,7 +97,7 @@ export function XmlFormatterUI() {
       </div>
 
       {error && (
-        <div className="rounded-lg border border-error/30 bg-error/10 p-3 text-sm text-error">{error}</div>
+        <ErrorMessage message={error} />
       )}
 
       {output && (

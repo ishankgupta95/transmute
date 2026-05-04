@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useState } from "react";
+import { ErrorMessage } from "@/components/tools/ErrorMessage";
 import { DropZone } from "@/components/tools/DropZone";
 import { DownloadButton } from "@/components/tools/DownloadButton";
 import { ProgressBar } from "@/components/tools/ProgressBar";
@@ -103,8 +104,8 @@ export function AddPageNumbersUI() {
         </div>
       </div>
 
-      {status === "processing" && <ProgressBar progress={50} />}
-      {error && <p className="text-sm text-error">{error}</p>}
+      {status === "processing" && <ProgressBar progress={null} />}
+      {error && <ErrorMessage message={error} />}
 
       <div className="flex items-center gap-3">
         {status !== "done" && (

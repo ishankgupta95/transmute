@@ -5,6 +5,8 @@ import { DropZone } from "@/components/tools/DropZone";
 import { FilePreview } from "@/components/tools/FilePreview";
 import { DownloadButton } from "@/components/tools/DownloadButton";
 import { ProgressBar } from "@/components/tools/ProgressBar";
+import { ErrorMessage } from "@/components/tools/ErrorMessage";
+import { StatusMessage } from "@/components/tools/StatusMessage";
 import {
   resizeImage,
   RESIZE_PRESETS,
@@ -12,6 +14,7 @@ import {
   type ImageResizeOptions,
 } from "@/lib/tools/image-resize";
 import type { ProcessedResult } from "@/hooks/useFileProcessor";
+import { useObjectUrl } from "@/hooks/useObjectUrl";
 
 interface ImageResizerUIProps {
   acceptFormats: string;
@@ -31,23 +34,32 @@ export function ImageResizerUI({ acceptFormats }: ImageResizerUIProps) {
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const handleFiles = useCallback((files: File[]) => {
-    const f = files[0];
-    if (!f) return;
-    setFile(f);
-    setResult(null);
-    setError(null);
-    const url = URL.createObjectURL(f);
-    setPreviewUrl(url);
+  const resultPreviewUrl = useObjectUrl(result?.blob);
 
-    // Read natural dimensions
-    const img = new Image();
-    img.onload = () => {
-      setNaturalSize({ w: img.naturalWidth, h: img.naturalHeight });
-      URL.revokeObjectURL(url);
-    };
-    img.src = URL.createObjectURL(f);
-  }, []);
+  const handleFiles = useCallback(
+    (files: File[]) => {
+      const f = files[0];
+      if (!f) return;
+      // Revoke any prior preview URL before replacing.
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
+      setFile(f);
+      setResult(null);
+      setError(null);
+      const url = URL.createObjectURL(f);
+      setPreviewUrl(url);
+
+      // Read natural dimensions from the same URL (don't allocate a second one).
+      const img = new Image();
+      img.onload = () => {
+        setNaturalSize({ w: img.naturalWidth, h: img.naturalHeight });
+      };
+      img.onerror = () => {
+        setError("Could not read this image. Try a different file.");
+      };
+      img.src = url;
+    },
+    [previewUrl],
+  );
 
   const handleWidthChange = useCallback(
     (w: number) => {
@@ -105,12 +117,10 @@ export function ImageResizerUI({ acceptFormats }: ImageResizerUIProps) {
     setError(null);
   }, [previewUrl]);
 
-  const resultPreviewUrl = result ? URL.createObjectURL(result.blob) : null;
-
   return (
     <div className="space-y-6">
       {!file ? (
-        <DropZone accept={acceptFormats} onFiles={handleFiles} />
+        <DropZone accept={acceptFormats} onFiles={handleFiles} label="Upload an image to resize" />
       ) : (
         <>
           {/* Preview */}
@@ -188,6 +198,8 @@ export function ImageResizerUI({ acceptFormats }: ImageResizerUIProps) {
                   lockAspect ? "text-accent" : "text-text-muted"
                 }`}
                 title={lockAspect ? "Aspect ratio locked" : "Aspect ratio unlocked"}
+                aria-label={lockAspect ? "Unlock aspect ratio" : "Lock aspect ratio"}
+                aria-pressed={lockAspect}
               >
                 {lockAspect ? "🔗" : "🔓"}
               </button>
@@ -256,11 +268,11 @@ export function ImageResizerUI({ acceptFormats }: ImageResizerUIProps) {
           {/* Progress / Error */}
           {isProcessing && (
             <div className="space-y-2">
-              <ProgressBar progress={50} />
-              <p className="text-sm text-text-muted text-center">Resizing...</p>
+              <ProgressBar progress={null} label="Resizing image" />
+              <StatusMessage>Resizing...</StatusMessage>
             </div>
           )}
-          {error && <p className="text-sm text-error text-center">{error}</p>}
+          {error && <ErrorMessage message={error} />}
 
           {/* Actions */}
           <div className="flex items-center justify-center gap-3">

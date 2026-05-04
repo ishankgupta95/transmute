@@ -31,7 +31,7 @@ export function MobileNav() {
 
   const overlay = open ? (
     <div
-      className={`fixed inset-0 top-16 transition-opacity duration-300 ${
+      className={`fixed inset-0 top-16 transition-opacity duration-300 motion-reduce:transition-none ${
         visible ? "opacity-100" : "opacity-0"
       }`}
       style={{ zIndex: 9999, backgroundColor: "#08080a" }}
@@ -57,10 +57,10 @@ export function MobileNav() {
           <Link
             href="/blog"
             onClick={() => { setVisible(false); setOpen(false); }}
-            className={`group flex items-center gap-3 rounded-lg px-4 py-3.5 text-lg font-medium text-text-secondary hover:text-text-primary hover:bg-[rgba(86,184,230,0.06)] transition-all duration-300 ${
+            className={`group flex items-center gap-3 rounded-lg px-4 py-3.5 text-lg font-medium text-text-secondary hover:text-text-primary hover:bg-[rgba(86,184,230,0.06)] transition-all duration-300 motion-reduce:transition-none ${
               visible
                 ? "opacity-100 translate-x-0"
-                : "opacity-0 -translate-x-3"
+                : "opacity-0 -translate-x-3 motion-reduce:translate-x-0"
             }`}
             style={{ transitionDelay: visible ? `${categories.length * 50}ms` : "0ms" }}
           >
@@ -79,8 +79,9 @@ export function MobileNav() {
           if (open) setVisible(false);
           setOpen(!open);
         }}
-        className="relative p-2 rounded-md text-text-secondary hover:text-text-primary hover:bg-[rgba(255,255,255,0.04)] transition-colors"
-        aria-label="Toggle menu"
+        className="relative inline-flex items-center justify-center min-h-11 min-w-11 rounded-md text-text-secondary hover:text-text-primary hover:bg-[rgba(255,255,255,0.04)] transition-colors motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-bg-primary"
+        aria-label={open ? "Close menu" : "Open menu"}
+        aria-expanded={open}
       >
         <span
           className={`block transition-all duration-300 ${open ? "rotate-90 scale-110 text-accent" : ""}`}

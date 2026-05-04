@@ -5,7 +5,10 @@ import { DropZone } from "@/components/tools/DropZone";
 import { FilePreview } from "@/components/tools/FilePreview";
 import { DownloadButton } from "@/components/tools/DownloadButton";
 import { ProgressBar } from "@/components/tools/ProgressBar";
+import { ErrorMessage } from "@/components/tools/ErrorMessage";
+import { StatusMessage } from "@/components/tools/StatusMessage";
 import { formatFileSize } from "@/lib/utils/file-helpers";
+import { useObjectUrl } from "@/hooks/useObjectUrl";
 
 type Status = "idle" | "processing" | "done" | "error";
 
@@ -26,6 +29,8 @@ export function VideoToGifUI() {
   const [result, setResult] = useState<{ blob: Blob; fileName: string; size: number } | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
 
+  const resultUrl = useObjectUrl(result?.blob);
+
   const handleFiles = useCallback((files: File[]) => {
     const f = files[0];
     if (!f) return;
@@ -34,17 +39,21 @@ export function VideoToGifUI() {
     setResult(null);
     setError(null);
 
-    const url = URL.createObjectURL(f);
-    setVideoUrl(url);
-
-    const video = document.createElement("video");
-    video.src = url;
-    video.addEventListener("loadedmetadata", () => {
-      const dur = video.duration;
-      setDuration(dur);
-      setStartTime(0);
-      setEndTime(Math.min(dur, 10));
+    setVideoUrl((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return URL.createObjectURL(f);
     });
+  }, []);
+
+  // Reading metadata: wire to the rendered <video> element via onLoadedMetadata
+  // (no need for a hidden video element).
+  const handleVideoLoadedMetadata = useCallback(() => {
+    const v = videoRef.current;
+    if (!v || !Number.isFinite(v.duration)) return;
+    const dur = v.duration;
+    setDuration(dur);
+    setStartTime(0);
+    setEndTime(Math.min(dur, 10));
   }, []);
 
   const handleConvert = useCallback(async () => {
@@ -90,6 +99,7 @@ export function VideoToGifUI() {
                 ref={videoRef}
                 src={videoUrl}
                 controls
+                onLoadedMetadata={handleVideoLoadedMetadata}
                 className="w-full rounded max-h-64 bg-black"
               />
               <p className="text-xs text-text-muted mt-2">
@@ -184,28 +194,31 @@ export function VideoToGifUI() {
 
           {status === "processing" && (
             <div className="space-y-2">
-              <ProgressBar progress={progress} />
-              <p className="text-sm text-text-muted text-center">
+              <ProgressBar
+                progress={progress > 0 ? progress : null}
+                label="Converting video to GIF"
+              />
+              <StatusMessage>
                 Converting to GIF{progress > 0 ? ` (${progress}%)` : "..."}
-              </p>
+              </StatusMessage>
             </div>
           )}
 
-          {status === "error" && (
-            <p className="text-sm text-error text-center">{error}</p>
-          )}
+          {status === "error" && error && <ErrorMessage message={error} />}
 
           {result && (
             <>
               <FilePreview fileName={result.fileName} fileSize={result.size} label="GIF" />
-              <div className="rounded-lg border border-border bg-bg-elevated p-4">
-                <p className="text-xs text-text-muted mb-2">Preview</p>
-                <img
-                  src={URL.createObjectURL(result.blob)}
-                  alt="GIF preview"
-                  className="max-w-full rounded"
-                />
-              </div>
+              {resultUrl && (
+                <div className="rounded-lg border border-border bg-bg-elevated p-4">
+                  <p className="text-xs text-text-muted mb-2">Preview</p>
+                  <img
+                    src={resultUrl}
+                    alt="GIF preview"
+                    className="max-w-full rounded"
+                  />
+                </div>
+              )}
             </>
           )}
 

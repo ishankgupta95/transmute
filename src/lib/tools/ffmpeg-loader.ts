@@ -7,6 +7,7 @@ const CORE_BASE_URL = `https://unpkg.com/@ffmpeg/core@${CORE_VERSION}/dist/umd`;
 
 let ffmpeg: FFmpeg | null = null;
 let loadPromise: Promise<void> | null = null;
+let currentOnProgress: ((progress: number) => void) | null = null;
 
 /**
  * Validate a file is under the 100 MB size limit.
@@ -26,32 +27,43 @@ export function validateVideoFileSize(file: File): void {
  * Note: the multi-threaded @ffmpeg/core-mt build deadlocks in many browsers
  * due to emscripten pthread issues, so we use single-threaded and compensate
  * with aggressive encoding flag optimizations instead.
+ *
+ * The progress listener is registered once per instance and delegates to a
+ * mutable callback ref — passing `onProgress` to subsequent calls swaps the
+ * active handler instead of accumulating listeners.
  */
 export async function getFFmpeg(
   onProgress?: (progress: number) => void,
 ): Promise<FFmpeg> {
+  currentOnProgress = onProgress ?? null;
+
   if (ffmpeg && ffmpeg.loaded) return ffmpeg;
 
   if (!loadPromise) {
-    ffmpeg = new FFmpeg();
+    const instance = new FFmpeg();
 
-    if (onProgress) {
-      ffmpeg.on("progress", ({ progress }) => {
-        onProgress(Math.min(Math.round(progress * 100), 100));
-      });
-    }
-
-    ffmpeg.on("log", ({ message }) => {
+    instance.on("log", ({ message }) => {
       // eslint-disable-next-line no-console
       console.log("[ffmpeg]", message);
     });
 
+    // One progress listener for the lifetime of the instance; routes to
+    // whichever caller is currently waiting.
+    instance.on("progress", ({ progress }) => {
+      const cb = currentOnProgress;
+      if (cb) cb(Math.min(Math.round(progress * 100), 100));
+    });
+
+    // Capture the in-flight load. On failure we null out state so the
+    // *next* getFFmpeg() call can retry; concurrent awaiters see the same
+    // rejection rather than accidentally retrying mid-flight.
     loadPromise = (async () => {
       try {
-        await ffmpeg!.load({
+        await instance.load({
           coreURL: await toBlobURL(`${CORE_BASE_URL}/ffmpeg-core.js`, "text/javascript"),
           wasmURL: await toBlobURL(`${CORE_BASE_URL}/ffmpeg-core.wasm`, "application/wasm"),
         });
+        ffmpeg = instance;
       } catch (err) {
         ffmpeg = null;
         loadPromise = null;
@@ -61,7 +73,8 @@ export async function getFFmpeg(
   }
 
   await loadPromise;
-  return ffmpeg!;
+  if (!ffmpeg) throw new Error("FFmpeg failed to initialize");
+  return ffmpeg;
 }
 
 /**

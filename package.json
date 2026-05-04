@@ -16,6 +16,7 @@
     "prepare": "husky"
   },
   "dependencies": {
+    "@breezystack/lamejs": "^1.2.7",
     "@ffmpeg/ffmpeg": "^0.12.15",
     "@ffmpeg/util": "^0.12.2",
     "@mdx-js/loader": "^3.1.1",
@@ -31,7 +32,6 @@
     "heic2any": "^0.0.4",
     "js-md5": "^0.8.3",
     "jszip": "^3.10.1",
-    "lamejs": "^1.2.1",
     "lucide-react": "^1.7.0",
     "marked": "^17.0.5",
     "mp4-muxer": "^5.2.2",

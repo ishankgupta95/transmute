@@ -84,7 +84,8 @@ export function TimestampConverterUI() {
             />
             <button
               onClick={() => handleCopy(field.label, field.value)}
-              className="text-xs text-accent hover:text-accent-hover transition-colors shrink-0"
+              aria-label={copied === field.label ? `Copied ${field.label}` : `Copy ${field.label}`}
+              className="shrink-0 inline-flex items-center justify-center min-h-9 px-3 py-1.5 rounded-md text-xs font-medium text-accent hover:bg-accent-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-bg-primary transition-colors"
             >
               {copied === field.label ? "Copied!" : "Copy"}
             </button>

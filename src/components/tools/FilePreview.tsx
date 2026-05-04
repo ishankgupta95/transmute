@@ -20,11 +20,15 @@ export function FilePreview({ fileName, fileSize, previewUrl, label }: FilePrevi
       {previewUrl && (
         <img
           src={previewUrl}
-          alt={fileName}
+          alt={label ? `${label} preview of ${fileName}` : `Preview of ${fileName}`}
+          loading="lazy"
+          decoding="async"
           className="max-h-48 rounded-md object-contain"
         />
       )}
-      <p className="text-sm font-medium text-text-primary truncate max-w-full">{fileName}</p>
+      <p className="text-sm font-medium text-text-primary truncate max-w-full" title={fileName}>
+        {fileName}
+      </p>
       <p className="text-xs text-text-muted">{formatFileSize(fileSize)}</p>
     </div>
   );

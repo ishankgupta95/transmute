@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useState } from "react";
+import { ErrorMessage } from "@/components/tools/ErrorMessage";
 import { format as formatSql } from "sql-formatter";
 
 const DIALECTS = [
@@ -91,7 +92,7 @@ export function SqlFormatterUI() {
       </div>
 
       {error && (
-        <div className="rounded-lg border border-error/30 bg-error/10 p-3 text-sm text-error">{error}</div>
+        <ErrorMessage message={error} />
       )}
 
       {output && (

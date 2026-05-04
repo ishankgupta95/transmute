@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useState } from "react";
+import { ErrorMessage } from "@/components/tools/ErrorMessage";
 import { DropZone } from "@/components/tools/DropZone";
 import { DownloadButton } from "@/components/tools/DownloadButton";
 import { ProgressBar } from "@/components/tools/ProgressBar";
@@ -174,13 +175,13 @@ export function AudioMergerUI() {
 
           {status === "processing" && (
             <div className="space-y-2">
-              <ProgressBar progress={50} />
+              <ProgressBar progress={null} />
               <p className="text-sm text-text-muted text-center">Merging audio files...</p>
             </div>
           )}
 
           {status === "error" && (
-            <p className="text-sm text-error text-center">{error}</p>
+            <ErrorMessage message={error} />
           )}
 
           {result && (

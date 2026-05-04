@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useState } from "react";
+import { ErrorMessage } from "@/components/tools/ErrorMessage";
 
 interface Options {
   length: number;
@@ -121,7 +122,7 @@ export function PasswordGeneratorUI() {
       </div>
 
       {error && (
-        <div className="rounded-lg border border-error/30 bg-error/10 p-3 text-sm text-error">{error}</div>
+        <ErrorMessage message={error} />
       )}
 
       {/* Strength meter */}

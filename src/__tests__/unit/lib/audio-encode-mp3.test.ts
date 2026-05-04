@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // Mock lamejs before importing the module under test
-vi.mock("lamejs", () => {
+vi.mock("@breezystack/lamejs", () => {
   return {
     Mp3Encoder: vi.fn().mockImplementation(function (this: Record<string, unknown>) {
       this.encodeBuffer = vi.fn().mockReturnValue(new Int8Array([0xff, 0xfb]));
@@ -16,7 +16,7 @@ vi.mock("@/lib/tools/audio-decode", () => ({
 }));
 
 import { encodeToMp3 } from "@/lib/tools/audio-encode-mp3";
-import { Mp3Encoder } from "lamejs";
+import { Mp3Encoder } from "@breezystack/lamejs";
 
 function createMockAudioBuffer(
   channels: number,

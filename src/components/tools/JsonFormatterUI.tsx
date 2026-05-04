@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useState } from "react";
+import { ErrorMessage } from "@/components/tools/ErrorMessage";
 
 export function JsonFormatterUI() {
   const [input, setInput] = useState("");
@@ -71,11 +72,7 @@ export function JsonFormatterUI() {
       </div>
 
       {/* Error */}
-      {error && (
-        <div className="rounded-lg border border-error/30 bg-error/10 p-3 text-sm text-error">
-          {error}
-        </div>
-      )}
+      {error && <ErrorMessage message={error} />}
 
       {/* Output */}
       {output && (

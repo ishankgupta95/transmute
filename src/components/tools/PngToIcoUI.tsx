@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useState } from "react";
+import { ErrorMessage } from "@/components/tools/ErrorMessage";
 import { DropZone } from "@/components/tools/DropZone";
 import { DownloadButton } from "@/components/tools/DownloadButton";
 import { ProgressBar } from "@/components/tools/ProgressBar";
@@ -78,12 +79,12 @@ export function PngToIcoUI({ acceptFormats }: PngToIcoUIProps) {
           {/* Progress */}
           {isProcessing && (
             <div className="space-y-2">
-              <ProgressBar progress={50} />
+              <ProgressBar progress={null} />
               <p className="text-sm text-text-muted text-center">Converting...</p>
             </div>
           )}
 
-          {error && <p className="text-sm text-error text-center">{error}</p>}
+          {error && <ErrorMessage message={error} />}
 
           {result && (
             <div className="rounded-lg border border-border bg-bg-secondary p-4 text-center">

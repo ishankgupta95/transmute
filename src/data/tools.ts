@@ -41,6 +41,7 @@ export type ToolType =
   | "rotate-pdf"
   | "add-page-numbers"
   | "pdf-page-reorder"
+  | "markdown-to-pdf"
   | "mp3-to-wav"
   | "wav-to-mp3"
   | "m4a-to-mp3"
@@ -462,7 +463,7 @@ export const tools: Tool[] = [
     keywords: ["markdown to html", "convert markdown", "markdown converter", "markdown preview", "md to html"],
     h1: "Markdown to HTML Converter — Live Preview",
     subtitle: "Write or paste Markdown and see the HTML output in real time.",
-    relatedTools: ["html-to-markdown", "json-formatter", "xml-formatter", "text-diff"],
+    relatedTools: ["html-to-markdown", "markdown-to-pdf", "json-formatter", "xml-formatter", "text-diff"],
     aboutText: "This tool converts Markdown to clean, standards-compliant HTML in real time with a side-by-side preview so you can see exactly how your content will render. It supports GitHub Flavored Markdown (GFM) including tables, task lists, fenced code blocks with syntax highlighting, strikethrough, and autolinked URLs. Write or paste your Markdown on the left and instantly see the rendered output on the right. Copy the raw HTML source code for embedding in websites, email templates, or CMS platforms, or view the rendered preview to check formatting. This is ideal for writing blog posts, README files, documentation, newsletter content, and any situation where you author in Markdown but need HTML output. Developers frequently use this tool to preview README files before committing, convert documentation for static site generators, and prepare formatted content for platforms that accept HTML input.",
   },
   {
@@ -475,7 +476,7 @@ export const tools: Tool[] = [
     keywords: ["html to markdown", "convert html to markdown", "html to md", "html markdown converter"],
     h1: "Convert HTML to Markdown Online — Free & Clean",
     subtitle: "Paste HTML and get clean, readable Markdown output.",
-    relatedTools: ["markdown-to-html", "json-formatter", "xml-formatter", "html-entity-encode-decode"],
+    relatedTools: ["markdown-to-html", "markdown-to-pdf", "json-formatter", "xml-formatter", "html-entity-encode-decode"],
     aboutText: "Need to convert a web page or HTML snippet to Markdown? Whether you are migrating a blog from WordPress to a static site generator, extracting content from a web page for documentation, or converting email HTML to a more readable format, this tool handles the conversion cleanly. It uses the Turndown library to produce well-structured, readable Markdown from HTML source code, correctly handling headings, links, images, ordered and unordered lists, tables, code blocks, bold, italic, and other formatting elements. The output follows standard Markdown conventions that work across GitHub, GitLab, Jekyll, Hugo, Gatsby, and other Markdown-based platforms. Paste your HTML on the left and see the Markdown output on the right in real time. Copy the result to your clipboard or download it as a .md file. This is particularly useful for content migration projects, converting legacy documentation to Markdown format, and pulling formatted content from web pages into your notes.",
   },
   {
@@ -744,7 +745,7 @@ export const tools: Tool[] = [
     keywords: ["merge pdf", "combine pdf", "join pdf", "pdf merger", "merge pdf files"],
     h1: "Merge PDF Files Online — Free, No Upload",
     subtitle: "Drag and drop multiple PDFs to combine them into a single file — entirely in your browser.",
-    relatedTools: ["split-pdf", "rotate-pdf", "pdf-page-reorder", "compress-pdf"],
+    relatedTools: ["split-pdf", "rotate-pdf", "pdf-page-reorder", "compress-pdf", "markdown-to-pdf"],
     aboutText: "Need to combine multiple PDFs into one document? Whether you are merging chapters of a report, combining scanned pages into a single file, assembling a portfolio, or packaging invoices for accounting, this tool makes it simple. Drag and drop your PDF files into the upload area, then reorder them by dragging to set the desired sequence. You can see the page count for each file before merging, helping you verify you have the right documents. Click merge and download a single consolidated PDF that preserves the formatting, fonts, and layout of every original document. The tool uses the pdf-lib library to perform the merge entirely in your browser — no files are uploaded to any server, which is critical when working with confidential contracts, financial documents, legal filings, or medical records. This is a practical everyday tool for office workers, students, freelancers, and anyone who regularly works with PDF documents.",
   },
   {
@@ -770,7 +771,7 @@ export const tools: Tool[] = [
     keywords: ["compress pdf", "reduce pdf size", "pdf compressor", "shrink pdf", "optimize pdf"],
     h1: "Compress PDF — Reduce File Size Online",
     subtitle: "Reduce your PDF file size by removing metadata and optimizing the internal structure.",
-    relatedTools: ["merge-pdf", "split-pdf", "rotate-pdf", "pdf-to-jpg"],
+    relatedTools: ["merge-pdf", "split-pdf", "rotate-pdf", "pdf-to-jpg", "markdown-to-pdf"],
     aboutText: "PDF files can become unexpectedly large due to embedded metadata, unused objects, redundant internal structures, and unoptimized encoding. This is especially common with PDFs generated by word processors, design tools, and scanning software that embed extensive metadata and revision history. This tool reduces file size by stripping metadata (title, author, subject, keywords, creation date) and using object streams to consolidate and optimize the internal PDF structure. It works best on PDFs with bloated metadata or redundant internal objects — typical reductions range from 10% to 40% depending on the document. Common use cases include shrinking PDFs before email attachments, meeting upload size limits on web portals, reducing storage usage for document archives, and preparing files for faster download on websites. The compression is lossless, meaning the visual content, text, and layout remain identical to the original.",
   },
   {
@@ -796,7 +797,7 @@ export const tools: Tool[] = [
     keywords: ["images to pdf", "jpg to pdf", "png to pdf", "convert images to pdf", "photo to pdf"],
     h1: "Convert Images to PDF — Free Online Tool",
     subtitle: "Upload images, reorder them, choose a page size, and combine into a single PDF.",
-    relatedTools: ["pdf-to-jpg", "merge-pdf", "compress-pdf", "rotate-pdf"],
+    relatedTools: ["pdf-to-jpg", "merge-pdf", "compress-pdf", "rotate-pdf", "markdown-to-pdf"],
     aboutText: "Need to turn a set of images into a PDF document? This is a common need when compiling photo portfolios, creating PDF versions of scanned documents, packaging design proofs for client review, or assembling receipts and invoices into a single file for accounting. Upload JPG or PNG files, drag to reorder them into the sequence you want, choose a page size (A4 for international standard, Letter for US standard, or fit-to-image to match the exact dimensions of each image), and download a single polished PDF. Images are centered on each page with automatic scaling to fit within the margins while preserving aspect ratio. The resulting PDF is clean and professional, suitable for sharing, printing, or archiving. This tool is particularly useful for photographers, designers, students submitting photo assignments, and anyone who needs to bundle images into a single shareable document.",
   },
   {
@@ -837,6 +838,25 @@ export const tools: Tool[] = [
     subtitle: "Drag and drop page thumbnails to rearrange your PDF — no upload needed.",
     relatedTools: ["split-pdf", "merge-pdf", "rotate-pdf", "compress-pdf"],
     aboutText: "Need to rearrange the pages in a PDF? Whether pages were scanned out of order, you need to move an appendix to a different position, or you want to reorganize a presentation deck, this tool makes it simple with an intuitive drag-and-drop interface. Upload your PDF file and you will see thumbnail previews of every page, giving you a clear visual overview of the entire document. Drag and drop the page thumbnails into the order you want — the interface provides smooth, responsive reordering that works just like sorting files on your desktop. When you are satisfied with the arrangement, download the reordered PDF with a single click. The output preserves all original content, formatting, fonts, and quality — only the page sequence changes. This is useful for students reorganizing study materials, professionals restructuring reports and proposals, teachers rearranging handout pages, and anyone who has received a PDF with pages in the wrong order.",
+  },
+  {
+    name: "Markdown to PDF",
+    slug: "markdown-to-pdf",
+    category: "pdf-tools",
+    toolType: "markdown-to-pdf",
+    acceptFormats: ".md,.markdown,.txt,text/markdown",
+    description: "Convert Markdown to a polished PDF in your browser. Serif typography, syntax-highlighted code, GFM tables and task lists. No upload required.",
+    keywords: [
+      "markdown to pdf",
+      "md to pdf",
+      "convert markdown to pdf",
+      "markdown pdf converter",
+      "export markdown pdf",
+    ],
+    h1: "Convert Markdown to PDF — Free, Online, In-Browser",
+    subtitle: "Type or upload Markdown, preview MD Peek-style typography, and export to PDF — all in your browser.",
+    relatedTools: ["markdown-to-html", "html-to-markdown", "merge-pdf", "compress-pdf"],
+    aboutText: "Turn any Markdown document into a polished PDF without leaving your browser. Drop in a .md file or paste straight into the editor, watch a live preview update in real time, and click Export to send a beautifully typeset version to your browser's print dialog where you can save it as a PDF or send it directly to a printer. The output mimics the typography of MD Peek on iOS — a generous serif body face, a sans-serif heading rhythm, soft rounded code blocks, hairline tables, and a warm blockquote bar — instead of the stark default browser styling that makes most online converters look like school worksheets. GitHub-Flavored Markdown features are fully supported: tables, task lists rendered as Unicode glyphs that print consistently across browsers, fenced code blocks with Shiki syntax highlighting across roughly twenty popular languages, strikethrough, autolinks, and footnotes. Because the conversion happens entirely client-side, your writing never leaves your device — useful for confidential notes, technical specs, meeting minutes, exam answer keys, freelance invoices, or any draft you would rather not upload to a stranger's server. The resulting PDF carries selectable text, vector code blocks that scale crisply at any zoom, and small file sizes (typically 50 to 500 KB), all in a layout tuned for readable long-form prose.",
   },
 
   // ── Audio Tools ──────────────────────────────────────────────────

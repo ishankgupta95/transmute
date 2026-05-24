@@ -3,6 +3,7 @@
 > All 64 tools across 5 categories are built and live at **https://transmute.tools**.
 > This plan covers what's left: SEO content, UI/UX polish, E2E coverage with Playwright, AdSense placements.
 > **No new tool features** — only optimization, fixes, and product quality.
+> **Exception (added 2026-05-07):** one priority feature — **Markdown → PDF** (Workstream P below). User-requested, MD Peek-quality styling.
 
 ---
 
@@ -61,11 +62,137 @@ Tier 1 deletes (~250 LOC, 5 files), dead deps, config drift, registry boilerplat
 
 ## Outstanding work
 
-The remaining work is three buckets, in this order:
+The remaining work is four buckets, in this order:
 
-1. **Workstream 4 — AdSense placements** (not started; can land flag-off pre-deploy)
-2. **§2.9 Manual verification + beta exit** (gates on live deploy)
-3. **§1.7 Post-deploy SEO verification** (gates on live deploy)
+1. **Workstream P — Markdown → PDF tool** (priority feature, added 2026-05-07; build before AdSense)
+2. **Workstream 4 — AdSense placements** (not started; can land flag-off pre-deploy)
+3. **§2.9 Manual verification + beta exit** (gates on live deploy)
+4. **§1.7 Post-deploy SEO verification** (gates on live deploy)
+
+---
+
+## Workstream P — Markdown → PDF tool (priority addition)
+
+> Added 2026-05-07 as a priority feature, overriding the original "no new tools" scope rule. Inspired by **MD Peek (iOS)**: serif body, generous line-height, subtle rounded code blocks, hairline tables, soft blockquote bar, no harsh shadows.
+>
+> **Approach: print-dialog ("Export to PDF" → browser Save as PDF).** Vector output, selectable text, small files (~50–500 KB), native pagination, MD Peek-grade typography. UX is two-click but matches what Typora / Obsidian / VS Code do under the hood.
+>
+> **Category: PDF Tools.** Cross-link from `markdown-to-html` and `html-to-markdown` for two-way discoverability between developer-tools and pdf-tools.
+
+### P.1 Dependencies + tool registry
+
+- [x] Add `shiki` (^1.x) for syntax highlighting — slim build with ~15 popular languages and 2 themes (light/dark). Dynamic-imported to keep tool-route bundle small.
+- [x] Add `dompurify` (^3.x) + `@types/dompurify` to sanitize rendered HTML before injecting into the print iframe.
+- [x] No other new deps — `marked` (^17) already present; `pdf-lib` is **not** needed for this approach (print path generates the PDF natively in the browser).
+- [x] Verify `@tailwindcss/typography` (already in devDeps) is wired — used as the live-preview prose baseline before custom MD Peek-inspired layer.
+- [x] Add `"markdown-to-pdf"` to the `ToolType` union in `src/data/tools.ts:1-54`
+- [x] Register the tool in `src/data/tools.ts`:
+  - `slug: "markdown-to-pdf"`, `category: "pdf-tools"`, `toolType: "markdown-to-pdf"`
+  - `acceptFormats: ".md,.markdown,.txt,text/markdown"`
+  - `relatedTools: ["markdown-to-html", "html-to-markdown", "merge-pdf", "compress-pdf"]`
+  - 120–160 char `description`, ≥4 FAQs, ≥150-word `aboutText` (per §1.2 CI tests)
+- [x] Cross-link both directions:
+  - Add `"markdown-to-pdf"` to `relatedTools` of `markdown-to-html`, `html-to-markdown`
+  - Add `"markdown-to-pdf"` to `relatedTools` of `merge-pdf`, `images-to-pdf`, `compress-pdf`
+
+### P.2 Markdown rendering pipeline
+
+- [x] Create `src/lib/tools/markdown-to-pdf.ts` (pure logic, no React) exporting:
+  - `renderMarkdown(md: string, opts: { theme: "github-light" | "github-dark"; font: "serif" | "sans" }): Promise<string>`
+  - Pipeline: marked (GFM on) → custom renderer that swaps `<code class="language-X">` blocks with Shiki output → DOMPurify sanitize
+- [x] Configure `marked` with GFM enabled (tables, task lists, strikethrough, autolinks, footnotes)
+- [x] Lazy-load Shiki via dynamic import — only initialize the highlighter on first render
+- [x] Bundled Shiki language set: `js, ts, tsx, jsx, py, go, rust, java, c, cpp, json, yaml, toml, bash, sh, sql, html, css, md, diff` (covers ~90% of GitHub surface; unknown languages fall back to plain `<pre><code>`)
+- [x] Sanitize the rendered HTML with DOMPurify before injecting into the print iframe (prevents `<script>` in user MD from executing)
+- [x] Render task list items as Unicode glyphs (`☐` / `☑`) instead of `<input type="checkbox">` — checkboxes don't print consistently across browsers
+
+### P.3 PDF generation (print-dialog)
+
+- [x] Create `src/components/tools/markdown-pdf/PrintFrame.tsx` — hidden iframe (`absolute -left-[9999px] w-0 h-0`) that:
+  - Receives a fully self-contained HTML doc string (inline `<style>` + computed prose HTML + Shiki CSS for active theme)
+  - On mount, writes via `iframe.contentDocument.open()/write()/close()`
+  - Awaits `iframe.contentDocument.fonts.ready` before triggering print
+  - Calls `iframe.contentWindow.print()`, listens for `afterprint`, then unmounts
+- [x] Create `src/lib/tools/markdown-pdf-print-css.ts` — single string export, parameterized by theme + font:
+  - `@page { size: A4; margin: 18mm 16mm; }` (offer Letter as a toggle later)
+  - `@page :first { margin-top: 28mm; }` for first-page breathing room
+  - `h1, h2, h3 { break-after: avoid; }` to prevent orphaned headings
+  - `pre, table, blockquote { break-inside: avoid; }` where reasonable
+  - `img { max-width: 100%; break-inside: avoid; }`
+- [x] Embed referenced fonts as `@font-face` data URIs inside the iframe's `<style>` (the iframe is `about:blank` and can't reach parent CSS reliably across browsers) — *deferred to Google Fonts `@import` per the budget guardrail in plan §FONTS; documented inline in `markdown-pdf-print-css.ts`*
+- [x] **Firefox caveat:** `Background graphics` is off by default. Surface a UI banner: "If colors look missing, enable 'Print backgrounds' in your browser's print dialog."
+
+### P.4 MD Peek-inspired styling
+
+> MD Peek's defining traits: serif body + sans heads, generous line-height (~1.7), subtle rounded code blocks, soft blockquote bar, hairline tables, no harsh shadows.
+
+- [x] Body: serif (Newsreader or Charter system fallback) at 11pt, line-height 1.65, color `#1f1d1a` on `#fdfdfb`
+- [x] Headings: sans (Syne — already loaded for display) with rhythm:
+  - h1: 22pt, 24pt margin-top
+  - h2: 17pt, 20pt margin-top, hairline `1px solid #e8e6e0` bottom border
+  - h3: 14pt, 16pt margin-top
+- [x] Inline code: 0.92em, JetBrains Mono, `#f3efe7` background, `2px 6px` padding, `4px` radius, no border
+- [x] Code blocks: Shiki-highlighted, `#f7f5ef` background, `12px` radius, `16px 18px` padding, line-height 1.5, long lines wrap (no horizontal scroll in print)
+- [x] Blockquotes: `4px solid #c9b88a` left bar, 0.96em italic, `#5a5852` color, no background
+- [x] Tables: `border-collapse`, hairline `1px solid #e8e6e0` borders, `8px 12px` cell padding, header row `#f7f5ef` tint, no row striping
+- [x] Horizontal rules: `1px solid #e8e6e0`, 24pt vertical margin
+- [x] Images: centered, max-width 100%, alt text rendered as 9pt italic caption beneath
+- [x] Links: `#9a7b1f` (warm gold matching the brand accent), underlined; URLs printed inline after the link text only when `@media print` (so the PDF is useful offline)
+- [x] **Theme toggle:** "Light" (default) and "Dark" (`#1a1814` background, `#f0eee8` text, dark Shiki theme)
+- [x] **Font toggle:** "Serif" (default) and "Sans" (Outfit body, matching modern docs sites)
+
+### P.5 UI component
+
+Three-layer pattern per CLAUDE.md:
+
+- [x] `src/app/[slug]/page.tsx` already routes via the registry — no change needed (added the case branch for `markdown-to-pdf` toolType)
+- [x] Create `src/components/tools/MarkdownToPdfClient.tsx` (thin `"use client"` wrapper)
+- [x] Create `src/components/tools/MarkdownToPdfUI.tsx`:
+  - **Two input modes** (tabs): "Upload .md" (uses shared `DropZone`) and "Paste markdown" (full-height monospace textarea)
+  - Both modes feed the same `markdown` state
+  - **Live preview** beside input on desktop (≥1024px), below on mobile — debounced 200ms, rendered HTML in a `prose` container
+  - **Toolbar**: theme toggle (Light/Dark), font toggle (Serif/Sans), page size toggle (A4/Letter, *deferred to v1.1 per plan §P.8*)
+  - **"Export to PDF" button** — disabled until `markdown.trim().length > 0`. On click: render full HTML doc → mount `PrintFrame` → `print()` → unmount on `afterprint`
+  - Info banner under the button about Firefox `Print backgrounds` toggle and "Save as PDF" destination tip
+- [x] Reuse shared components: `DropZone`, `ErrorMessage`, `StatusMessage` (CopyButton wasn't needed for v1 — preview text is implicitly selectable)
+- [x] File input: 10 MB cap on `.md` / `.markdown` / `.txt`. Reject other types via `<ErrorMessage>`.
+- [x] Empty state: example MD snippet (a heading, a paragraph, a code fence, a table) pre-populated as placeholder, cleared on first interaction
+
+### P.6 Testing
+
+- [x] **Unit** (`src/__tests__/unit/lib/markdown-to-pdf.test.ts`):
+  - `renderMarkdown` strips `<script>`, `onerror=` etc.
+  - GFM features render: tables, task lists (as glyphs), strikethrough, autolinks
+  - Shiki highlights `js`, `ts`, `py` code fences; unknown language falls back to plain `<pre><code>` without throwing
+  - Theme switch swaps Shiki theme classes
+- [x] **Component** (`src/__tests__/unit/components/MarkdownToPdfUI.test.tsx`):
+  - Tab switch preserves markdown state across upload/paste modes
+  - Export button disabled when empty, enabled when non-empty
+  - Theme + font toggles re-render preview
+- [x] **E2E** (`src/__tests__/e2e/pdf/markdown-to-pdf.spec.ts`):
+  - Page smoke (h1, ≥4 FAQs, related tools render, no console errors)
+  - Paste mode: type `# Hello`, preview updates, click Export → assert `window.print` was invoked (parent-side `HTMLIFrameElement.prototype.contentWindow` patch — `addInitScript` does not propagate into `document.write`-built iframes reliably)
+  - Upload mode: drop a small `.md` file → preview matches expected HTML
+  - **Cannot** assert final PDF contents end-to-end (print dialog isn't scriptable). Coverage stops at the `print()` call.
+
+### P.7 SEO + content
+
+- [x] Tool page metadata (per §1.2 CI tests):
+  - 120–160 char `description` (141 chars — verified in CI)
+  - One H1 (`Convert Markdown to PDF — Free, Online, In-Browser`)
+  - 5 bespoke FAQs (+ shared `PRIVACY_FAQ` = 6 rendered): "What languages are syntax-highlighted?" / "Why does the print dialog open instead of an instant download?" / "Does it support GitHub-Flavored Markdown?" / "Can I customize the styling?" / "Why are colors missing from my exported PDF in Firefox?"
+  - `aboutText` ≥150 words (213 words — verified locally): privacy story, MD Peek-style typography, syntax highlighting, GFM support, print-to-PDF rationale
+- [x] Sitemap auto-includes via existing `generateStaticParams` (verified in `out/sitemap.xml`)
+- [x] Internal linking enforced by §1.4 CI tests — both directions covered by P.1 cross-links + added to `browser-based-developer-tools` blog post for the ≥1-companion-post invariant
+- [ ] Blog post candidate: "Why I built a Markdown → PDF tool that actually looks good" — defer until post-launch traffic data
+
+### P.8 Deferred / explicit non-goals for v1
+
+- Custom CSS upload (v1 ships 2 themes × 2 fonts = 4 looks; advanced users can request later)
+- Math rendering (KaTeX / MathJax) — adds ~250 KB; defer unless requested
+- Mermaid diagram rendering — same reasoning
+- Page numbers, running headers/footers, table of contents — possible via `@page` margin boxes; defer to v1.1
+- One-click raster download (html2canvas + jsPDF) — explicitly chose against in P.0 decision; revisit only if users complain about the two-click print flow
 
 ---
 
@@ -176,18 +303,19 @@ Strict rule: **no ads above the tool**. Tool stays the hero — first paint, fir
 
 ## Sequencing
 
-1. **AdSense component, flag-off** (§4.1 → §4.5) — build now, ships dormant
-2. **Deploy** (push to `master`)
-3. **§2.9 manual verification** on the live URL (~2.5 hrs total across browser smoke + mobile + a11y + visual)
-4. **§1.7 post-deploy SEO verification** on the same live URL — overlap with §2.9 where possible
-5. **Beta badge removal** once §2.9 manual passes are clean
-6. **AdSense flag-on** (§4.6) once approval lands and blog has ~2–4 weeks of organic traffic so first-week RPM is meaningful
+1. **Workstream P — Markdown → PDF tool** (priority feature; ship registry + pipeline + UI + tests before deploy)
+2. **AdSense component, flag-off** (§4.1 → §4.5) — build dormant
+3. **Deploy** (push to `master`)
+4. **§2.9 manual verification** on the live URL (~2.5 hrs total across browser smoke + mobile + a11y + visual). Add a markdown-to-pdf check: print one real document in Chrome + Safari + Firefox, save as PDF, confirm fonts embed and code blocks render correctly.
+5. **§1.7 post-deploy SEO verification** on the same live URL — overlap with §2.9 where possible
+6. **Beta badge removal** once §2.9 manual passes are clean
+7. **AdSense flag-on** (§4.6) once approval lands and blog has ~2–4 weeks of organic traffic so first-week RPM is meaningful
 
 ---
 
 ## Out of scope (do not do in this plan)
 
-- New tools or new tool categories
+- New tools or new tool categories — **except** Markdown → PDF (Workstream P, explicitly added as a priority 2026-05-07)
 - Freemium tier / paid plans (Lemon Squeezy, Paddle)
 - Promotion (Product Hunt, HN, Reddit) — schedule separately once Beta is removed
 - Multi-language / i18n

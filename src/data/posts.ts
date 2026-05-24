@@ -198,6 +198,7 @@ export const posts: BlogPost[] = [
       "sql-formatter",
       "markdown-to-html",
       "html-to-markdown",
+      "markdown-to-pdf",
       "xml-formatter",
       "csv-to-json",
       "json-to-csv",

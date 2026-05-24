@@ -23,6 +23,7 @@ import {
   AddPageNumbersClient,
   PdfPageReorderClient,
 } from "@/components/tools/PdfToolClients";
+import { MarkdownToPdfClient } from "@/components/tools/MarkdownToPdfClient";
 import {
   Mp3ToWavClient,
   WavToMp3Client,
@@ -115,6 +116,8 @@ function ToolClient({ tool }: { tool: (typeof tools)[number] }) {
       return <AddPageNumbersClient />;
     case "pdf-page-reorder":
       return <PdfPageReorderClient />;
+    case "markdown-to-pdf":
+      return <MarkdownToPdfClient />;
     case "mp3-to-wav":
       return <Mp3ToWavClient tool={tool} />;
     case "wav-to-mp3":

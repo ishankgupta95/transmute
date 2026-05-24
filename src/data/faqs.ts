@@ -425,6 +425,13 @@ export const faqs: ToolFAQs = {
     { question: "Can I remove pages while reordering?", answer: "This tool focuses on reordering. To remove pages, use the Split PDF tool to extract only the pages you want to keep." },
     { question: "Is there a limit on how many pages I can reorder?", answer: "No fixed limit. Performance scales with browser memory — documents up to a few hundred pages reorder smoothly on a modern laptop. Very large PDFs may take longer to render thumbnails." },
   ],
+  "markdown-to-pdf": [
+    { question: "Why does the print dialog open instead of an instant download?", answer: "The browser's native print engine is the only way to produce a PDF with selectable text, embedded fonts, and crisp vector code blocks. Pick 'Save as PDF' (Chrome/Edge), 'Save to PDF' (Safari), or 'Save to File' (Firefox) as the destination — the rest of the layout is already taken care of." },
+    { question: "Does it support GitHub-Flavored Markdown?", answer: "Yes. Tables, fenced code blocks, task lists (rendered as Unicode glyphs so they print consistently), strikethrough, autolinks, and footnotes are all handled. Standard headings, lists, blockquotes, images, and inline emphasis work as expected." },
+    { question: "What languages are syntax-highlighted in code blocks?", answer: "About twenty popular languages out of the box: js, ts, tsx, jsx, py, go, rust, java, c, cpp, json, yaml, toml, bash, sh, sql, html, css, md, and diff. Code fences with an unrecognised language fall back to plain monospace without throwing." },
+    { question: "Can I customize the styling?", answer: "Yes — toggle between Light and Dark themes and between a Serif body (default, MD Peek-inspired) and a Sans body. Margins, page size (A4 by default), and code-block colors are tuned for legible long-form prose; per-document custom CSS is on the roadmap." },
+    { question: "Why are colors missing from my exported PDF in Firefox?", answer: "Firefox disables 'Print backgrounds' by default, which strips the code-block backgrounds and table headers from the print preview. Toggle 'Print backgrounds' (or 'Print background graphics') in the print dialog before saving to fix it." },
+  ],
 
   // ── Audio Tools ──────────────────────────────────────────────────
   "mp3-to-wav": [

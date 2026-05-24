@@ -6,7 +6,7 @@ import { Footer } from "@/components/layout/Footer";
 import "./globals.css";
 
 const GA_ID = "G-TCWDH01ZSK";
-const ADSENSE_ID = "ca-pub-8318354633894162";
+const ADSENSE_ID = "ca-pub-3308993640799405";
 const ADS_ENABLED = process.env.NEXT_PUBLIC_ADS_ENABLED === "true";
 
 const syne = Syne({
@@ -84,6 +84,7 @@ export default function RootLayout({
       className={`${syne.variable} ${outfit.variable} h-full antialiased`}
     >
       <head>
+        <meta name="google-adsense-account" content={ADSENSE_ID} />
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
         <link rel="preconnect" href="https://www.googletagmanager.com" />

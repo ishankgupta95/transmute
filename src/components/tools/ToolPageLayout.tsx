@@ -3,6 +3,7 @@ import Link from "next/link";
 import type { FAQ } from "@/data/faqs";
 import type { Tool } from "@/data/tools";
 import { getToolBySlug } from "@/data/tools";
+import { getPostsLinkingToTool } from "@/data/posts";
 import { ToolSchema } from "@/components/seo/ToolSchema";
 import { BreadcrumbSchema } from "@/components/seo/BreadcrumbSchema";
 import { ToolUsedTracker } from "@/components/tools/ToolUsedTracker";
@@ -25,6 +26,8 @@ export function ToolPageLayout({
   const relatedTools = tool.relatedTools
     .map((slug) => getToolBySlug(slug))
     .filter((t): t is Tool => t !== undefined);
+
+  const blogPosts = getPostsLinkingToTool(tool.slug);
 
   const categoryNames: Record<string, string> = {
     "image-tools": "Image Tools",
@@ -59,7 +62,7 @@ export function ToolPageLayout({
           {breadcrumbs.map((crumb, i) => (
             <li key={crumb.href} className="flex items-center gap-2">
               {i > 0 && (
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="opacity-40">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="opacity-40" aria-hidden="true">
                   <polyline points="9 18 15 12 9 6" />
                 </svg>
               )}
@@ -115,6 +118,37 @@ export function ToolPageLayout({
         </section>
       )}
 
+      {/* From the blog */}
+      {blogPosts.length > 0 && (
+        <section className="mb-14">
+          <h2 className="text-xl font-bold font-display text-text-primary mb-6">
+            From the blog
+          </h2>
+          <ul className="space-y-3">
+            {blogPosts.map((post) => (
+              <li key={post.slug}>
+                <Link
+                  href={`/blog/${post.slug}`}
+                  className="group flex items-start justify-between gap-4 rounded-lg border border-border/80 bg-bg-secondary/40 backdrop-blur-sm p-5 transition-all duration-300 hover:border-accent/30 hover:bg-bg-elevated/50"
+                >
+                  <div className="min-w-0">
+                    <p className="font-semibold text-text-primary group-hover:text-accent transition-colors duration-200">
+                      {post.title}
+                    </p>
+                    <p className="text-sm text-text-muted mt-1.5 line-clamp-2 leading-relaxed">
+                      {post.description}
+                    </p>
+                  </div>
+                  <span className="flex-shrink-0 text-xs text-text-muted whitespace-nowrap mt-1">
+                    {post.readingTime} min read
+                  </span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
       {/* FAQ */}
       {faqs.length > 0 && (
         <section className="mb-14">
@@ -139,6 +173,7 @@ export function ToolPageLayout({
                     strokeLinecap="round"
                     strokeLinejoin="round"
                     className="flex-shrink-0 text-text-muted transition-transform duration-200 group-open:rotate-180"
+                    aria-hidden="true"
                   >
                     <polyline points="6 9 12 15 18 9" />
                   </svg>

@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 
+const LAST_UPDATED = "April 7, 2026";
+
 export const metadata: Metadata = {
   title: "Privacy Policy",
   description: "Transmute privacy policy — your files never leave your device. Learn how we protect your data with 100% browser-based processing.",
@@ -13,7 +15,7 @@ export default function PrivacyPage() {
         Privacy Policy
       </h1>
 
-      <p className="text-text-muted text-sm mb-8">Last updated: April 7, 2026</p>
+      <p className="text-text-muted text-sm mb-8">Last updated: {LAST_UPDATED}</p>
 
       <div className="space-y-8 text-text-secondary leading-relaxed">
         <section>
@@ -78,7 +80,7 @@ export default function PrivacyPage() {
               href="https://www.google.com/settings/ads"
               target="_blank"
               rel="noopener noreferrer"
-              className="text-accent hover:opacity-80 transition-opacity"
+              className="text-accent underline hover:opacity-80 transition-opacity"
             >
               Google Ads Settings
             </a>
@@ -129,7 +131,7 @@ export default function PrivacyPage() {
               href="https://ishank.dev"
               target="_blank"
               rel="noopener noreferrer"
-              className="text-accent hover:opacity-80 transition-opacity"
+              className="text-accent underline hover:opacity-80 transition-opacity"
             >
               ishank.dev
             </a>

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useRef, useState } from "react";
+import { ErrorMessage } from "@/components/tools/ErrorMessage";
 import { DownloadButton } from "@/components/tools/DownloadButton";
 import { formatFileSize } from "@/lib/utils/file-helpers";
 
@@ -19,8 +20,15 @@ export function ScreenRecorderUI() {
 
   const startRecording = useCallback(async () => {
     setError(null);
+    // Revoke any prior recording's URL before starting a new one.
+    if (recording?.url) URL.revokeObjectURL(recording.url);
     setRecording(null);
     setElapsed(0);
+    // Defensive: clear any stale timer from a previous failed start.
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
 
     try {
       const displayStream = await navigator.mediaDevices.getDisplayMedia({
@@ -79,6 +87,16 @@ export function ScreenRecorderUI() {
         setElapsed((prev) => prev + 1);
       }, 1000);
     } catch (err) {
+      // Roll back any partial state and stop tracks if a stream was acquired
+      // before failure.
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
+      if (streamRef.current) {
+        stopAllTracks(streamRef.current);
+        streamRef.current = null;
+      }
       if (err instanceof DOMException && err.name === "NotAllowedError") {
         setError("Screen sharing was cancelled or denied.");
       } else {
@@ -86,7 +104,7 @@ export function ScreenRecorderUI() {
       }
       setStatus("error");
     }
-  }, [includeAudio]);
+  }, [includeAudio, recording]);
 
   const stopRecording = useCallback(() => {
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
@@ -202,7 +220,7 @@ export function ScreenRecorderUI() {
 
       {status === "error" && (
         <div className="space-y-4">
-          <p className="text-sm text-error text-center">{error}</p>
+          <ErrorMessage message={error} />
           <div className="flex justify-center">
             <button
               onClick={handleReset}

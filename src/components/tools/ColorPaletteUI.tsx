@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useState } from "react";
+import { ErrorMessage } from "@/components/tools/ErrorMessage";
 import { DropZone } from "@/components/tools/DropZone";
 import { extractColorPalette, type ColorInfo } from "@/lib/tools/color-palette";
 
@@ -91,7 +92,7 @@ export function ColorPaletteUI({ acceptFormats }: ColorPaletteUIProps) {
               {isProcessing && (
                 <p className="text-sm text-text-muted text-center py-8">Extracting colors...</p>
               )}
-              {error && <p className="text-sm text-error text-center">{error}</p>}
+              {error && <ErrorMessage message={error} />}
               {colors.map((color, i) => (
                 <button
                   key={i}

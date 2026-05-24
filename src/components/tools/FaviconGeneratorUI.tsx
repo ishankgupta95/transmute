@@ -1,11 +1,13 @@
 "use client";
 
 import { useCallback, useState } from "react";
+import { ErrorMessage } from "@/components/tools/ErrorMessage";
 import JSZip from "jszip";
 import { DropZone } from "@/components/tools/DropZone";
 import { DownloadButton } from "@/components/tools/DownloadButton";
 import { ProgressBar } from "@/components/tools/ProgressBar";
 import { encodeIcoAsync } from "@/lib/tools/ico-encode";
+import { canvasToBlob, loadImage } from "@/lib/tools/canvas-utils";
 import { formatFileSize } from "@/lib/utils/file-helpers";
 
 const FAVICON_SIZES = [
@@ -129,11 +131,11 @@ export function FaviconGeneratorUI({ acceptFormats }: { acceptFormats: string })
           {/* Progress */}
           {isProcessing && (
             <div className="space-y-2">
-              <ProgressBar progress={50} />
+              <ProgressBar progress={null} />
               <p className="text-sm text-text-muted text-center">Generating favicons...</p>
             </div>
           )}
-          {error && <p className="text-sm text-error text-center">{error}</p>}
+          {error && <ErrorMessage message={error} />}
 
           {/* HTML snippet */}
           {htmlSnippet && (
@@ -179,31 +181,4 @@ export function FaviconGeneratorUI({ acceptFormats }: { acceptFormats: string })
       )}
     </div>
   );
-}
-
-function loadImage(file: File): Promise<HTMLImageElement> {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.onload = () => {
-      URL.revokeObjectURL(img.src);
-      resolve(img);
-    };
-    img.onerror = () => {
-      URL.revokeObjectURL(img.src);
-      reject(new Error("Failed to load image"));
-    };
-    img.src = URL.createObjectURL(file);
-  });
-}
-
-function canvasToBlob(canvas: HTMLCanvasElement, mimeType: string): Promise<Blob> {
-  return new Promise((resolve, reject) => {
-    canvas.toBlob(
-      (blob) => {
-        if (blob) resolve(blob);
-        else reject(new Error("Canvas export failed"));
-      },
-      mimeType,
-    );
-  });
 }

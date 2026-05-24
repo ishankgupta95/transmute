@@ -99,6 +99,11 @@ const HOW_TO_STEPS_BY_TOOL_TYPE: Record<ToolType, string[]> = {
     "Drag the page thumbnails to reorder them.",
     "Click Download to save the rearranged PDF.",
   ],
+  "markdown-to-pdf": [
+    "Paste your Markdown into the editor or upload a .md / .markdown / .txt file.",
+    "Tweak the theme (Light / Dark) and font (Serif / Sans) — the live preview updates as you type.",
+    "Click Export to PDF and choose 'Save as PDF' as the destination in your browser's print dialog.",
+  ],
 
   // ── Audio ────────────────────────────────────────────────────────
   "mp3-to-wav": [
@@ -314,11 +319,20 @@ export function getToolMetadata(slug: string): Metadata {
       url: `${BASE_URL}/${tool.slug}`,
       siteName: "Transmute",
       type: "website",
+      images: [
+        {
+          url: "/og-image.png",
+          width: 1200,
+          height: 630,
+          alt: `${tool.name} — free, browser-based tool on Transmute`,
+        },
+      ],
     },
     twitter: {
-      card: "summary",
+      card: "summary_large_image",
       title: `${tool.name} | Transmute`,
       description: tool.description,
+      images: ["/og-image.png"],
     },
   };
 }

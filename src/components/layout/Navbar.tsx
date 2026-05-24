@@ -25,11 +25,17 @@ export function Navbar() {
             <Link
               key={cat.slug}
               href={`/${cat.slug}`}
-              className="px-3.5 py-2 rounded-md text-sm font-medium text-text-secondary hover:text-text-primary hover:bg-[rgba(255,255,255,0.04)] transition-all duration-200"
+              className="px-3.5 py-2 rounded-md text-sm font-medium text-text-secondary hover:text-text-primary hover:bg-[rgba(255,255,255,0.04)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-bg-primary transition-all duration-200 motion-reduce:transition-none"
             >
               {cat.name}
             </Link>
           ))}
+          <Link
+            href="/blog"
+            className="px-3.5 py-2 rounded-md text-sm font-medium text-text-secondary hover:text-text-primary hover:bg-[rgba(255,255,255,0.04)] transition-all duration-200"
+          >
+            Blog
+          </Link>
         </div>
 
         <MobileNav />

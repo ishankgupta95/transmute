@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { ErrorMessage } from "@/components/tools/ErrorMessage";
 import Cropper from "cropperjs";
 import "cropperjs/dist/cropper.css";
 import { DropZone } from "@/components/tools/DropZone";
@@ -181,11 +182,11 @@ export function ImageCropperUI({ acceptFormats }: ImageCropperUIProps) {
           {/* Progress / Error */}
           {isProcessing && (
             <div className="space-y-2">
-              <ProgressBar progress={50} />
+              <ProgressBar progress={null} />
               <p className="text-sm text-text-muted text-center">Cropping...</p>
             </div>
           )}
-          {error && <p className="text-sm text-error text-center">{error}</p>}
+          {error && <ErrorMessage message={error} />}
 
           {/* Actions */}
           <div className="flex items-center justify-center gap-3">

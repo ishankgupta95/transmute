@@ -1,6 +1,7 @@
 import type { MetadataRoute } from "next";
 import { tools } from "@/data/tools";
 import { categories } from "@/data/categories";
+import { posts } from "@/data/posts";
 
 export const dynamic = "force-static";
 
@@ -21,6 +22,13 @@ export default function sitemap(): MetadataRoute.Sitemap {
     priority: 0.7,
   }));
 
+  const blogPostPages = posts.map((post) => ({
+    url: `${BASE_URL}/blog/${post.slug}`,
+    lastModified: new Date(post.updatedAt ?? post.publishedAt),
+    changeFrequency: "monthly" as const,
+    priority: 0.6,
+  }));
+
   return [
     {
       url: BASE_URL,
@@ -30,6 +38,13 @@ export default function sitemap(): MetadataRoute.Sitemap {
     },
     ...categoryPages,
     ...toolPages,
+    {
+      url: `${BASE_URL}/blog`,
+      lastModified: new Date(),
+      changeFrequency: "weekly",
+      priority: 0.7,
+    },
+    ...blogPostPages,
     {
       url: `${BASE_URL}/about`,
       lastModified: new Date(),

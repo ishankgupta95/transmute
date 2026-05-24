@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useState } from "react";
+import { ErrorMessage } from "@/components/tools/ErrorMessage";
+import { triggerDownload } from "@/lib/utils/download";
 
 function jsonToCsv(jsonStr: string): string {
   const data = JSON.parse(jsonStr);
@@ -50,12 +52,7 @@ export function JsonToCsvUI() {
 
   const handleDownload = useCallback(() => {
     const blob = new Blob([output], { type: "text/csv" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "data.csv";
-    a.click();
-    URL.revokeObjectURL(url);
+    triggerDownload(blob, "data.csv");
   }, [output]);
 
   return (
@@ -81,7 +78,7 @@ export function JsonToCsvUI() {
       </div>
 
       {error && (
-        <div className="rounded-lg border border-error/30 bg-error/10 p-3 text-sm text-error">{error}</div>
+        <ErrorMessage message={error} />
       )}
 
       {output && (

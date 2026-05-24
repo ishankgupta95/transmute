@@ -1,10 +1,12 @@
 "use client";
 
 import { useCallback, useState } from "react";
+import { ErrorMessage } from "@/components/tools/ErrorMessage";
 import { DropZone } from "@/components/tools/DropZone";
 import { DownloadButton } from "@/components/tools/DownloadButton";
 import { ProgressBar } from "@/components/tools/ProgressBar";
 import { encodeIcoAsync } from "@/lib/tools/ico-encode";
+import { loadImage } from "@/lib/tools/canvas-utils";
 import { formatFileSize } from "@/lib/utils/file-helpers";
 
 const ICO_SIZES = [16, 32, 48];
@@ -77,12 +79,12 @@ export function PngToIcoUI({ acceptFormats }: PngToIcoUIProps) {
           {/* Progress */}
           {isProcessing && (
             <div className="space-y-2">
-              <ProgressBar progress={50} />
+              <ProgressBar progress={null} />
               <p className="text-sm text-text-muted text-center">Converting...</p>
             </div>
           )}
 
-          {error && <p className="text-sm text-error text-center">{error}</p>}
+          {error && <ErrorMessage message={error} />}
 
           {result && (
             <div className="rounded-lg border border-border bg-bg-secondary p-4 text-center">
@@ -116,19 +118,4 @@ export function PngToIcoUI({ acceptFormats }: PngToIcoUIProps) {
       )}
     </div>
   );
-}
-
-function loadImage(file: File): Promise<HTMLImageElement> {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.onload = () => {
-      URL.revokeObjectURL(img.src);
-      resolve(img);
-    };
-    img.onerror = () => {
-      URL.revokeObjectURL(img.src);
-      reject(new Error("Failed to load image"));
-    };
-    img.src = URL.createObjectURL(file);
-  });
 }

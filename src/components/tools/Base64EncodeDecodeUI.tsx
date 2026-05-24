@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useState } from "react";
+import { ErrorMessage } from "@/components/tools/ErrorMessage";
 import { DropZone } from "@/components/tools/DropZone";
 
 export function Base64EncodeDecodeUI() {
@@ -111,14 +112,18 @@ export function Base64EncodeDecodeUI() {
       )}
 
       {error && (
-        <div className="rounded-lg border border-error/30 bg-error/10 p-3 text-sm text-error">{error}</div>
+        <ErrorMessage message={error} />
       )}
 
       {output && (
         <div>
           <div className="flex items-center justify-between mb-1">
             <label className="text-sm font-medium text-text-secondary">Output</label>
-            <button onClick={handleCopy} className="text-xs text-accent hover:text-accent-hover transition-colors">
+            <button
+              onClick={handleCopy}
+              aria-label={copied ? "Copied output" : "Copy output"}
+              className="inline-flex items-center justify-center min-h-9 px-3 py-1.5 rounded-md text-xs font-medium text-accent hover:bg-accent-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-bg-primary transition-colors"
+            >
               {copied ? "Copied!" : "Copy"}
             </button>
           </div>

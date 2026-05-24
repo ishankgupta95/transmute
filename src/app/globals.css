@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@plugin "@tailwindcss/typography";
 
 @layer base {
   :root {
@@ -11,7 +12,8 @@
     /* Text — warm off-whites */
     --text-primary: #e8e5e0;
     --text-secondary: #8a8880;
-    --text-muted: #7a7870;
+    /* WCAG AA: 4.5:1 against bg-elevated (#141417). #7a7870 measured 4.15:1; #858378 lifts to ~5:1. */
+    --text-muted: #858378;
 
     /* Accent — sky blue */
     --accent: #56b8e6;

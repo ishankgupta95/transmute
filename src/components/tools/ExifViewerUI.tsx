@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useState } from "react";
+import { ErrorMessage } from "@/components/tools/ErrorMessage";
 import { DropZone } from "@/components/tools/DropZone";
 import { DownloadButton } from "@/components/tools/DownloadButton";
 import { readExifData, stripExifData, type ExifEntry } from "@/lib/tools/exif-viewer";
@@ -97,7 +98,7 @@ export function ExifViewerUI({ acceptFormats }: ExifViewerUIProps) {
           )}
 
           {/* Error */}
-          {error && <p className="text-sm text-error text-center">{error}</p>}
+          {error && <ErrorMessage message={error} />}
 
           {/* No metadata */}
           {!isLoading && entries.length === 0 && !error && (

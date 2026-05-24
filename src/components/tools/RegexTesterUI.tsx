@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useMemo, useState } from "react";
+import { ErrorMessage } from "@/components/tools/ErrorMessage";
 
 interface Match {
   text: string;
@@ -101,9 +102,7 @@ export function RegexTesterUI() {
         />
       </div>
 
-      {regexError && (
-        <div className="rounded-lg border border-error/30 bg-error/10 p-3 text-sm text-error">{regexError}</div>
-      )}
+      {regexError && <ErrorMessage message={regexError} />}
 
       {/* Highlighted result */}
       {highlighted && (

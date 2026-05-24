@@ -5,6 +5,8 @@ import { DropZone } from "@/components/tools/DropZone";
 import { FilePreview } from "@/components/tools/FilePreview";
 import { DownloadButton } from "@/components/tools/DownloadButton";
 import { ProgressBar } from "@/components/tools/ProgressBar";
+import { ErrorMessage } from "@/components/tools/ErrorMessage";
+import { StatusMessage } from "@/components/tools/StatusMessage";
 import { useFileProcessor } from "@/hooks/useFileProcessor";
 import { trimAudio, type AudioTrimOptions } from "@/lib/tools/audio-trim";
 import { formatFileSize } from "@/lib/utils/file-helpers";
@@ -16,6 +18,7 @@ export function AudioTrimmerUI() {
   const [endTime, setEndTime] = useState(0);
   const [outputFormat, setOutputFormat] = useState<"wav" | "mp3">("mp3");
   const [bitrate, setBitrate] = useState(192);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
 
@@ -30,23 +33,32 @@ export function AudioTrimmerUI() {
     (files: File[]) => {
       const f = files[0];
       if (!f) return;
-      setFile(f);
-      reset();
-
-      const url = URL.createObjectURL(f);
-      setAudioUrl(url);
-
-      // Get duration from audio element
-      const audio = new Audio(url);
-      audio.addEventListener("loadedmetadata", () => {
-        const dur = audio.duration;
-        setDuration(dur);
-        setStartTime(0);
-        setEndTime(dur);
+      // Revoke any prior URL before allocating a new one.
+      setAudioUrl((prev) => {
+        if (prev) URL.revokeObjectURL(prev);
+        return URL.createObjectURL(f);
       });
+      setFile(f);
+      setLoadError(null);
+      setDuration(0);
+      reset();
     },
     [reset],
   );
+
+  // Read duration from the rendered <audio> via onLoadedMetadata + onError —
+  // no separate hidden Audio element to leak.
+  const handleAudioLoadedMetadata = useCallback(() => {
+    const a = audioRef.current;
+    if (!a || !Number.isFinite(a.duration)) return;
+    setDuration(a.duration);
+    setStartTime(0);
+    setEndTime(a.duration);
+  }, []);
+
+  const handleAudioError = useCallback(() => {
+    setLoadError("Could not read this audio file. Try a different file.");
+  }, []);
 
   const handleTrim = useCallback(() => {
     if (!file) return;
@@ -58,13 +70,18 @@ export function AudioTrimmerUI() {
     setFile(null);
     setAudioUrl(null);
     setDuration(0);
+    setLoadError(null);
     reset();
   }, [audioUrl, reset]);
 
   return (
     <div className="space-y-6">
       {!file ? (
-        <DropZone accept=".mp3,.wav,.ogg,.m4a,.flac,.aac" onFiles={handleFiles} />
+        <DropZone
+          accept=".mp3,.wav,.ogg,.m4a,.flac,.aac"
+          onFiles={handleFiles}
+          label="Upload an audio file to trim"
+        />
       ) : (
         <>
           {/* Audio player */}
@@ -78,6 +95,8 @@ export function AudioTrimmerUI() {
                 ref={audioRef}
                 src={audioUrl}
                 controls
+                onLoadedMetadata={handleAudioLoadedMetadata}
+                onError={handleAudioError}
                 className="w-full h-10"
               />
               <p className="text-xs text-text-muted mt-2">
@@ -85,6 +104,8 @@ export function AudioTrimmerUI() {
               </p>
             </div>
           )}
+
+          {loadError && <ErrorMessage message={loadError} />}
 
           {/* Time range inputs */}
           <div className="grid grid-cols-2 gap-4">
@@ -172,14 +193,12 @@ export function AudioTrimmerUI() {
 
           {status === "processing" && (
             <div className="space-y-2">
-              <ProgressBar progress={50} />
-              <p className="text-sm text-text-muted text-center">Trimming...</p>
+              <ProgressBar progress={null} label="Trimming audio" />
+              <StatusMessage>Trimming...</StatusMessage>
             </div>
           )}
 
-          {status === "error" && (
-            <p className="text-sm text-error text-center">{error}</p>
-          )}
+          {status === "error" && error && <ErrorMessage message={error} />}
 
           {result && (
             <FilePreview fileName={result.fileName} fileSize={result.newSize} label="Trimmed" />
@@ -189,7 +208,8 @@ export function AudioTrimmerUI() {
             {status !== "done" && status !== "processing" && (
               <button
                 onClick={handleTrim}
-                className="inline-flex items-center gap-2 rounded-md bg-accent px-6 py-2.5 text-sm font-medium text-bg-primary hover:bg-accent-hover transition-colors"
+                disabled={loadError !== null}
+                className="inline-flex items-center gap-2 rounded-md bg-accent px-6 py-2.5 text-sm font-medium text-bg-primary hover:bg-accent-hover transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Trim
               </button>

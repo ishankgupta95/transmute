@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useState } from "react";
+import { ErrorMessage } from "@/components/tools/ErrorMessage";
 import { DropZone } from "@/components/tools/DropZone";
 import { FilePreview } from "@/components/tools/FilePreview";
 import { DownloadButton } from "@/components/tools/DownloadButton";
@@ -105,13 +106,13 @@ export function AudioConverterUI({
 
           {status === "processing" && (
             <div className="space-y-2">
-              <ProgressBar progress={50} />
+              <ProgressBar progress={null} />
               <p className="text-sm text-text-muted text-center">Converting...</p>
             </div>
           )}
 
           {status === "error" && (
-            <p className="text-sm text-error text-center">{error}</p>
+            <ErrorMessage message={error} />
           )}
 
           <div className="flex items-center justify-center gap-3">

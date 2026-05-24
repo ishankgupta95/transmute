@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useState } from "react";
+import { ErrorMessage } from "@/components/tools/ErrorMessage";
 import { DropZone } from "@/components/tools/DropZone";
 import { DownloadButton } from "@/components/tools/DownloadButton";
 import { ProgressBar } from "@/components/tools/ProgressBar";
@@ -90,7 +91,7 @@ export function AudioMergerUI() {
                     className="rounded p-1 text-text-muted hover:text-text-secondary hover:bg-bg-hover transition-colors disabled:opacity-30"
                     aria-label="Move up"
                   >
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                       <polyline points="18 15 12 9 6 15" />
                     </svg>
                   </button>
@@ -100,7 +101,7 @@ export function AudioMergerUI() {
                     className="rounded p-1 text-text-muted hover:text-text-secondary hover:bg-bg-hover transition-colors disabled:opacity-30"
                     aria-label="Move down"
                   >
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                       <polyline points="6 9 12 15 18 9" />
                     </svg>
                   </button>
@@ -110,7 +111,7 @@ export function AudioMergerUI() {
                     className="rounded p-1 text-text-muted hover:text-error hover:bg-bg-hover transition-colors disabled:opacity-30"
                     aria-label="Remove file"
                   >
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                       <line x1="18" y1="6" x2="6" y2="18" />
                       <line x1="6" y1="6" x2="18" y2="18" />
                     </svg>
@@ -174,13 +175,13 @@ export function AudioMergerUI() {
 
           {status === "processing" && (
             <div className="space-y-2">
-              <ProgressBar progress={50} />
+              <ProgressBar progress={null} />
               <p className="text-sm text-text-muted text-center">Merging audio files...</p>
             </div>
           )}
 
           {status === "error" && (
-            <p className="text-sm text-error text-center">{error}</p>
+            <ErrorMessage message={error} />
           )}
 
           {result && (

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useState } from "react";
+import { ErrorMessage } from "@/components/tools/ErrorMessage";
 
 export function UrlEncodeDecodeUI() {
   const [mode, setMode] = useState<"encode" | "decode">("encode");
@@ -68,7 +69,7 @@ export function UrlEncodeDecodeUI() {
       </div>
 
       {error && (
-        <div className="rounded-lg border border-error/30 bg-error/10 p-3 text-sm text-error">{error}</div>
+        <ErrorMessage message={error} />
       )}
 
       {output && (

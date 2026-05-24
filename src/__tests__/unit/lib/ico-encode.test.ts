@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-import { encodeIcoAsync, encodeIco } from "@/lib/tools/ico-encode";
+import { encodeIcoAsync } from "@/lib/tools/ico-encode";
 
 function makeMockCanvas(size: number) {
   const pngData = new Uint8Array([0x89, 0x50, 0x4e, 0x47, ...Array(20).fill(0)]); // fake PNG
@@ -176,12 +176,3 @@ describe("encodeIcoAsync", () => {
   });
 });
 
-describe("encodeIco (sync placeholder)", () => {
-  it("returns an empty Blob", () => {
-    const images = [{ canvas: makeMockCanvas(32), size: 32 }];
-    const blob = encodeIco(images);
-
-    expect(blob).toBeInstanceOf(Blob);
-    expect(blob.size).toBe(0);
-  });
-});

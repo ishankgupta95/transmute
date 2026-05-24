@@ -1,5 +1,6 @@
 import Pica from "pica";
 import type { ProcessedResult } from "@/hooks/useFileProcessor";
+import { loadImage } from "./canvas-utils";
 
 export interface ResizePreset {
   label: string;
@@ -80,17 +81,3 @@ export async function resizeImage(
   };
 }
 
-function loadImage(file: File): Promise<HTMLImageElement> {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.onload = () => {
-      URL.revokeObjectURL(img.src);
-      resolve(img);
-    };
-    img.onerror = () => {
-      URL.revokeObjectURL(img.src);
-      reject(new Error("Failed to load image"));
-    };
-    img.src = URL.createObjectURL(file);
-  });
-}

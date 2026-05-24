@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import { tools, getToolBySlug } from "@/data/tools";
-import { faqs } from "@/data/faqs";
+import { faqs, PRIVACY_FAQ } from "@/data/faqs";
 import { getToolMetadata, getHowToSteps } from "@/lib/seo/tool-metadata";
 import { ToolPageLayout } from "@/components/tools/ToolPageLayout";
 import { ImageToolClient } from "@/components/tools/ImageToolClient";
@@ -23,6 +23,7 @@ import {
   AddPageNumbersClient,
   PdfPageReorderClient,
 } from "@/components/tools/PdfToolClients";
+import { MarkdownToPdfClient } from "@/components/tools/MarkdownToPdfClient";
 import {
   Mp3ToWavClient,
   WavToMp3Client,
@@ -115,6 +116,8 @@ function ToolClient({ tool }: { tool: (typeof tools)[number] }) {
       return <AddPageNumbersClient />;
     case "pdf-page-reorder":
       return <PdfPageReorderClient />;
+    case "markdown-to-pdf":
+      return <MarkdownToPdfClient />;
     case "mp3-to-wav":
       return <Mp3ToWavClient tool={tool} />;
     case "wav-to-mp3":
@@ -201,7 +204,7 @@ export default async function ToolPage({
   const tool = getToolBySlug(slug);
   if (!tool) notFound();
 
-  const toolFaqs = faqs[slug] ?? [];
+  const toolFaqs = [...(faqs[slug] ?? []), PRIVACY_FAQ];
 
   return (
     <ToolPageLayout

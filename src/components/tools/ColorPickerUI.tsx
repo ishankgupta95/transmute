@@ -99,7 +99,11 @@ export function ColorPickerUI() {
             }}
             className="flex-1 rounded-md border border-border bg-bg-elevated px-3 py-2 text-sm text-text-primary font-mono"
           />
-          <button onClick={() => handleCopy("hex", hexStr)} className="text-xs text-accent hover:text-accent-hover shrink-0">
+          <button
+            onClick={() => handleCopy("hex", hexStr)}
+            aria-label={copied === "hex" ? "Copied HEX" : "Copy HEX value"}
+            className="shrink-0 inline-flex items-center justify-center min-h-9 px-3 py-1.5 rounded-md text-xs font-medium text-accent hover:bg-accent-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-bg-primary transition-colors"
+          >
             {copied === "hex" ? "Copied!" : "Copy"}
           </button>
         </div>
@@ -124,7 +128,11 @@ export function ColorPickerUI() {
               />
             ))}
           </div>
-          <button onClick={() => handleCopy("rgb", rgbStr)} className="text-xs text-accent hover:text-accent-hover shrink-0">
+          <button
+            onClick={() => handleCopy("rgb", rgbStr)}
+            aria-label={copied === "rgb" ? "Copied RGB" : "Copy RGB value"}
+            className="shrink-0 inline-flex items-center justify-center min-h-9 px-3 py-1.5 rounded-md text-xs font-medium text-accent hover:bg-accent-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-bg-primary transition-colors"
+          >
             {copied === "rgb" ? "Copied!" : "Copy"}
           </button>
         </div>
@@ -149,7 +157,11 @@ export function ColorPickerUI() {
               />
             ))}
           </div>
-          <button onClick={() => handleCopy("hsl", hslStr)} className="text-xs text-accent hover:text-accent-hover shrink-0">
+          <button
+            onClick={() => handleCopy("hsl", hslStr)}
+            aria-label={copied === "hsl" ? "Copied HSL" : "Copy HSL value"}
+            className="shrink-0 inline-flex items-center justify-center min-h-9 px-3 py-1.5 rounded-md text-xs font-medium text-accent hover:bg-accent-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-bg-primary transition-colors"
+          >
             {copied === "hsl" ? "Copied!" : "Copy"}
           </button>
         </div>

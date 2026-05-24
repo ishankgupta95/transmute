@@ -9,9 +9,17 @@ interface DropZoneProps {
   multiple?: boolean;
   onFiles: (files: File[]) => void;
   className?: string;
+  /** Visible/aria label describing what the user should drop. */
+  label?: string;
 }
 
-export function DropZone({ accept, multiple = false, onFiles, className }: DropZoneProps) {
+export function DropZone({
+  accept,
+  multiple = false,
+  onFiles,
+  className,
+  label = "Drag & drop or browse files",
+}: DropZoneProps) {
   const [dragging, setDragging] = useState(false);
 
   const handleDrop = useCallback(
@@ -28,6 +36,8 @@ export function DropZone({ accept, multiple = false, onFiles, className }: DropZ
     (e: React.ChangeEvent<HTMLInputElement>) => {
       const files = Array.from(e.target.files ?? []);
       if (files.length > 0) onFiles(multiple ? files : [files[0]]);
+      // Allow re-uploading the same file by clearing the input value.
+      e.target.value = "";
     },
     [multiple, onFiles],
   );
@@ -41,24 +51,27 @@ export function DropZone({ accept, multiple = false, onFiles, className }: DropZ
       onDragLeave={() => setDragging(false)}
       onDrop={handleDrop}
       className={cn(
-        "group relative flex flex-col items-center justify-center gap-4 rounded-lg border-2 border-dashed p-10 cursor-pointer transition-all duration-300",
+        "group relative flex flex-col items-center justify-center gap-4 rounded-lg border-2 border-dashed p-10 cursor-pointer transition-all duration-300 motion-reduce:transition-none focus-within:border-accent focus-within:bg-accent-muted",
         dragging
           ? "border-accent bg-accent-muted"
           : "border-border hover:border-[rgba(86,184,230,0.3)] hover:bg-[rgba(255,255,255,0.015)]",
         className,
       )}
     >
-      <div className={cn(
-        "flex items-center justify-center rounded-md p-3 transition-all duration-300",
-        dragging
-          ? "bg-accent-muted text-accent scale-110"
-          : "bg-bg-elevated text-text-muted group-hover:text-accent group-hover:bg-accent-muted",
-      )}>
+      <div
+        className={cn(
+          "flex items-center justify-center rounded-md p-3 transition-all duration-300 motion-reduce:transition-none",
+          dragging
+            ? "bg-accent-muted text-accent scale-110 motion-reduce:scale-100"
+            : "bg-bg-elevated text-text-muted group-hover:text-accent group-hover:bg-accent-muted",
+        )}
+        aria-hidden="true"
+      >
         <Upload size={28} />
       </div>
       <div className="text-center">
         <span className="text-sm text-text-secondary">
-          Drag & drop or{" "}
+          Drag &amp; drop or{" "}
           <span className="text-accent font-medium">browse files</span>
         </span>
       </div>
@@ -67,7 +80,8 @@ export function DropZone({ accept, multiple = false, onFiles, className }: DropZ
         accept={accept}
         multiple={multiple}
         onChange={handleChange}
-        className="hidden"
+        aria-label={label}
+        className="sr-only"
       />
     </label>
   );

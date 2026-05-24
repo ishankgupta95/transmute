@@ -74,7 +74,7 @@ export default function AboutPage() {
               href="https://ishank.dev"
               target="_blank"
               rel="noopener noreferrer"
-              className="text-accent hover:opacity-80 transition-opacity"
+              className="text-accent underline hover:opacity-80 transition-opacity"
             >
               Ishank
             </a>

@@ -97,7 +97,11 @@ export function UuidGeneratorUI() {
               {uuids.length} UUID{uuids.length > 1 ? "s" : ""}
             </label>
             {uuids.length > 1 && (
-              <button onClick={handleCopyAll} className="text-xs text-accent hover:text-accent-hover transition-colors">
+              <button
+                onClick={handleCopyAll}
+                aria-label={copied === "all" ? "Copied all UUIDs" : "Copy all UUIDs"}
+                className="inline-flex items-center justify-center min-h-9 px-3 py-1.5 rounded-md text-xs font-medium text-accent hover:bg-accent-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-bg-primary transition-colors"
+              >
                 {copied === "all" ? "Copied!" : "Copy all"}
               </button>
             )}
@@ -111,7 +115,8 @@ export function UuidGeneratorUI() {
                 <code className="text-sm text-text-primary font-mono">{uuid}</code>
                 <button
                   onClick={() => handleCopyOne(i)}
-                  className="text-xs text-accent hover:text-accent-hover transition-colors ml-2 shrink-0"
+                  aria-label={copied === i ? `Copied UUID ${i + 1}` : `Copy UUID ${i + 1}`}
+                  className="ml-2 shrink-0 inline-flex items-center justify-center min-h-9 px-3 py-1.5 rounded-md text-xs font-medium text-accent hover:bg-accent-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-bg-primary transition-colors"
                 >
                   {copied === i ? "Copied!" : "Copy"}
                 </button>

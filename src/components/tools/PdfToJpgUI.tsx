@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useState } from "react";
+import { ErrorMessage } from "@/components/tools/ErrorMessage";
 import { DropZone } from "@/components/tools/DropZone";
 import { ProgressBar } from "@/components/tools/ProgressBar";
 import { Download } from "lucide-react";
@@ -113,8 +114,8 @@ export function PdfToJpgUI() {
         </button>
       )}
 
-      {status === "processing" && <ProgressBar progress={50} />}
-      {error && <p className="text-sm text-error">{error}</p>}
+      {status === "processing" && <ProgressBar progress={null} />}
+      {error && <ErrorMessage message={error} />}
 
       {results.length > 0 && (
         <>

@@ -36,6 +36,11 @@ export function Footer() {
               <h3 className="text-xs font-semibold text-text-secondary uppercase tracking-wider mb-3">Company</h3>
               <ul className="space-y-2">
                 <li>
+                  <Link href="/blog" className="text-sm text-text-muted hover:text-accent transition-colors duration-200">
+                    Blog
+                  </Link>
+                </li>
+                <li>
                   <Link href="/about" className="text-sm text-text-muted hover:text-accent transition-colors duration-200">
                     About
                   </Link>
@@ -52,7 +57,7 @@ export function Footer() {
 
         <div className="border-t border-border pt-6 text-center text-sm text-text-muted">
           &copy; {new Date().getFullYear()} Transmute &middot; Built by{" "}
-          <a href="https://ishank.dev" target="_blank" rel="noopener noreferrer" className="text-accent hover:opacity-80 transition-opacity">
+          <a href="https://ishank.dev" target="_blank" rel="noopener noreferrer" className="text-accent underline hover:opacity-80 transition-opacity">
             Ishank
           </a>
         </div>

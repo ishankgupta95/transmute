@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ErrorMessage } from "@/components/tools/ErrorMessage";
 import { DownloadButton } from "@/components/tools/DownloadButton";
 import { formatFileSize } from "@/lib/utils/file-helpers";
@@ -17,6 +17,29 @@ export function ScreenRecorderUI() {
   const chunksRef = useRef<Blob[]>([]);
   const streamRef = useRef<MediaStream | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Stop the timer, recorder, and all live tracks if the user navigates away —
+  // otherwise the screen-share / mic indicator stays on and recording continues
+  // in the background (privacy + resource leak).
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
+        mediaRecorderRef.current.stop();
+      }
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach((t) => t.stop());
+      }
+    };
+  }, []);
+
+  // Revoke the recording's object URL when it is replaced or on unmount.
+  useEffect(() => {
+    const url = recording?.url;
+    return () => {
+      if (url) URL.revokeObjectURL(url);
+    };
+  }, [recording?.url]);
 
   const startRecording = useCallback(async () => {
     setError(null);

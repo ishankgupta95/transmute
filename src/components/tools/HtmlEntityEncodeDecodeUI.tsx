@@ -2,6 +2,8 @@
 
 import { useCallback, useState } from "react";
 
+import { copyText } from "@/lib/utils/clipboard";
+
 function encodeHtmlEntities(text: string): string {
   const map: Record<string, string> = {
     "&": "&amp;",
@@ -44,9 +46,12 @@ export function HtmlEntityEncodeDecodeUI() {
   );
 
   const handleCopy = useCallback(() => {
-    navigator.clipboard.writeText(output);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    copyText(output).then((ok) => {
+      if (ok) {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      }
+    });
   }, [output]);
 
   return (

@@ -2,6 +2,8 @@
 
 import { useCallback, useState } from "react";
 
+import { copyText } from "@/lib/utils/clipboard";
+
 interface ColorStop {
   color: string;
   position: number;
@@ -47,9 +49,12 @@ export function CssGradientGeneratorUI() {
   }, []);
 
   const handleCopy = useCallback(() => {
-    navigator.clipboard.writeText(cssCode);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    copyText(cssCode).then((ok) => {
+      if (ok) {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      }
+    });
   }, [cssCode]);
 
   return (

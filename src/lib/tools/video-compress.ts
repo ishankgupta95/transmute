@@ -1,6 +1,13 @@
 import { Muxer, ArrayBufferTarget } from "mp4-muxer";
 import type { ProcessedResult } from "@/hooks/useFileProcessor";
-import { createVideo, waitForReady, detectAudio, playAndExtractFrames } from "./video-utils";
+import {
+  createVideo,
+  waitForReady,
+  decodeAudio,
+  playAndExtractFrames,
+  assertWebCodecsSupported,
+  pickH264Config,
+} from "./video-utils";
 
 export type CompressionPreset = "whatsapp" | "email" | "web";
 
@@ -28,11 +35,20 @@ export async function compressVideo(
   const videoUrl = URL.createObjectURL(file);
 
   try {
+    assertWebCodecsSupported();
     const video = createVideo(videoUrl);
     await waitForReady(video);
 
     const { videoWidth, videoHeight, duration } = video;
-    const hasAudio = await detectAudio(file);
+    if (!Number.isFinite(duration) || duration <= 0 || !videoWidth || !videoHeight) {
+      throw new Error(
+        "Couldn't read this video — its codec or container may not be supported in-browser. Try an MP4 (H.264).",
+      );
+    }
+    // Decode the audio once up front so we can both detect it and reuse the
+    // buffer (the old code decoded the whole file twice — easy to OOM).
+    const audioBuffer = await decodeAudio(file);
+    const hasAudio = audioBuffer !== null;
 
     let outWidth = videoWidth;
     let outHeight = videoHeight;
@@ -47,24 +63,42 @@ export async function compressVideo(
     const muxer = new Muxer({
       target: new ArrayBufferTarget(),
       video: { codec: "avc", width: outWidth, height: outHeight },
-      ...(hasAudio ? { audio: { codec: "aac", numberOfChannels: 2, sampleRate: 48000 } } : {}),
+      ...(audioBuffer
+        ? {
+            audio: {
+              codec: "aac",
+              numberOfChannels: Math.min(audioBuffer.numberOfChannels, 2),
+              sampleRate: audioBuffer.sampleRate,
+            },
+          }
+        : {}),
       fastStart: "in-memory",
       firstTimestampBehavior: "offset",
     });
 
+    let encoderError: Error | null = null;
+    // Wakes a parked backpressure waiter so a fatal encoder error can't leave
+    // the frame loop awaiting an ondequeue that will never fire (the encoder is
+    // "closed" after an error) — which would freeze the UI on "Compressing…".
+    let wakeBackpressure: (() => void) | null = null;
     const videoEncoder = new VideoEncoder({
       output: (chunk, meta) => { muxer.addVideoChunk(chunk, meta); },
-      error: (e) => { throw e; },
+      // Capture rather than throw — a throw here fires async and becomes an
+      // uncaught rejection, freezing the UI on "Compressing…" forever.
+      error: (e) => {
+        encoderError = e instanceof Error ? e : new Error(String(e));
+        wakeBackpressure?.();
+      },
     });
 
-    videoEncoder.configure({
-      codec: "avc1.640034",
-      width: outWidth,
-      height: outHeight,
-      bitrate: config.bitrate,
-      framerate: 30,
-      hardwareAcceleration: "prefer-hardware",
-    });
+    videoEncoder.configure(
+      await pickH264Config({
+        width: outWidth,
+        height: outHeight,
+        bitrate: config.bitrate,
+        framerate: 30,
+      }),
+    );
 
     const needsScale = outWidth !== videoWidth || outHeight !== videoHeight;
     let canvas: HTMLCanvasElement | null = null;
@@ -82,6 +116,7 @@ export async function compressVideo(
       0,
       duration,
       async (vid, timestampUs) => {
+        if (encoderError) throw encoderError;
         let frame: VideoFrame;
         if (needsScale && ctx && canvas) {
           ctx.drawImage(vid, 0, 0, outWidth, outHeight);
@@ -97,8 +132,10 @@ export async function compressVideo(
 
         if (videoEncoder.encodeQueueSize > 5) {
           await new Promise<void>((r) => {
-            videoEncoder.ondequeue = () => { videoEncoder.ondequeue = null; r(); };
+            wakeBackpressure = () => { videoEncoder.ondequeue = null; wakeBackpressure = null; r(); };
+            videoEncoder.ondequeue = wakeBackpressure;
           });
+          if (encoderError) throw encoderError;
         }
       },
       (pct) => onProgress?.(Math.round(pct * (hasAudio ? 0.8 : 1))),
@@ -106,10 +143,11 @@ export async function compressVideo(
 
     await videoEncoder.flush();
     videoEncoder.close();
+    if (encoderError) throw encoderError;
 
-    if (hasAudio) {
+    if (audioBuffer) {
       onProgress?.(85);
-      await encodeAudio(file, muxer, config.audioBitrate);
+      await encodeAudio(audioBuffer, muxer, config.audioBitrate);
       onProgress?.(95);
     }
 
@@ -131,27 +169,17 @@ export async function compressVideo(
 }
 
 async function encodeAudio(
-  file: File,
+  audioBuffer: AudioBuffer,
   muxer: Muxer<ArrayBufferTarget>,
   bitrate: number,
 ): Promise<void> {
-  const audioCtx = new AudioContext({ sampleRate: 48000 });
-  const arrayBuffer = await file.arrayBuffer();
-
-  let audioBuffer: AudioBuffer;
-  try {
-    audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
-  } catch {
-    await audioCtx.close();
-    return;
-  }
-
   const numberOfChannels = Math.min(audioBuffer.numberOfChannels, 2);
   const sampleRate = audioBuffer.sampleRate;
 
+  let encoderError: Error | null = null;
   const audioEncoder = new AudioEncoder({
     output: (chunk, meta) => { muxer.addAudioChunk(chunk, meta); },
-    error: (e) => { throw e; },
+    error: (e) => { encoderError = e instanceof Error ? e : new Error(String(e)); },
   });
 
   audioEncoder.configure({
@@ -190,5 +218,5 @@ async function encodeAudio(
 
   await audioEncoder.flush();
   audioEncoder.close();
-  await audioCtx.close();
+  if (encoderError) throw encoderError;
 }

@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useState } from "react";
 import { ErrorMessage } from "@/components/tools/ErrorMessage";
 import { DropZone } from "@/components/tools/DropZone";
@@ -85,6 +86,18 @@ export function MergePdfUI() {
   return (
     <div className="space-y-6">
       <DropZone accept=".pdf" multiple onFiles={handleFiles} />
+
+      <p className="text-xs text-text-muted">
+        Merge combines whole files in the order below. To reorder or delete individual{" "}
+        <em>pages</em> within a PDF, use{" "}
+        <Link
+          href="/pdf-page-reorder"
+          className="text-accent underline hover:text-accent-hover"
+        >
+          Reorder PDF Pages
+        </Link>
+        .
+      </p>
 
       {entries.length > 0 && (
         <div className="space-y-2">

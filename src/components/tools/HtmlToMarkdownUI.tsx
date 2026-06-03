@@ -2,6 +2,7 @@
 
 import { useCallback, useState } from "react";
 import { ErrorMessage } from "@/components/tools/ErrorMessage";
+import { copyText } from "@/lib/utils/clipboard";
 import TurndownService from "turndown";
 
 const turndown = new TurndownService({ headingStyle: "atx", codeBlockStyle: "fenced" });
@@ -24,9 +25,12 @@ export function HtmlToMarkdownUI() {
   }, [input]);
 
   const handleCopy = useCallback(() => {
-    navigator.clipboard.writeText(output);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    copyText(output).then((ok) => {
+      if (ok) {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      }
+    });
   }, [output]);
 
   return (

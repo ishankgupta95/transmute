@@ -24,6 +24,7 @@ let mockCanvas: Record<string, unknown>;
 function setupCanvasMock() {
   mockCtx = {
     drawImage: vi.fn(),
+    fillRect: vi.fn(),
     getImageData: vi.fn().mockReturnValue({ data: new Uint8Array(0) }),
     createImageData: vi.fn().mockImplementation((w: number, h: number) => ({
       data: new Uint8Array(w * h * 4),

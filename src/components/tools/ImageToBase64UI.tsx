@@ -3,6 +3,7 @@
 import { useCallback, useState } from "react";
 import { DropZone } from "@/components/tools/DropZone";
 import { formatFileSize } from "@/lib/utils/file-helpers";
+import { copyText } from "@/lib/utils/clipboard";
 
 interface ImageToBase64UIProps {
   acceptFormats: string;
@@ -34,9 +35,12 @@ export function ImageToBase64UI({ acceptFormats }: ImageToBase64UIProps) {
 
   const handleCopy = useCallback(() => {
     const text = outputMode === "datauri" ? dataUri : base64;
-    navigator.clipboard.writeText(text);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    copyText(text).then((ok) => {
+      if (ok) {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      }
+    });
   }, [outputMode, dataUri, base64]);
 
   const handleReset = useCallback(() => {

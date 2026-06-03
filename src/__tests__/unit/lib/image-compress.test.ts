@@ -19,7 +19,11 @@ function setupCanvasMock(opts?: {
   fixedSize?: number;
 }) {
   toBlobQualities = [];
-  mockCtx = { drawImage: vi.fn() };
+  mockCtx = {
+    drawImage: vi.fn(),
+    fillRect: vi.fn(),
+    getImageData: vi.fn().mockReturnValue({ data: new Uint8ClampedArray(0) }),
+  };
   toBlobMock = vi.fn().mockImplementation(
     (cb: (b: Blob | null) => void, type: string, quality?: number) => {
       const q = quality ?? 1;

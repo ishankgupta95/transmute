@@ -2,6 +2,8 @@
 
 import { useCallback, useState } from "react";
 
+import { copyText } from "@/lib/utils/clipboard";
+
 interface Shadow {
   x: number;
   y: number;
@@ -53,9 +55,12 @@ export function BoxShadowGeneratorUI() {
   }, []);
 
   const handleCopy = useCallback(() => {
-    navigator.clipboard.writeText(cssCode);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    copyText(cssCode).then((ok) => {
+      if (ok) {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      }
+    });
   }, [cssCode]);
 
   return (

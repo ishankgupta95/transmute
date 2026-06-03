@@ -1,9 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-// Mock pica
+// Mock pica — toBlob echoes the requested mime so we can assert format preservation
+const picaBlob = (_c: unknown, mime = "image/jpeg") =>
+  Promise.resolve(new Blob(["resized"], { type: mime }));
 const mockPicaInstance = {
   resize: vi.fn().mockResolvedValue(undefined),
-  toBlob: vi.fn().mockResolvedValue(new Blob(["resized"], { type: "image/jpeg" })),
+  toBlob: vi.fn().mockImplementation(picaBlob),
 };
 
 vi.mock("pica", () => {
@@ -118,31 +120,43 @@ describe("resizeImage", () => {
     setupCanvasMock();
     setupImageMock();
     mockPicaInstance.resize.mockResolvedValue(undefined);
-    mockPicaInstance.toBlob.mockResolvedValue(new Blob(["resized"], { type: "image/jpeg" }));
+    mockPicaInstance.toBlob.mockImplementation(picaBlob);
   });
 
-  it("resizes with custom dimensions", async () => {
+  it("resizes a PNG and preserves PNG output (keeps transparency)", async () => {
     const file = makeFile("photo.png");
     const opts: ImageResizeOptions = {
       mode: "custom", width: 400, height: 300, lockAspect: false, percentage: 100, quality: 0.9,
     };
     const result = await resizeImage(file, opts);
 
-    expect(result.fileName).toBe("photo-400x300.jpg");
-    expect(result.blob.type).toBe("image/jpeg");
+    expect(result.fileName).toBe("photo-400x300.png");
+    expect(result.blob.type).toBe("image/png");
     expect(mockPicaInstance.resize).toHaveBeenCalled();
-    expect(mockPicaInstance.toBlob).toHaveBeenCalled();
+    expect(mockPicaInstance.toBlob).toHaveBeenCalledWith(expect.anything(), "image/png", 0.9);
   });
 
-  it("resizes with percentage mode", async () => {
+  it("resizes a JPG and keeps JPEG output", async () => {
     setupImageMock(1000, 500);
-    const file = makeFile("wide.jpg");
+    const file = new File(["data"], "wide.jpg", { type: "image/jpeg" });
     const opts: ImageResizeOptions = {
       mode: "percentage", width: 0, height: 0, lockAspect: false, percentage: 50, quality: 0.85,
     };
     const result = await resizeImage(file, opts);
 
     expect(result.fileName).toBe("wide-500x250.jpg");
+    expect(result.blob.type).toBe("image/jpeg");
+  });
+
+  it("resizes a WebP and keeps WebP output", async () => {
+    const file = new File(["data"], "logo.webp", { type: "image/webp" });
+    const opts: ImageResizeOptions = {
+      mode: "custom", width: 200, height: 200, lockAspect: false, percentage: 100, quality: 0.9,
+    };
+    const result = await resizeImage(file, opts);
+
+    expect(result.fileName).toBe("logo-200x200.webp");
+    expect(result.blob.type).toBe("image/webp");
   });
 
   it("resizes with preset mode (uses width/height from options)", async () => {
@@ -152,7 +166,7 @@ describe("resizeImage", () => {
     };
     const result = await resizeImage(file, opts);
 
-    expect(result.fileName).toBe("photo-1080x1080.jpg");
+    expect(result.fileName).toBe("photo-1080x1080.png");
   });
 
   it("clamps dimensions to minimum of 1", async () => {
@@ -162,7 +176,7 @@ describe("resizeImage", () => {
     };
     const result = await resizeImage(file, opts);
 
-    expect(result.fileName).toBe("tiny-1x1.jpg");
+    expect(result.fileName).toBe("tiny-1x1.png");
   });
 
   it("clamps dimensions to maximum of 8192", async () => {
@@ -172,7 +186,7 @@ describe("resizeImage", () => {
     };
     const result = await resizeImage(file, opts);
 
-    expect(result.fileName).toBe("huge-8192x8192.jpg");
+    expect(result.fileName).toBe("huge-8192x8192.png");
   });
 
   it("percentage 200 doubles dimensions", async () => {
@@ -183,7 +197,7 @@ describe("resizeImage", () => {
     };
     const result = await resizeImage(file, opts);
 
-    expect(result.fileName).toBe("small-800x600.jpg");
+    expect(result.fileName).toBe("small-800x600.png");
   });
 
   it("percentage clamped to 8192 max", async () => {
@@ -194,7 +208,7 @@ describe("resizeImage", () => {
     };
     const result = await resizeImage(file, opts);
 
-    expect(result.fileName).toBe("big-8192x8192.jpg");
+    expect(result.fileName).toBe("big-8192x8192.png");
   });
 
   it("passes quality 3 (Lanczos3) to pica.resize", async () => {
@@ -217,7 +231,7 @@ describe("resizeImage", () => {
     await resizeImage(file, opts);
 
     expect(mockPicaInstance.toBlob).toHaveBeenCalledWith(
-      expect.anything(), "image/jpeg", 0.75,
+      expect.anything(), "image/png", 0.75,
     );
   });
 

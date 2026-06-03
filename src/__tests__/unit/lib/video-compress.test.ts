@@ -5,13 +5,27 @@ const {
   mockPlayAndExtractFrames,
   mockCreateVideo,
   mockWaitForReady,
-  mockDetectAudio,
+  mockDecodeAudio,
+  mockAssertWebCodecsSupported,
+  mockPickH264Config,
 } = vi.hoisted(() => ({
   mockPlayAndExtractFrames: vi.fn().mockResolvedValue(undefined),
   mockCreateVideo: vi.fn(),
   mockWaitForReady: vi.fn().mockResolvedValue(undefined),
-  mockDetectAudio: vi.fn().mockResolvedValue(false),
+  mockDecodeAudio: vi.fn().mockResolvedValue(null),
+  mockAssertWebCodecsSupported: vi.fn(),
+  mockPickH264Config: vi.fn((base: Record<string, unknown>) =>
+    Promise.resolve({ codec: "avc1.640034", hardwareAcceleration: "prefer-hardware", ...base }),
+  ),
 }));
+
+// Minimal AudioBuffer-like for the audio-encoding path
+const fakeAudioBuffer = {
+  length: 2048,
+  numberOfChannels: 2,
+  sampleRate: 48000,
+  getChannelData: () => new Float32Array(2048),
+} as unknown as AudioBuffer;
 
 const {
   mockAddVideoChunk,
@@ -31,7 +45,9 @@ const {
 vi.mock("@/lib/tools/video-utils", () => ({
   createVideo: mockCreateVideo,
   waitForReady: mockWaitForReady,
-  detectAudio: mockDetectAudio,
+  decodeAudio: mockDecodeAudio,
+  assertWebCodecsSupported: mockAssertWebCodecsSupported,
+  pickH264Config: mockPickH264Config,
   playAndExtractFrames: mockPlayAndExtractFrames,
 }));
 
@@ -115,7 +131,10 @@ import type { CompressionPreset } from "@/lib/tools/video-compress";
 describe("compressVideo", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockDetectAudio.mockResolvedValue(false);
+    mockDecodeAudio.mockResolvedValue(null);
+    mockPickH264Config.mockImplementation((base: Record<string, unknown>) =>
+      Promise.resolve({ codec: "avc1.640034", hardwareAcceleration: "prefer-hardware", ...base }),
+    );
     mockPlayAndExtractFrames.mockImplementation(
       async (video: unknown, startTime: number, _endTime: unknown, onFrame: (vid: unknown, ts: number) => Promise<void>, onProgress?: (pct: number) => void) => {
         for (let i = 0; i < 3; i++) {
@@ -399,9 +418,7 @@ describe("compressVideo", () => {
 
   describe("with audio", () => {
     beforeEach(() => {
-      mockDetectAudio.mockResolvedValue(true);
-      // Mock audio decoding to fail (skip audio encoding path gracefully)
-      mockAudioDecodeData.mockRejectedValue(new Error("No audio"));
+      mockDecodeAudio.mockResolvedValue(fakeAudioBuffer);
     });
 
     it("reports progress at 85 and 95 during audio encoding", async () => {

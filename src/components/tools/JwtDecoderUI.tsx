@@ -2,6 +2,7 @@
 
 import { useCallback, useState } from "react";
 import { ErrorMessage } from "@/components/tools/ErrorMessage";
+import { copyText } from "@/lib/utils/clipboard";
 
 interface JwtParts {
   header: Record<string, unknown>;
@@ -16,8 +17,13 @@ function decodeJwt(token: string): JwtParts {
   if (parts.length !== 3) throw new Error("Invalid JWT — must have 3 parts separated by dots");
 
   const base64UrlDecode = (s: string) => {
-    const padded = s.replace(/-/g, "+").replace(/_/g, "/");
-    return JSON.parse(atob(padded));
+    let b64 = s.replace(/-/g, "+").replace(/_/g, "/");
+    while (b64.length % 4) b64 += "=";
+    const binary = atob(b64);
+    // Decode the bytes as UTF-8 so non-ASCII claim values (names, CJK, emoji)
+    // aren't mangled by atob's Latin-1 interpretation.
+    const bytes = Uint8Array.from(binary, (c) => c.charCodeAt(0));
+    return JSON.parse(new TextDecoder().decode(bytes));
   };
 
   const header = base64UrlDecode(parts[0]);
@@ -52,7 +58,7 @@ export function JwtDecoderUI() {
   }, []);
 
   const copySection = (data: unknown) => {
-    navigator.clipboard.writeText(JSON.stringify(data, null, 2));
+    copyText(JSON.stringify(data, null, 2));
   };
 
   return (

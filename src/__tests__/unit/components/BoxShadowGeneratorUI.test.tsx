@@ -104,10 +104,10 @@ describe("BoxShadowGeneratorUI", () => {
     expect(arg).toContain("box-shadow:");
   });
 
-  it("shows Copied! after clicking copy", () => {
+  it("shows Copied! after clicking copy", async () => {
     render(<BoxShadowGeneratorUI />);
     fireEvent.click(screen.getByText("Copy"));
-    expect(screen.getByText("Copied!")).toBeInTheDocument();
+    expect(await screen.findByText("Copied!")).toBeInTheDocument();
   });
 
   it("preview box has correct box-shadow style", () => {

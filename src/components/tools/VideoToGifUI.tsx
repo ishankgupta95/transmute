@@ -86,7 +86,7 @@ export function VideoToGifUI() {
   return (
     <div className="space-y-6">
       {!file ? (
-        <DropZone accept=".mp4,.webm,.mov,.avi,.mkv" onFiles={handleFiles} />
+        <DropZone accept=".mp4,.webm,.mov" onFiles={handleFiles} />
       ) : (
         <>
           {videoUrl && (

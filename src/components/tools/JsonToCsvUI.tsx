@@ -2,27 +2,53 @@
 
 import { useCallback, useState } from "react";
 import { ErrorMessage } from "@/components/tools/ErrorMessage";
+import { copyText } from "@/lib/utils/clipboard";
 import { triggerDownload } from "@/lib/utils/download";
+
+/** Flatten nested objects into dot-notation keys (address.city, etc.). */
+function flatten(
+  obj: Record<string, unknown>,
+  prefix = "",
+  out: Record<string, unknown> = {},
+): Record<string, unknown> {
+  for (const [k, v] of Object.entries(obj)) {
+    const key = prefix ? `${prefix}.${k}` : k;
+    if (v !== null && typeof v === "object" && !Array.isArray(v)) {
+      flatten(v as Record<string, unknown>, key, out);
+    } else {
+      out[key] = v;
+    }
+  }
+  return out;
+}
 
 function jsonToCsv(jsonStr: string): string {
   const data = JSON.parse(jsonStr);
   if (!Array.isArray(data) || data.length === 0) throw new Error("Input must be a non-empty JSON array");
 
+  const flatRows: Record<string, unknown>[] = [];
   const headers = new Set<string>();
   for (const row of data) {
-    if (typeof row !== "object" || row === null) throw new Error("Each array element must be an object");
-    for (const key of Object.keys(row)) headers.add(key);
+    if (typeof row !== "object" || row === null || Array.isArray(row)) {
+      throw new Error("Each array element must be an object");
+    }
+    const flat = flatten(row as Record<string, unknown>);
+    flatRows.push(flat);
+    for (const key of Object.keys(flat)) headers.add(key);
   }
   const cols = Array.from(headers);
 
   const escape = (val: unknown): string => {
-    const s = val === null || val === undefined ? "" : String(val);
-    return s.includes(",") || s.includes('"') || s.includes("\n") ? `"${s.replace(/"/g, '""')}"` : s;
+    let s: string;
+    if (val === null || val === undefined) s = "";
+    else if (typeof val === "object") s = JSON.stringify(val); // arrays
+    else s = String(val);
+    return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
   };
 
   const lines = [cols.map(escape).join(",")];
-  for (const row of data) {
-    lines.push(cols.map((c) => escape((row as Record<string, unknown>)[c])).join(","));
+  for (const flat of flatRows) {
+    lines.push(cols.map((c) => escape(flat[c])).join(","));
   }
   return lines.join("\n");
 }
@@ -45,9 +71,12 @@ export function JsonToCsvUI() {
   }, [input]);
 
   const handleCopy = useCallback(() => {
-    navigator.clipboard.writeText(output);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    copyText(output).then((ok) => {
+      if (ok) {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      }
+    });
   }, [output]);
 
   const handleDownload = useCallback(() => {

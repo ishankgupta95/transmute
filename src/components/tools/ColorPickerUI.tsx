@@ -2,6 +2,8 @@
 
 import { useCallback, useState } from "react";
 
+import { copyText } from "@/lib/utils/clipboard";
+
 function hexToRgb(hex: string): [number, number, number] {
   const h = hex.replace("#", "");
   return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)];
@@ -62,9 +64,12 @@ export function ColorPickerUI() {
   }, []);
 
   const handleCopy = useCallback((label: string, value: string) => {
-    navigator.clipboard.writeText(value);
-    setCopied(label);
-    setTimeout(() => setCopied(null), 2000);
+    copyText(value).then((ok) => {
+      if (ok) {
+        setCopied(label);
+        setTimeout(() => setCopied(null), 2000);
+      }
+    });
   }, []);
 
   const hexStr = hex;

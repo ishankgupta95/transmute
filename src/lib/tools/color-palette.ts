@@ -71,39 +71,59 @@ export async function extractColorPalette(
   return colors;
 }
 
+/**
+ * Iterative median-cut quantization. Repeatedly splits the bucket with the
+ * widest channel range until we reach `targetCount` buckets (or no bucket can
+ * be split further). Returns at most `targetCount` NON-EMPTY buckets — the old
+ * recursive version treated the count as a depth, yielding 2^N buckets and
+ * empty buckets that rendered as "#NaNNaNNaN" swatches.
+ */
 function medianCut(
   pixels: [number, number, number][],
-  depth: number,
+  targetCount: number,
 ): [number, number, number][][] {
-  if (depth <= 0 || pixels.length === 0) {
-    return [pixels];
+  if (pixels.length === 0 || targetCount <= 1) {
+    return pixels.length ? [pixels] : [];
   }
 
-  // Find channel with greatest range
-  let maxRange = 0;
-  let splitChannel = 0;
-  for (let c = 0; c < 3; c++) {
-    let min = 255;
-    let max = 0;
-    for (const px of pixels) {
-      if (px[c] < min) min = px[c];
-      if (px[c] > max) max = px[c];
+  const buckets: [number, number, number][][] = [pixels];
+
+  while (buckets.length < targetCount) {
+    let bestIdx = -1;
+    let bestRange = -1;
+    let bestChannel = 0;
+
+    for (let i = 0; i < buckets.length; i++) {
+      const bucket = buckets[i];
+      if (bucket.length < 2) continue; // can't split a single pixel
+      for (let c = 0; c < 3; c++) {
+        let min = 255;
+        let max = 0;
+        for (const px of bucket) {
+          if (px[c] < min) min = px[c];
+          if (px[c] > max) max = px[c];
+        }
+        const range = max - min;
+        // Only split buckets that actually span >1 colour — splitting a uniform
+        // bucket would produce duplicate swatches. When no splittable bucket
+        // remains we return fewer than targetCount distinct colours.
+        if (range > bestRange && range > 0) {
+          bestRange = range;
+          bestIdx = i;
+          bestChannel = c;
+        }
+      }
     }
-    const range = max - min;
-    if (range > maxRange) {
-      maxRange = range;
-      splitChannel = c;
-    }
+
+    if (bestIdx === -1) break; // nothing left to split
+
+    const bucket = buckets[bestIdx];
+    bucket.sort((a, b) => a[bestChannel] - b[bestChannel]);
+    const mid = Math.floor(bucket.length / 2);
+    buckets.splice(bestIdx, 1, bucket.slice(0, mid), bucket.slice(mid));
   }
 
-  // Sort by that channel and split at median
-  pixels.sort((a, b) => a[splitChannel] - b[splitChannel]);
-  const mid = Math.floor(pixels.length / 2);
-
-  return [
-    ...medianCut(pixels.slice(0, mid), depth - 1),
-    ...medianCut(pixels.slice(mid), depth - 1),
-  ];
+  return buckets.filter((b) => b.length > 0);
 }
 
 function rgbToHex(r: number, g: number, b: number): string {

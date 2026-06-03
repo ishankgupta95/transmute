@@ -2,6 +2,8 @@
 
 import { useCallback, useMemo, useState } from "react";
 
+import { copyText } from "@/lib/utils/clipboard";
+
 const MINUTES = ["*", ...Array.from({ length: 60 }, (_, i) => String(i))];
 const HOURS = ["*", ...Array.from({ length: 24 }, (_, i) => String(i))];
 const DAYS = ["*", ...Array.from({ length: 31 }, (_, i) => String(i + 1))];
@@ -90,9 +92,12 @@ export function CronExpressionGeneratorUI() {
   const nextRuns = useMemo(() => (isValid ? getNextRuns(expression, 5) : []), [expression, isValid]);
 
   const handleCopy = useCallback(() => {
-    navigator.clipboard.writeText(expression);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    copyText(expression).then((ok) => {
+      if (ok) {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      }
+    });
   }, [expression]);
 
   const handleManualChange = useCallback((val: string) => {

@@ -9,8 +9,46 @@ interface DropZoneProps {
   multiple?: boolean;
   onFiles: (files: File[]) => void;
   className?: string;
-  /** Visible/aria label describing what the user should drop. */
+  /** Visible heading + aria label describing what the user should drop. */
   label?: string;
+}
+
+/** Lenient accept matcher — only rejects files we're confident don't match. */
+function matchesAccept(file: File, accept?: string): boolean {
+  if (!accept) return true;
+  const tokens = accept
+    .split(",")
+    .map((t) => t.trim().toLowerCase())
+    .filter(Boolean);
+  if (!tokens.length || tokens.includes("*/*")) return true;
+
+  const name = file.name.toLowerCase();
+  const type = file.type.toLowerCase();
+  for (const t of tokens) {
+    if (t.startsWith(".") && name.endsWith(t)) return true;
+    if (t.endsWith("/*") && type && type.startsWith(t.slice(0, -1))) return true;
+    if (t.includes("/") && !t.endsWith("/*") && type === t) return true;
+  }
+  // If the OS didn't report a MIME type, don't hard-block (extension already failed to match).
+  return !type;
+}
+
+/** Human-readable "Accepts PNG, JPG" hint from the accept attribute. */
+function describeAccept(accept?: string): string {
+  if (!accept) return "";
+  const tokens = accept
+    .split(",")
+    .map((t) => t.trim())
+    .filter(Boolean);
+  if (tokens.some((t) => t === "*/*")) return "";
+  const parts: string[] = [];
+  for (const t of tokens) {
+    if (t.startsWith(".")) parts.push(t.slice(1).toUpperCase());
+    else if (t.endsWith("/*")) parts.push(`${t.split("/")[0]}s`);
+    else if (t.includes("/")) parts.push(t.split("/")[1].toUpperCase());
+  }
+  const uniq = [...new Set(parts)];
+  return uniq.length ? `Accepts ${uniq.join(", ")}` : "";
 }
 
 export function DropZone({
@@ -18,28 +56,45 @@ export function DropZone({
   multiple = false,
   onFiles,
   className,
-  label = "Drag & drop or browse files",
+  label = "Drag & drop a file here",
 }: DropZoneProps) {
   const [dragging, setDragging] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const acceptHint = describeAccept(accept);
+
+  const emit = useCallback(
+    (selected: File[]) => {
+      if (selected.length === 0) return;
+      const accepted = selected.filter((f) => matchesAccept(f, accept));
+      if (accepted.length === 0) {
+        setError(acceptHint ? `Unsupported file type. ${acceptHint}.` : "Unsupported file type.");
+        return;
+      }
+      setError(
+        accepted.length < selected.length ? "Some files were skipped (unsupported type)." : null,
+      );
+      onFiles(multiple ? accepted : [accepted[0]]);
+    },
+    [accept, acceptHint, multiple, onFiles],
+  );
 
   const handleDrop = useCallback(
     (e: React.DragEvent) => {
       e.preventDefault();
       setDragging(false);
-      const files = Array.from(e.dataTransfer.files);
-      if (files.length > 0) onFiles(multiple ? files : [files[0]]);
+      emit(Array.from(e.dataTransfer.files));
     },
-    [multiple, onFiles],
+    [emit],
   );
 
   const handleChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
-      const files = Array.from(e.target.files ?? []);
-      if (files.length > 0) onFiles(multiple ? files : [files[0]]);
+      emit(Array.from(e.target.files ?? []));
       // Allow re-uploading the same file by clearing the input value.
       e.target.value = "";
     },
-    [multiple, onFiles],
+    [emit],
   );
 
   return (
@@ -69,11 +124,18 @@ export function DropZone({
       >
         <Upload size={28} />
       </div>
-      <div className="text-center">
-        <span className="text-sm text-text-secondary">
-          Drag &amp; drop or{" "}
-          <span className="text-accent font-medium">browse files</span>
+      <div className="text-center space-y-1">
+        <span className="block text-sm font-medium text-text-secondary">{label}</span>
+        <span className="block text-xs text-text-muted">
+          Drag &amp; drop or <span className="text-accent font-medium">browse</span>
+          {acceptHint && <> &middot; {acceptHint}</>}
+          {multiple && <> &middot; multiple files</>}
         </span>
+        {error && (
+          <span role="alert" className="block text-xs text-error">
+            {error}
+          </span>
+        )}
       </div>
       <input
         type="file"

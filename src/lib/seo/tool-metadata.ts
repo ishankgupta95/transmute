@@ -307,7 +307,9 @@ export function getToolMetadata(slug: string): Metadata {
   }
 
   return {
-    title: `${tool.h1} | Transmute`,
+    // Plain string — the root layout's title.template adds " | Transmute".
+    // Returning "... | Transmute" here produced a doubled "| Transmute | Transmute".
+    title: tool.h1,
     description: tool.description,
     keywords: tool.keywords,
     alternates: {

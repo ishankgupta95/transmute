@@ -251,4 +251,23 @@ describe("extractColorPalette", () => {
     const file = makeFile("photo.png");
     await expect(extractColorPalette(file)).rejects.toThrow("Canvas 2D context not available");
   });
+
+  it("returns exactly N colors (never empty/NaN buckets) when distinct colors exceed N", async () => {
+    // 64 distinct opaque colors → requesting 8 must yield exactly 8 valid swatches
+    const pixels = new Uint8ClampedArray(64 * 4);
+    for (let i = 0; i < 64; i++) {
+      pixels[i * 4] = i * 4;
+      pixels[i * 4 + 1] = 255 - i * 3;
+      pixels[i * 4 + 2] = (i * 7) % 256;
+      pixels[i * 4 + 3] = 255;
+    }
+    setupCanvasMock(pixels);
+
+    const colors = await extractColorPalette(makeFile("rainbow.png"), 8);
+    expect(colors).toHaveLength(8);
+    for (const c of colors) {
+      expect(c.hex).toMatch(/^#[0-9a-f]{6}$/);
+      expect(c.rgb.every((v) => Number.isFinite(v))).toBe(true);
+    }
+  });
 });

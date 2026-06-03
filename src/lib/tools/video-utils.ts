@@ -28,17 +28,80 @@ export function waitForReady(video: HTMLVideoElement): Promise<void> {
 
 /**
  * Detect whether a file contains an audio track by attempting to decode it.
+ * Always closes the AudioContext (browsers cap concurrent contexts at ~6).
  */
 export async function detectAudio(file: File): Promise<boolean> {
+  const audioCtx = new AudioContext();
   try {
-    const audioCtx = new AudioContext();
     const buf = await file.arrayBuffer();
     await audioCtx.decodeAudioData(buf);
-    await audioCtx.close();
     return true;
   } catch {
     return false;
+  } finally {
+    await audioCtx.close();
   }
+}
+
+/**
+ * Decode a file's audio to PCM once and return it (or null if it has no
+ * decodable audio). Lets callers test for audio AND reuse the buffer instead of
+ * decoding the whole file twice. Always closes the AudioContext.
+ */
+export async function decodeAudio(file: File): Promise<AudioBuffer | null> {
+  const audioCtx = new AudioContext({ sampleRate: 48000 });
+  try {
+    const buf = await file.arrayBuffer();
+    const decoded = await audioCtx.decodeAudioData(buf);
+    return decoded.length > 0 ? decoded : null;
+  } catch {
+    return null;
+  } finally {
+    await audioCtx.close();
+  }
+}
+
+/**
+ * Throw a clear, user-facing error if the browser lacks the WebCodecs encode
+ * APIs these tools rely on (Firefox has no VideoEncoder / requestVideoFrameCallback).
+ */
+export function assertWebCodecsSupported(): void {
+  const ok =
+    typeof VideoEncoder !== "undefined" &&
+    typeof AudioEncoder !== "undefined" &&
+    typeof VideoFrame !== "undefined" &&
+    "requestVideoFrameCallback" in HTMLVideoElement.prototype;
+  if (!ok) {
+    throw new Error(
+      "In-browser video encoding isn't supported in this browser. Please use Chrome or Edge.",
+    );
+  }
+}
+
+/**
+ * Pick an H.264 encoder config the current device actually supports, trying
+ * high → main → baseline profiles and hardware → software acceleration.
+ */
+export async function pickH264Config(base: {
+  width: number;
+  height: number;
+  bitrate: number;
+  framerate: number;
+}): Promise<VideoEncoderConfig> {
+  const codecs = ["avc1.640034", "avc1.4D4028", "avc1.42E01E"]; // High 5.2, Main 4.0, Baseline 3.0
+  const accelerations: HardwareAcceleration[] = ["prefer-hardware", "no-preference"];
+  for (const hardwareAcceleration of accelerations) {
+    for (const codec of codecs) {
+      const config: VideoEncoderConfig = { codec, ...base, hardwareAcceleration };
+      try {
+        const support = await VideoEncoder.isConfigSupported(config);
+        if (support.supported) return config;
+      } catch {
+        /* try the next combination */
+      }
+    }
+  }
+  throw new Error("This browser can't encode H.264 video. Please try Chrome or Edge.");
 }
 
 /**

@@ -2,6 +2,7 @@
 
 import { useCallback, useState } from "react";
 import { ErrorMessage } from "@/components/tools/ErrorMessage";
+import { copyText } from "@/lib/utils/clipboard";
 
 export function UrlEncodeDecodeUI() {
   const [mode, setMode] = useState<"encode" | "decode">("encode");
@@ -34,9 +35,12 @@ export function UrlEncodeDecodeUI() {
   );
 
   const handleCopy = useCallback(() => {
-    navigator.clipboard.writeText(output);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    copyText(output).then((ok) => {
+      if (ok) {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      }
+    });
   }, [output]);
 
   return (

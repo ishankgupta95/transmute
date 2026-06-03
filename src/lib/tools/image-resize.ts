@@ -70,14 +70,36 @@ export async function resizeImage(
   const pica = new Pica({ features: ["js"] });
   await pica.resize(srcCanvas, destCanvas, { quality: 3 });
 
-  const blob = await pica.toBlob(destCanvas, "image/jpeg", options.quality);
+  // Preserve the source format so transparency survives and the file isn't
+  // silently turned into a JPEG. (Forcing JPEG turned transparent PNG/WebP
+  // logos into black boxes.) JPEG output is only used for already-opaque
+  // JPEG inputs, so no background fill is needed.
+  const { mime, ext } = outputFormat(file);
+  const blob = await pica.toBlob(destCanvas, mime, options.quality);
   const baseName = file.name.replace(/\.[^.]+$/, "");
 
   return {
     blob,
-    fileName: `${baseName}-${outW}x${outH}.jpg`,
+    fileName: `${baseName}-${outW}x${outH}.${ext}`,
     originalSize: file.size,
     newSize: blob.size,
   };
+}
+
+/** Map the source extension to an alpha-safe output format. */
+function outputFormat(file: File): { mime: string; ext: string } {
+  const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
+  switch (ext) {
+    case "png":
+    case "gif": // may carry transparency (first frame) — keep alpha-capable PNG
+    case "svg":
+      return { mime: "image/png", ext: "png" };
+    case "webp":
+    case "avif":
+      return { mime: "image/webp", ext: "webp" };
+    // bmp/jpg/jpeg carry no alpha → JPEG (a resized BMP as lossless PNG would bloat).
+    default:
+      return { mime: "image/jpeg", ext: "jpg" };
+  }
 }
 

@@ -19,6 +19,7 @@ describe("triggerDownload", () => {
   let createdAnchor: HTMLAnchorElement;
 
   beforeEach(() => {
+    vi.useFakeTimers();
     mockClick = vi.fn();
     mockCreateObjectURL = vi.fn().mockReturnValue("blob:http://localhost/fake-url");
     mockRevokeObjectURL = vi.fn();
@@ -43,6 +44,8 @@ describe("triggerDownload", () => {
   });
 
   afterEach(() => {
+    vi.runOnlyPendingTimers();
+    vi.useRealTimers();
     vi.restoreAllMocks();
   });
 
@@ -61,11 +64,14 @@ describe("triggerDownload", () => {
     expect(createdAnchor.download).toBe("output.png");
   });
 
-  it("appends the anchor to document.body and then removes it", () => {
+  it("appends the anchor to document.body and then removes it (deferred)", () => {
     const blob = new Blob(["test"], { type: "text/plain" });
     triggerDownload(blob, "test.txt");
 
     expect(appendChildSpy).toHaveBeenCalledWith(createdAnchor);
+    // Cleanup is deferred to a later tick so the download isn't cancelled.
+    expect(removeChildSpy).not.toHaveBeenCalled();
+    vi.runAllTimers();
     expect(removeChildSpy).toHaveBeenCalledWith(createdAnchor);
   });
 
@@ -76,10 +82,13 @@ describe("triggerDownload", () => {
     expect(mockClick).toHaveBeenCalledTimes(1);
   });
 
-  it("revokes the object URL after download", () => {
+  it("revokes the object URL after download (deferred)", () => {
     const blob = new Blob(["test"], { type: "text/plain" });
     triggerDownload(blob, "test.txt");
 
+    // Revoke is deferred — revoking synchronously can cancel the download.
+    expect(mockRevokeObjectURL).not.toHaveBeenCalled();
+    vi.runAllTimers();
     expect(mockRevokeObjectURL).toHaveBeenCalledWith("blob:http://localhost/fake-url");
   });
 

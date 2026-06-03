@@ -2,6 +2,7 @@
 
 import { useCallback, useState } from "react";
 import { ErrorMessage } from "@/components/tools/ErrorMessage";
+import { copyText } from "@/lib/utils/clipboard";
 
 export function JsonFormatterUI() {
   const [input, setInput] = useState("");
@@ -35,9 +36,12 @@ export function JsonFormatterUI() {
   );
 
   const handleCopy = useCallback(() => {
-    navigator.clipboard.writeText(output);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    copyText(output).then((ok) => {
+      if (ok) {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      }
+    });
   }, [output]);
 
   return (

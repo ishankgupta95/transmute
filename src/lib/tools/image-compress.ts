@@ -1,10 +1,28 @@
 import type { ProcessedResult } from "@/hooks/useFileProcessor";
-import { loadImage } from "./canvas-utils";
+import {
+  fillBackground,
+  imageHasTransparency,
+  loadImage,
+  mimeSupportsAlpha,
+} from "./canvas-utils";
 
 export interface ImageCompressOptions {
   mode: "quality" | "target-size";
   quality: number; // 0–1 for quality mode
   targetSizeKb: number; // target in KB for target-size mode
+}
+
+/** Choose an output format that compresses well *and* preserves transparency. */
+function chooseOutput(file: File, img: HTMLImageElement): { mime: string; ext: string } {
+  const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
+  const mightHaveAlpha =
+    ["png", "webp", "gif", "avif"].includes(ext) || /(png|webp|gif|avif)/.test(file.type);
+  // WebP gives lossy compression (so the quality slider / binary search work)
+  // while keeping the alpha channel; JPEG would turn transparency black.
+  if (mightHaveAlpha && imageHasTransparency(img)) {
+    return { mime: "image/webp", ext: "webp" };
+  }
+  return { mime: "image/jpeg", ext: "jpg" };
 }
 
 /**
@@ -18,33 +36,24 @@ export async function compressImage(
   options: ImageCompressOptions,
 ): Promise<ProcessedResult> {
   const img = await loadImage(file);
+  const { mime, ext } = chooseOutput(file, img);
+  const baseName = file.name.replace(/\.[^.]+$/, "");
+  const fileName = `${baseName}-compressed.${ext}`;
 
   if (options.mode === "quality") {
-    const blob = await encodeToJpeg(img, options.quality);
-    const baseName = file.name.replace(/\.[^.]+$/, "");
-    return {
-      blob,
-      fileName: `${baseName}-compressed.jpg`,
-      originalSize: file.size,
-      newSize: blob.size,
-    };
+    const blob = await encodeImage(img, mime, options.quality);
+    return { blob, fileName, originalSize: file.size, newSize: blob.size };
   }
 
   // Target-size mode: binary search for optimal quality
   const targetBytes = options.targetSizeKb * 1024;
   let lo = 0.01;
   let hi = 1.0;
-  let bestBlob = await encodeToJpeg(img, hi);
+  let bestBlob = await encodeImage(img, mime, hi);
 
   // If max quality is already under target, just return it
   if (bestBlob.size <= targetBytes) {
-    const baseName = file.name.replace(/\.[^.]+$/, "");
-    return {
-      blob: bestBlob,
-      fileName: `${baseName}-compressed.jpg`,
-      originalSize: file.size,
-      newSize: bestBlob.size,
-    };
+    return { blob: bestBlob, fileName, originalSize: file.size, newSize: bestBlob.size };
   }
 
   // Track the smallest blob we've seen (fallback if we never get under target)
@@ -53,7 +62,7 @@ export async function compressImage(
   // Binary search: up to 10 iterations
   for (let i = 0; i < 10; i++) {
     const mid = (lo + hi) / 2;
-    const candidate = await encodeToJpeg(img, mid);
+    const candidate = await encodeImage(img, mime, mid);
 
     // Always track the smallest result we've produced
     if (candidate.size < smallestBlob.size) {
@@ -79,22 +88,18 @@ export async function compressImage(
     bestBlob = smallestBlob;
   }
 
-  const baseName = file.name.replace(/\.[^.]+$/, "");
-  return {
-    blob: bestBlob,
-    fileName: `${baseName}-compressed.jpg`,
-    originalSize: file.size,
-    newSize: bestBlob.size,
-  };
+  return { blob: bestBlob, fileName, originalSize: file.size, newSize: bestBlob.size };
 }
 
-
-function encodeToJpeg(img: HTMLImageElement, quality: number): Promise<Blob> {
+function encodeImage(img: HTMLImageElement, mime: string, quality: number): Promise<Blob> {
   const canvas = document.createElement("canvas");
   canvas.width = img.naturalWidth;
   canvas.height = img.naturalHeight;
   const ctx = canvas.getContext("2d");
   if (!ctx) throw new Error("Canvas 2D context not available");
+  // Formats without alpha need an opaque backdrop, otherwise transparent
+  // pixels flatten to black.
+  if (!mimeSupportsAlpha(mime)) fillBackground(ctx, canvas.width, canvas.height);
   ctx.drawImage(img, 0, 0);
   return new Promise((resolve, reject) => {
     canvas.toBlob(
@@ -102,7 +107,7 @@ function encodeToJpeg(img: HTMLImageElement, quality: number): Promise<Blob> {
         if (blob) resolve(blob);
         else reject(new Error("Canvas export failed"));
       },
-      "image/jpeg",
+      mime,
       quality,
     );
   });

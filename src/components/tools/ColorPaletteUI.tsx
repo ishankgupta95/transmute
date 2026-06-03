@@ -4,6 +4,7 @@ import { useCallback, useState } from "react";
 import { ErrorMessage } from "@/components/tools/ErrorMessage";
 import { DropZone } from "@/components/tools/DropZone";
 import { extractColorPalette, type ColorInfo } from "@/lib/tools/color-palette";
+import { copyText } from "@/lib/utils/clipboard";
 
 interface ColorPaletteUIProps {
   acceptFormats: string;
@@ -40,9 +41,12 @@ export function ColorPaletteUI({ acceptFormats }: ColorPaletteUIProps) {
   );
 
   const handleCopy = useCallback((hex: string, idx: number) => {
-    navigator.clipboard.writeText(hex);
-    setCopiedIdx(idx);
-    setTimeout(() => setCopiedIdx(null), 1500);
+    copyText(hex).then((ok) => {
+      if (ok) {
+        setCopiedIdx(idx);
+        setTimeout(() => setCopiedIdx(null), 1500);
+      }
+    });
   }, []);
 
   const handleReset = useCallback(() => {

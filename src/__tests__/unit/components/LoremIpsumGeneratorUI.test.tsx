@@ -95,11 +95,11 @@ describe("LoremIpsumGeneratorUI", () => {
     expect(navigator.clipboard.writeText).toHaveBeenCalledTimes(1);
   });
 
-  it("shows Copied! after clicking copy", () => {
+  it("shows Copied! after clicking copy", async () => {
     render(<LoremIpsumGeneratorUI />);
     fireEvent.click(screen.getByText("Generate"));
     fireEvent.click(screen.getByText("Copy"));
-    expect(screen.getByText("Copied!")).toBeInTheDocument();
+    expect(await screen.findByText("Copied!")).toBeInTheDocument();
   });
 
   it("does not show output before generation", () => {

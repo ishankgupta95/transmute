@@ -9,6 +9,7 @@ import { ProgressBar } from "@/components/tools/ProgressBar";
 import { encodeIcoAsync } from "@/lib/tools/ico-encode";
 import { canvasToBlob, loadImage } from "@/lib/tools/canvas-utils";
 import { formatFileSize } from "@/lib/utils/file-helpers";
+import { copyText } from "@/lib/utils/clipboard";
 
 const FAVICON_SIZES = [
   { size: 16, name: "favicon-16x16.png", label: "16×16 (Browser tab)" },
@@ -87,9 +88,12 @@ export function FaviconGeneratorUI({ acceptFormats }: { acceptFormats: string })
   }, [file]);
 
   const handleCopySnippet = useCallback(() => {
-    navigator.clipboard.writeText(htmlSnippet);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    copyText(htmlSnippet).then((ok) => {
+      if (ok) {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      }
+    });
   }, [htmlSnippet]);
 
   const handleReset = useCallback(() => {

@@ -6,7 +6,7 @@ import { DropZone } from "@/components/tools/DropZone";
 import { ProgressBar } from "@/components/tools/ProgressBar";
 import { Download } from "lucide-react";
 import { pdfToImages } from "@/lib/tools/pdf-engine";
-import { triggerDownload } from "@/lib/utils/download";
+import { triggerDownload, downloadFilesAsZip } from "@/lib/utils/download";
 
 export function PdfToJpgUI() {
   const [file, setFile] = useState<File | null>(null);
@@ -50,8 +50,14 @@ export function PdfToJpgUI() {
   }, [results]);
 
   const downloadAll = useCallback(() => {
-    results.forEach((r) => triggerDownload(r.blob, r.name));
-  }, [results]);
+    // Bundle into a single ZIP — firing N synchronous downloads gets throttled
+    // by browsers (only the first would actually save).
+    const baseName = file?.name.replace(/\.[^.]+$/, "") ?? "pdf";
+    void downloadFilesAsZip(
+      results.map((r) => ({ blob: r.blob, name: r.name })),
+      `${baseName}-pages.zip`,
+    );
+  }, [results, file]);
 
   if (!file) return <DropZone accept=".pdf" onFiles={handleFiles} />;
 

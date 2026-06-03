@@ -3,6 +3,7 @@
 import { useCallback, useState } from "react";
 import { ErrorMessage } from "@/components/tools/ErrorMessage";
 import { DropZone } from "@/components/tools/DropZone";
+import { copyText } from "@/lib/utils/clipboard";
 
 export function Base64EncodeDecodeUI() {
   const [mode, setMode] = useState<"encode" | "decode">("encode");
@@ -26,7 +27,10 @@ export function Base64EncodeDecodeUI() {
           for (const b of bytes) binary += String.fromCharCode(b);
           setOutput(btoa(binary));
         } else {
-          const binary = atob(text.trim());
+          // Accept URL-safe Base64 (-/_ , no padding) as used by JWTs and many APIs.
+          let normalized = text.trim().replace(/-/g, "+").replace(/_/g, "/");
+          while (normalized.length % 4) normalized += "=";
+          const binary = atob(normalized);
           const bytes = Uint8Array.from(binary, (c) => c.charCodeAt(0));
           setOutput(new TextDecoder().decode(bytes));
         }
@@ -61,9 +65,12 @@ export function Base64EncodeDecodeUI() {
   }, []);
 
   const handleCopy = useCallback(() => {
-    navigator.clipboard.writeText(output);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    copyText(output).then((ok) => {
+      if (ok) {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      }
+    });
   }, [output]);
 
   return (

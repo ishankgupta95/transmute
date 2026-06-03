@@ -21,11 +21,16 @@ export async function trimVideo(
   await ffmpeg.writeFile(inputName, await fileToUint8Array(file));
 
   const duration = options.endTime - options.startTime;
+  // -ss BEFORE -i does a fast, keyframe-accurate seek and avoids the frozen/black
+  // leading frames the old "-ss after -i with -c copy" produced. Stream copy keeps
+  // it fast (no full re-encode in the single-threaded wasm build); the start snaps
+  // to the nearest preceding keyframe.
   const ret = await ffmpeg.exec([
-    "-i", inputName,
     "-ss", String(options.startTime),
+    "-i", inputName,
     "-t", String(duration),
     "-c", "copy",
+    "-avoid_negative_ts", "make_zero",
     outputName,
   ]);
 

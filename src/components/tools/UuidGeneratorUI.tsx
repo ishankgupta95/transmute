@@ -2,6 +2,8 @@
 
 import { useCallback, useState } from "react";
 
+import { copyText } from "@/lib/utils/clipboard";
+
 function generateUUIDv4(): string {
   return crypto.randomUUID();
 }
@@ -10,14 +12,15 @@ function generateUUIDv7(): string {
   const timestamp = Date.now();
   const bytes = new Uint8Array(16);
   crypto.getRandomValues(bytes);
-  // Set timestamp (first 48 bits)
-  const ts = timestamp & 0xffffffffffff;
-  bytes[0] = (ts / 2 ** 40) & 0xff;
-  bytes[1] = (ts / 2 ** 32) & 0xff;
-  bytes[2] = (ts / 2 ** 24) & 0xff;
-  bytes[3] = (ts / 2 ** 16) & 0xff;
-  bytes[4] = (ts / 2 ** 8) & 0xff;
-  bytes[5] = ts & 0xff;
+  // Set timestamp (first 48 bits). Use floored division rather than a 48-bit
+  // bitwise mask — JS bitwise operators coerce to signed 32-bit, which would
+  // truncate the timestamp and destroy v7's time-ordering.
+  bytes[0] = Math.floor(timestamp / 2 ** 40) & 0xff;
+  bytes[1] = Math.floor(timestamp / 2 ** 32) & 0xff;
+  bytes[2] = Math.floor(timestamp / 2 ** 24) & 0xff;
+  bytes[3] = Math.floor(timestamp / 2 ** 16) & 0xff;
+  bytes[4] = Math.floor(timestamp / 2 ** 8) & 0xff;
+  bytes[5] = timestamp & 0xff;
   // Set version 7
   bytes[6] = (bytes[6] & 0x0f) | 0x70;
   // Set variant 10xx
@@ -42,15 +45,21 @@ export function UuidGeneratorUI() {
   }, [version, count]);
 
   const handleCopyOne = useCallback((i: number) => {
-    navigator.clipboard.writeText(uuids[i]);
-    setCopied(i);
-    setTimeout(() => setCopied(null), 2000);
+    copyText(uuids[i]).then((ok) => {
+      if (ok) {
+        setCopied(i);
+        setTimeout(() => setCopied(null), 2000);
+      }
+    });
   }, [uuids]);
 
   const handleCopyAll = useCallback(() => {
-    navigator.clipboard.writeText(uuids.join("\n"));
-    setCopied("all");
-    setTimeout(() => setCopied(null), 2000);
+    copyText(uuids.join("\n")).then((ok) => {
+      if (ok) {
+        setCopied("all");
+        setTimeout(() => setCopied(null), 2000);
+      }
+    });
   }, [uuids]);
 
   return (

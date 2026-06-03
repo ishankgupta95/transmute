@@ -3,6 +3,7 @@
 import { useCallback, useState } from "react";
 import { md5 as md5Lib } from "js-md5";
 import { DropZone } from "@/components/tools/DropZone";
+import { copyText } from "@/lib/utils/clipboard";
 
 async function sha(algo: string, data: ArrayBuffer): Promise<string> {
   const hash = await crypto.subtle.digest(algo, new Uint8Array(data));
@@ -60,9 +61,12 @@ export function HashGeneratorUI() {
   );
 
   const handleCopy = useCallback((algo: string, value: string) => {
-    navigator.clipboard.writeText(value);
-    setCopied(algo);
-    setTimeout(() => setCopied(null), 2000);
+    copyText(value).then((ok) => {
+      if (ok) {
+        setCopied(algo);
+        setTimeout(() => setCopied(null), 2000);
+      }
+    });
   }, []);
 
   return (

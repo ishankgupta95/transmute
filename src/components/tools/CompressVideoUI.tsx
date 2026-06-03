@@ -60,7 +60,7 @@ export function CompressVideoUI() {
   return (
     <div className="space-y-6">
       {!file ? (
-        <DropZone accept=".mp4,.webm,.mov,.avi,.mkv" onFiles={handleFiles} />
+        <DropZone accept=".mp4,.webm,.mov" onFiles={handleFiles} />
       ) : (
         <>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

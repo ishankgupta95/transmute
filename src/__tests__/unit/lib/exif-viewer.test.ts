@@ -16,6 +16,7 @@ let mockCanvas: Record<string, unknown>;
 function setupCanvasMock() {
   mockCtx = {
     drawImage: vi.fn(),
+    fillRect: vi.fn(),
   };
   mockCanvas = {
     width: 0,

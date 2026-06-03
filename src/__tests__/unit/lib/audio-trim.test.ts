@@ -78,10 +78,17 @@ describe("trimAudio", () => {
     ).rejects.toThrow("Start time must be before end time");
   });
 
-  it("throws if end time exceeds duration", async () => {
+  it("clamps an end time beyond the decoded duration instead of throwing", async () => {
+    // 10s buffer; endTime 15 should clamp to the buffer length, not reject.
+    const result = await trimAudio(mockFile, { startTime: 0, endTime: 15, outputFormat: "wav" });
+    expect(result.fileName).toMatch(/\.wav$/);
+    expect(result.blob).toBeInstanceOf(Blob);
+  });
+
+  it("throws when the selected range is empty", async () => {
     await expect(
-      trimAudio(mockFile, { startTime: 0, endTime: 15, outputFormat: "wav" }),
-    ).rejects.toThrow("End time exceeds audio duration");
+      trimAudio(mockFile, { startTime: 10, endTime: 12, outputFormat: "wav" }),
+    ).rejects.toThrow("Selected range is empty");
   });
 
   it("decodes the input file", async () => {

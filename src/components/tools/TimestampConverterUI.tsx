@@ -2,6 +2,8 @@
 
 import { useCallback, useState } from "react";
 
+import { copyText } from "@/lib/utils/clipboard";
+
 export function TimestampConverterUI() {
   const [unixSec, setUnixSec] = useState("");
   const [unixMs, setUnixMs] = useState("");
@@ -49,9 +51,12 @@ export function TimestampConverterUI() {
   );
 
   const handleCopy = useCallback((label: string, value: string) => {
-    navigator.clipboard.writeText(value);
-    setCopied(label);
-    setTimeout(() => setCopied(null), 2000);
+    copyText(value).then((ok) => {
+      if (ok) {
+        setCopied(label);
+        setTimeout(() => setCopied(null), 2000);
+      }
+    });
   }, []);
 
   return (

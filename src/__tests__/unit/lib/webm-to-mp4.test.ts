@@ -5,12 +5,18 @@ const {
   mockPlayAndExtractFrames,
   mockCreateVideo,
   mockWaitForReady,
-  mockDetectAudio,
+  mockDecodeAudio,
+  mockAssertWebCodecsSupported,
+  mockPickH264Config,
 } = vi.hoisted(() => ({
   mockPlayAndExtractFrames: vi.fn().mockResolvedValue(undefined),
   mockCreateVideo: vi.fn(),
   mockWaitForReady: vi.fn().mockResolvedValue(undefined),
-  mockDetectAudio: vi.fn().mockResolvedValue(false),
+  mockDecodeAudio: vi.fn().mockResolvedValue(null),
+  mockAssertWebCodecsSupported: vi.fn(),
+  mockPickH264Config: vi.fn((base: Record<string, unknown>) =>
+    Promise.resolve({ codec: "avc1.640034", ...base }),
+  ),
 }));
 
 const {
@@ -31,7 +37,9 @@ const {
 vi.mock("@/lib/tools/video-utils", () => ({
   createVideo: mockCreateVideo,
   waitForReady: mockWaitForReady,
-  detectAudio: mockDetectAudio,
+  decodeAudio: mockDecodeAudio,
+  assertWebCodecsSupported: mockAssertWebCodecsSupported,
+  pickH264Config: mockPickH264Config,
   playAndExtractFrames: mockPlayAndExtractFrames,
 }));
 
@@ -114,7 +122,10 @@ import { webmToMp4 } from "@/lib/tools/webm-to-mp4";
 describe("webmToMp4", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockDetectAudio.mockResolvedValue(false);
+    mockDecodeAudio.mockResolvedValue(null);
+    mockPickH264Config.mockImplementation((base: Record<string, unknown>) =>
+      Promise.resolve({ codec: "avc1.640034", ...base }),
+    );
     mockPlayAndExtractFrames.mockImplementation(
       async (video: unknown, startTime: number, _endTime: unknown, onFrame: (vid: unknown, ts: number) => Promise<void>, onProgress?: (pct: number) => void) => {
         for (let i = 0; i < 3; i++) {
@@ -171,11 +182,11 @@ describe("webmToMp4", () => {
     expect(mockWaitForReady).toHaveBeenCalled();
   });
 
-  it("detects audio in the file", async () => {
+  it("decodes audio from the file once", async () => {
     const file = new File(["video"], "recording.webm", { type: "video/webm" });
     await webmToMp4(file);
 
-    expect(mockDetectAudio).toHaveBeenCalledWith(file);
+    expect(mockDecodeAudio).toHaveBeenCalledWith(file);
   });
 
   it("calls playAndExtractFrames with full duration", async () => {

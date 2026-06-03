@@ -2,6 +2,7 @@
 
 import { useCallback, useState } from "react";
 import { ErrorMessage } from "@/components/tools/ErrorMessage";
+import { copyText } from "@/lib/utils/clipboard";
 
 interface Options {
   length: number;
@@ -63,9 +64,12 @@ export function PasswordGeneratorUI() {
 
   const handleCopy = useCallback(
     (i: number) => {
-      navigator.clipboard.writeText(passwords[i]);
-      setCopied(i);
-      setTimeout(() => setCopied(null), 2000);
+      copyText(passwords[i]).then((ok) => {
+        if (ok) {
+          setCopied(i);
+          setTimeout(() => setCopied(null), 2000);
+        }
+      });
     },
     [passwords],
   );

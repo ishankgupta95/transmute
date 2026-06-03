@@ -5,10 +5,16 @@ export function triggerDownload(blob: Blob, fileName: string): void {
   const a = document.createElement("a");
   a.href = url;
   a.download = fileName;
+  a.rel = "noopener";
   document.body.appendChild(a);
   a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+  // Defer cleanup — revoking the object URL in the same tick as click() can
+  // cancel the download before the browser reads the blob (Safari/Chrome), and
+  // is why batch "Download All" loops previously produced only the first file.
+  setTimeout(() => {
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }, 1000);
 
   const ext = fileName.split(".").pop()?.toLowerCase() ?? "";
   trackEvent({
@@ -17,4 +23,25 @@ export function triggerDownload(blob: Blob, fileName: string): void {
     label: ext,
     value: Math.round(blob.size / 1024),
   });
+}
+
+/**
+ * Download multiple files reliably. Browsers throttle or cancel many
+ * programmatic downloads fired in one synchronous loop, so multi-file output is
+ * bundled into a single ZIP. A single file downloads directly.
+ */
+export async function downloadFilesAsZip(
+  files: { blob: Blob; name: string }[],
+  zipName: string,
+): Promise<void> {
+  if (files.length === 0) return;
+  if (files.length === 1) {
+    triggerDownload(files[0].blob, files[0].name);
+    return;
+  }
+  const JSZip = (await import("jszip")).default;
+  const zip = new JSZip();
+  for (const f of files) zip.file(f.name, f.blob);
+  const blob = await zip.generateAsync({ type: "blob" });
+  triggerDownload(blob, zipName);
 }

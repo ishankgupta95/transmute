@@ -1,6 +1,7 @@
 import ExifReader from "exifreader";
 import type { ProcessedResult } from "@/hooks/useFileProcessor";
-import { canvasToBlob, loadImage } from "./canvas-utils";
+import { canvasToBlob, fillBackground, loadImage, mimeSupportsAlpha } from "./canvas-utils";
+import { toDecodableBlob } from "./image-convert";
 
 export interface ExifEntry {
   tag: string;
@@ -45,22 +46,36 @@ export async function stripExifData(
   file: File,
   quality: number = 0.92,
 ): Promise<ProcessedResult> {
-  const img = await loadImage(file);
+  // HEIC/HEIF/TIFF can't be decoded by a plain <img>; pre-decode them. This is
+  // the tool's headline use case (stripping GPS from iPhone HEIC photos).
+  const decodable = await toDecodableBlob(file);
+  const img = await loadImage(decodable);
 
   const canvas = document.createElement("canvas");
   canvas.width = img.naturalWidth;
   canvas.height = img.naturalHeight;
   const ctx = canvas.getContext("2d");
   if (!ctx) throw new Error("Canvas 2D context not available");
+
+  // Preserve transparency for PNG/WebP; photos (JPEG/HEIC/TIFF) re-encode to JPEG.
+  const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
+  const { mime, outExt } =
+    ext === "png"
+      ? { mime: "image/png", outExt: "png" }
+      : ext === "webp"
+        ? { mime: "image/webp", outExt: "webp" }
+        : { mime: "image/jpeg", outExt: "jpg" };
+
+  if (!mimeSupportsAlpha(mime)) fillBackground(ctx, canvas.width, canvas.height);
   ctx.drawImage(img, 0, 0);
 
-  // Re-encode as JPEG (strips all metadata)
-  const blob = await canvasToBlob(canvas, "image/jpeg", quality);
+  // Re-encoding through Canvas strips all metadata.
+  const blob = await canvasToBlob(canvas, mime, quality);
   const baseName = file.name.replace(/\.[^.]+$/, "");
 
   return {
     blob,
-    fileName: `${baseName}-clean.jpg`,
+    fileName: `${baseName}-clean.${outExt}`,
     originalSize: file.size,
     newSize: blob.size,
   };

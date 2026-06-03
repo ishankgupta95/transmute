@@ -2,53 +2,64 @@
 
 import { useCallback, useState } from "react";
 import { ErrorMessage } from "@/components/tools/ErrorMessage";
+import { copyText } from "@/lib/utils/clipboard";
 import { triggerDownload } from "@/lib/utils/download";
 
-function csvToJson(csv: string): string {
-  const lines = csv.trim().split("\n");
-  if (lines.length < 2) throw new Error("CSV must have a header row and at least one data row");
-
-  const parseLine = (line: string): string[] => {
-    const result: string[] = [];
-    let current = "";
-    let inQuotes = false;
-    for (let i = 0; i < line.length; i++) {
-      const ch = line[i];
-      if (inQuotes) {
-        if (ch === '"' && line[i + 1] === '"') {
-          current += '"';
-          i++;
-        } else if (ch === '"') {
-          inQuotes = false;
-        } else {
-          current += ch;
-        }
+/**
+ * Single-pass CSV parser. Tracks quote state across the whole string so quoted
+ * fields containing commas or newlines parse correctly, and normalizes CRLF /
+ * CR / LF line endings (Excel/Windows exports use \r\n).
+ */
+function parseCsv(text: string): string[][] {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let cur = "";
+  let inQuotes = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (inQuotes) {
+      if (ch === '"' && text[i + 1] === '"') {
+        cur += '"';
+        i++;
+      } else if (ch === '"') {
+        inQuotes = false;
       } else {
-        if (ch === '"') {
-          inQuotes = true;
-        } else if (ch === ",") {
-          result.push(current);
-          current = "";
-        } else {
-          current += ch;
-        }
+        cur += ch;
       }
+    } else if (ch === '"') {
+      inQuotes = true;
+    } else if (ch === ",") {
+      row.push(cur);
+      cur = "";
+    } else if (ch === "\n" || ch === "\r") {
+      if (ch === "\r" && text[i + 1] === "\n") i++; // CRLF
+      row.push(cur);
+      cur = "";
+      rows.push(row);
+      row = [];
+    } else {
+      cur += ch;
     }
-    result.push(current);
-    return result;
-  };
-
-  const headers = parseLine(lines[0]);
-  const data = [];
-  for (let i = 1; i < lines.length; i++) {
-    if (!lines[i].trim()) continue;
-    const values = parseLine(lines[i]);
-    const obj: Record<string, string> = {};
-    for (let j = 0; j < headers.length; j++) {
-      obj[headers[j]] = values[j] ?? "";
-    }
-    data.push(obj);
   }
+  if (cur !== "" || row.length > 0) {
+    row.push(cur);
+    rows.push(row);
+  }
+  return rows;
+}
+
+function csvToJson(csv: string): string {
+  const rows = parseCsv(csv).filter((r) => r.some((c) => c !== ""));
+  if (rows.length < 2) throw new Error("CSV must have a header row and at least one data row");
+
+  const headers = rows[0];
+  const data = rows.slice(1).map((values) => {
+    const obj: Record<string, string> = {};
+    headers.forEach((h, j) => {
+      obj[h] = values[j] ?? "";
+    });
+    return obj;
+  });
   return JSON.stringify(data, null, 2);
 }
 
@@ -70,9 +81,12 @@ export function CsvToJsonUI() {
   }, [input]);
 
   const handleCopy = useCallback(() => {
-    navigator.clipboard.writeText(output);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    copyText(output).then((ok) => {
+      if (ok) {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      }
+    });
   }, [output]);
 
   const handleDownload = useCallback(() => {

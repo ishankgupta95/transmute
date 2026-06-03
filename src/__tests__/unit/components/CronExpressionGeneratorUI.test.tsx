@@ -87,10 +87,10 @@ describe("CronExpressionGeneratorUI", () => {
     expect(navigator.clipboard.writeText).toHaveBeenCalledWith("0 9 * * 1");
   });
 
-  it("shows Copied! after clicking copy", () => {
+  it("shows Copied! after clicking copy", async () => {
     render(<CronExpressionGeneratorUI />);
     fireEvent.click(screen.getByText("Copy"));
-    expect(screen.getByText("Copied!")).toBeInTheDocument();
+    expect(await screen.findByText("Copied!")).toBeInTheDocument();
   });
 
   it("visual builder selects update expression", () => {

@@ -169,11 +169,31 @@ export async function addPageNumbers(
     const escaped = text.replace(/([()\\])/g, "\\$1");
     const stream = `q BT /Fn ${fontSize} Tf ${x} ${y} Td (${escaped}) Tj ET Q`;
 
-    // Ensure page has Resources > Font dict, add our font
+    // Ensure page has Resources > Font dict, add our font.
+    // /Resources can be INHERITED from a parent Pages node — findPage returns the
+    // raw page dict without resolving inheritance. Creating a fresh empty dict in
+    // that case would shadow the inherited fonts/XObjects and visually corrupt the
+    // page, so walk the /Parent chain and reuse the inherited Resources instead.
     let resources = pageObj.get("Resources");
     if (resources.isNull()) {
-      pageObj.put("Resources", doc.newDictionary());
-      resources = pageObj.get("Resources");
+      let parent = pageObj.get("Parent");
+      let depth = 0;
+      while (!parent.isNull() && depth < 32) {
+        const inherited = parent.get("Resources");
+        if (!inherited.isNull()) {
+          resources = inherited;
+          break;
+        }
+        parent = parent.get("Parent");
+        depth++;
+      }
+      if (resources.isNull()) {
+        pageObj.put("Resources", doc.newDictionary());
+        resources = pageObj.get("Resources");
+      } else {
+        // Attach the inherited dict to the page so our /Fn font is reachable.
+        pageObj.put("Resources", resources);
+      }
     }
     let fonts = resources.get("Font");
     if (fonts.isNull()) {

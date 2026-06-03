@@ -1,5 +1,5 @@
 import type { ProcessedResult } from "@/hooks/useFileProcessor";
-import { canvasToBlob, loadImage } from "./canvas-utils";
+import { canvasToBlob, fillBackground, loadImage, mimeSupportsAlpha } from "./canvas-utils";
 
 export interface ImageConvertOptions {
   targetFormat: "jpeg" | "png" | "webp" | "bmp";
@@ -36,6 +36,9 @@ export async function convertImage(
   canvas.height = outHeight;
   const ctx = canvas.getContext("2d");
   if (!ctx) throw new Error("Canvas 2D context not available");
+  // JPEG/BMP have no alpha channel: paint white first so transparent regions
+  // flatten to white instead of black.
+  if (!mimeSupportsAlpha(mimeType)) fillBackground(ctx, outWidth, outHeight);
   ctx.drawImage(img, 0, 0, outWidth, outHeight);
 
   const blob = await canvasToBlob(canvas, mimeType, quality);
@@ -50,7 +53,12 @@ export async function convertImage(
   };
 }
 
-async function toDecodableBlob(file: File): Promise<Blob> {
+/**
+ * Return a blob the browser's <img> can decode. HEIC/HEIF and TIFF are
+ * pre-decoded to PNG; SVG is re-wrapped with the right MIME; everything else
+ * is returned as-is.
+ */
+export async function toDecodableBlob(file: File): Promise<Blob> {
   const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
 
   // HEIC / HEIF

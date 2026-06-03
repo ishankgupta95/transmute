@@ -20,12 +20,15 @@ export async function trimAudio(
 
   const { startTime, endTime, outputFormat, bitrate } = options;
   if (startTime >= endTime) throw new Error("Start time must be before end time");
-  if (endTime > audioBuffer.duration) throw new Error("End time exceeds audio duration");
 
   const sampleRate = audioBuffer.sampleRate;
-  const startSample = Math.floor(startTime * sampleRate);
-  const endSample = Math.floor(endTime * sampleRate);
+  // Clamp to the decoded buffer rather than throwing — a media element's reported
+  // duration often slightly exceeds the precisely-decoded duration for VBR MP3 /
+  // M4A, which previously rejected a valid full-range trim.
+  const startSample = Math.min(Math.max(0, Math.floor(startTime * sampleRate)), audioBuffer.length);
+  const endSample = Math.min(Math.floor(endTime * sampleRate), audioBuffer.length);
   const length = endSample - startSample;
+  if (length <= 0) throw new Error("Selected range is empty");
   const channels = audioBuffer.numberOfChannels;
 
   const trimmedBuffer = new OfflineAudioContext(channels, length, sampleRate);

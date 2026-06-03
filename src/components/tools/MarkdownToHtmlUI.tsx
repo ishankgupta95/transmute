@@ -2,18 +2,27 @@
 
 import { useCallback, useState } from "react";
 import { marked } from "marked";
+import DOMPurify from "dompurify";
+import { copyText } from "@/lib/utils/clipboard";
 
 export function MarkdownToHtmlUI() {
   const [input, setInput] = useState("");
   const [copied, setCopied] = useState(false);
   const [view, setView] = useState<"preview" | "html">("preview");
 
+  // Raw HTML is the tool's actual output (shown in the HTML view / copied).
   const html = input.trim() ? (marked.parse(input) as string) : "";
+  // The live preview renders in our own origin, so it MUST be sanitized —
+  // otherwise <script>/onerror in the user's markdown would execute as XSS.
+  const safeHtml = html ? DOMPurify.sanitize(html) : "";
 
   const handleCopy = useCallback(() => {
-    navigator.clipboard.writeText(html);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    copyText(html).then((ok) => {
+      if (ok) {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      }
+    });
   }, [html]);
 
   return (
@@ -56,7 +65,7 @@ export function MarkdownToHtmlUI() {
           {view === "preview" ? (
             <div
               className="w-full rounded-lg border border-border bg-bg-elevated p-3 text-sm text-text-primary prose prose-invert max-w-none min-h-[24rem] overflow-y-auto"
-              dangerouslySetInnerHTML={{ __html: html }}
+              dangerouslySetInnerHTML={{ __html: safeHtml }}
             />
           ) : (
             <pre className="w-full rounded-lg border border-border bg-bg-elevated p-3 text-sm text-text-primary font-mono overflow-x-auto whitespace-pre-wrap min-h-[24rem] max-h-96 overflow-y-auto">

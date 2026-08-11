@@ -6,6 +6,20 @@ import { DropZone } from "@/components/tools/DropZone";
 import { DownloadButton } from "@/components/tools/DownloadButton";
 import { ProgressBar } from "@/components/tools/ProgressBar";
 import { splitPdf, getPageCount, loadPdfjsDocument, renderPageFromDoc } from "@/lib/tools/pdf-engine";
+import {
+  ToolActions,
+  ToolAside,
+  ToolAsideSection,
+  ToolOutput,
+  ToolResetLink,
+} from "@/components/tools/ToolAside";
+import {
+  CanvasHeader,
+  PageDeck,
+  PageTile,
+  RangeField,
+} from "@/components/tools/ToolCanvas";
+import { parsePageRange, toPageRange } from "@/lib/tools/media-preview";
 
 export function SplitPdfUI() {
   const [file, setFile] = useState<File | null>(null);
@@ -62,33 +76,40 @@ export function SplitPdfUI() {
     return () => { cancelled = true; };
   }, [file, pageCount]);
 
-  const togglePage = useCallback((idx: number) => {
-    setSelectedPages((prev) => {
-      const next = new Set(prev);
-      if (next.has(idx)) next.delete(idx);
-      else next.add(idx);
-      return next;
-    });
+  /*
+    The doc's RANGE field and the page deck are one control in two shapes, so
+    every path writes both: clicking a page re-derives the notation, and
+    committing the field re-derives the selection (and normalises what you
+    typed, so `3,1,2` comes back as `1-3`).
+  */
+  const commitSelection = useCallback((pages: Set<number>) => {
+    setSelectedPages(pages);
+    setRangeInput(toPageRange([...pages].map((i) => i + 1)).replace("—", ""));
   }, []);
 
-  const parseRange = useCallback(() => {
-    const pages = new Set<number>();
-    for (const part of rangeInput.split(",")) {
-      const trimmed = part.trim();
-      const match = trimmed.match(/^(\d+)\s*-\s*(\d+)$/);
-      if (match) {
-        const start = parseInt(match[1], 10);
-        const end = parseInt(match[2], 10);
-        for (let i = start; i <= end && i <= pageCount; i++) {
-          if (i >= 1) pages.add(i - 1);
-        }
-      } else {
-        const n = parseInt(trimmed, 10);
-        if (n >= 1 && n <= pageCount) pages.add(n - 1);
-      }
-    }
-    setSelectedPages(pages);
-  }, [rangeInput, pageCount]);
+  const togglePage = useCallback(
+    (idx: number) => {
+      // Read-then-write rather than a functional update: the updater must stay
+      // pure, and `commitSelection` also writes the range field.
+      const next = new Set(selectedPages);
+      if (next.has(idx)) next.delete(idx);
+      else next.add(idx);
+      commitSelection(next);
+    },
+    [selectedPages, commitSelection],
+  );
+
+  const selectAll = useCallback(() => {
+    commitSelection(new Set(Array.from({ length: pageCount }, (_, i) => i)));
+  }, [pageCount, commitSelection]);
+
+  const selectNone = useCallback(() => {
+    commitSelection(new Set());
+  }, [commitSelection]);
+
+  const applyRange = useCallback(() => {
+    commitSelection(parsePageRange(rangeInput, pageCount));
+  }, [rangeInput, pageCount, commitSelection]);
 
   const handleSplit = useCallback(async () => {
     if (!file || selectedPages.size === 0) return;
@@ -120,78 +141,91 @@ export function SplitPdfUI() {
   if (!file) return <DropZone accept=".pdf" onFiles={handleFiles} />;
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <p className="text-sm text-text-secondary">
-          {file.name} — {pageCount} page{pageCount !== 1 ? "s" : ""}
-        </p>
-        <button onClick={handleReset} className="text-sm text-text-muted hover:text-text-secondary transition-colors">
-          Change file
-        </button>
-      </div>
+    <>
+      {/* ── Canvas: the page deck, and which ones you picked ─── */}
+      <div className="min-w-0 space-y-[13px]">
+        <CanvasHeader
+          file={file.name}
+          meta={`${pageCount} page${pageCount !== 1 ? "s" : ""}`}
+          trailing={`${selectedPages.size} PAGES SELECTED`}
+        />
 
-      <div className="flex gap-3 items-end">
-        <div className="flex-1">
-          <label className="block text-xs text-text-muted mb-1">Page range (e.g. 1-3, 5, 8-10)</label>
-          <input
-            type="text"
-            value={rangeInput}
-            onChange={(e) => setRangeInput(e.target.value)}
-            placeholder="1-3, 5, 8-10"
-            className="w-full rounded-md border border-border bg-bg-secondary px-3 py-2 text-sm text-text-primary placeholder:text-text-muted focus:border-accent focus:outline-none"
-          />
-        </div>
-        <button
-          onClick={parseRange}
-          className="rounded-md border border-border px-3 py-2 text-sm text-text-secondary hover:border-border-hover hover:bg-bg-hover transition-colors"
-        >
-          Apply
-        </button>
-      </div>
-
-      {thumbnails.length > 0 && (
-        <div className="grid grid-cols-4 sm:grid-cols-6 lg:grid-cols-8 gap-3">
-          {thumbnails.map((thumb, idx) => (
-            <button
+        <PageDeck>
+          {Array.from({ length: pageCount }, (_, idx) => (
+            <PageTile
               key={idx}
+              number={idx + 1}
+              thumb={thumbnails[idx] || undefined}
+              selected={selectedPages.has(idx)}
               onClick={() => togglePage(idx)}
-              className={`relative rounded-md border-2 overflow-hidden transition-colors ${
-                selectedPages.has(idx) ? "border-accent" : "border-border hover:border-border-hover"
-              }`}
-            >
-              {thumb ? (
-                <img src={thumb} alt={`Page ${idx + 1}`} className="w-full" />
-              ) : (
-                <div className="aspect-[3/4] bg-bg-elevated flex items-center justify-center text-xs text-text-muted">
-                  {idx + 1}
-                </div>
-              )}
-              <span className="absolute bottom-0 left-0 right-0 bg-bg-primary/80 text-center text-xs text-text-secondary py-0.5">
-                {idx + 1}
-              </span>
-              {selectedPages.has(idx) && (
-                <div className="absolute inset-0 bg-accent/10" />
-              )}
-            </button>
+            />
           ))}
-        </div>
-      )}
-
-      {(status === "loading" || status === "processing") && <ProgressBar progress={null} />}
-      {error && <ErrorMessage message={error} />}
-
-      <div className="flex items-center gap-3">
-        {selectedPages.size > 0 && status !== "done" && (
-          <button
-            onClick={handleSplit}
-            disabled={status === "processing"}
-            className="inline-flex items-center gap-2 rounded-md bg-accent px-5 py-2.5 text-sm font-medium text-bg-primary hover:bg-accent-hover transition-colors disabled:opacity-50"
-          >
-            {status === "processing" ? "Splitting…" : `Extract ${selectedPages.size} page${selectedPages.size !== 1 ? "s" : ""}`}
-          </button>
+        </PageDeck>
+        {pageCount > 50 && (
+          <p className="m-0 font-mono text-[9.5px] leading-none tracking-[0.06em] text-text-muted">
+            THUMBNAILS RENDERED FOR THE FIRST 50 OF {pageCount} PAGES — EVERY PAGE STAYS SELECTABLE VIA THE RANGE FIELD
+          </p>
         )}
-        {result && <DownloadButton blob={result} fileName="split.pdf" />}
+
+        <RangeField
+          value={rangeInput}
+          onChange={setRangeInput}
+          onApply={applyRange}
+          disabled={status === "processing"}
+        />
+
+        {(status === "loading" || status === "processing") && <ProgressBar progress={null} />}
+        {error && <ErrorMessage message={error} />}
       </div>
-    </div>
+
+      {/* ── Controls: the doc's right-hand rail / bottom sheet ── */}
+      <ToolAside
+        footer={
+          <>
+            {result ? (
+              <DownloadButton
+                blob={result}
+                fileName="split.pdf"
+                className="w-full justify-center"
+              />
+            ) : (
+              <ToolActions
+                primaryLabel={
+                  status === "processing"
+                    ? "Splitting…"
+                    : `Extract ${selectedPages.size} page${selectedPages.size !== 1 ? "s" : ""}`
+                }
+                onPrimary={handleSplit}
+                primaryDisabled={selectedPages.size === 0 || status === "processing"}
+              />
+            )}
+            <ToolResetLink onClick={handleReset} label="CHANGE FILE" />
+          </>
+        }
+      >
+        <ToolAsideSection label="PAGES">
+          <div className="flex gap-2">
+            <button
+              onClick={selectAll}
+              className="cursor-pointer text-xs text-accent transition-colors hover:text-accent-hover"
+            >
+              Select all
+            </button>
+            <button
+              onClick={selectNone}
+              className="cursor-pointer text-xs text-text-muted transition-colors hover:text-text-secondary"
+            >
+              Deselect all
+            </button>
+          </div>
+          <ToolOutput
+            rows={[
+              ["Selected", `${selectedPages.size} of ${pageCount}`],
+              ["Output", result ? "split.pdf" : "—"],
+            ]}
+          />
+        </ToolAsideSection>
+      </ToolAside>
+    </>
   );
 }

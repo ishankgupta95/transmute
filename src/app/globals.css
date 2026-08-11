@@ -2,44 +2,164 @@
 @plugin "@tailwindcss/typography";
 
 @layer base {
+  /*
+   * The site's semantic roles, mapped onto the Nocturne ramp below. Components
+   * address these (bg-primary, text-muted, accent…) rather than the ramp, so the
+   * whole site re-themes by re-pointing these seven-ish lines.
+   */
   :root {
-    /* Surfaces — matching portfolio */
-    --bg-primary: #08080a;
-    --bg-secondary: #111114;
-    --bg-elevated: #141417;
-    --bg-hover: #1a1a1e;
+    /* Surfaces */
+    --bg-primary: var(--color-nocturne-bg);
+    --bg-secondary: var(--color-nocturne-chrome);
+    --bg-elevated: var(--color-nocturne-surface);
+    --bg-hover: var(--color-nocturne-neutral-900);
 
-    /* Text — warm off-whites */
-    --text-primary: #e8e5e0;
-    --text-secondary: #8a8880;
-    /* WCAG AA: 4.5:1 against bg-elevated (#141417). #7a7870 measured 4.15:1; #858378 lifts to ~5:1. */
-    --text-muted: #858378;
+    /* Text — the ramp's light steps; contrast comes from tone, not saturation. */
+    --text-primary: var(--color-nocturne-text);
+    --text-secondary: var(--color-nocturne-neutral-400);
+    --text-muted: var(--color-nocturne-neutral-500);
 
-    /* Accent — sky blue */
-    --accent: #56b8e6;
-    --accent-hover: #3fa8db;
-    --accent-muted: rgba(86, 184, 230, 0.08);
+    /* Accent — a line and a glow, never a flood. */
+    --accent: var(--color-nocturne-accent);
+    --accent-hover: var(--color-nocturne-accent-400);
+    --accent-muted: color-mix(in srgb, var(--color-nocturne-accent) 12%, transparent);
 
     /* Borders */
-    --border: rgba(255, 255, 255, 0.06);
-    --border-hover: rgba(255, 255, 255, 0.12);
+    --border: var(--color-nocturne-divider);
+    --border-hover: color-mix(in srgb, var(--color-nocturne-text) 30%, transparent);
 
     /* Feedback */
-    --success: #4ade80;
-    --error: #f87171;
-    --warning: #fbbf24;
+    --success: var(--color-nocturne-ok);
+    --error: var(--color-nocturne-rec);
+    --warning: var(--color-nocturne-warn);
 
-    /* Radius */
-    --radius-sm: 6px;
-    --radius-md: 10px;
-    --radius-lg: 16px;
+    /* Radius — Nocturne's 8px scale. */
+    --radius-sm: 4px;
+    --radius-md: 8px;
+    --radius-lg: 14px;
 
     /* Glow */
-    --glow-accent: rgba(86, 184, 230, 0.25);
+    --glow-accent: color-mix(in srgb, var(--color-nocturne-accent) 30%, transparent);
+  }
+}
+
+/*
+ * Nocturne — the design system behind the /workspace explorer.
+ *
+ * Namespaced under `nocturne-*` so it coexists with the site theme above rather
+ * than replacing it: only components that opt in via these utilities change.
+ * Ramps are generated in OKLCH on one shared lightness scale, so the same step
+ * of any role carries the same visual weight.
+ */
+@theme {
+  --color-nocturne-bg: #161826;
+  --color-nocturne-surface: #232532;
+  --color-nocturne-text: #e9e9ed;
+  --color-nocturne-accent: #9184d9;
+  --color-nocturne-divider: color-mix(in srgb, #e9e9ed 16%, transparent);
+
+  /* Grounds — the shell's panes, each a step of the base mixed toward black. */
+  --color-nocturne-page: #0f111c;
+  --color-nocturne-chrome: color-mix(in srgb, #161826 92%, #000);
+  --color-nocturne-rail: color-mix(in srgb, #161826 96%, #000);
+  --color-nocturne-canvas: color-mix(in srgb, #161826 78%, #000);
+  --color-nocturne-status: color-mix(in srgb, #161826 88%, #000);
+  --color-nocturne-sunken: color-mix(in srgb, #161826 82%, #000);
+
+  /* Status — used as lines, marks and small text, never as a flood. */
+  --color-nocturne-ok: #7ee0a8;
+  --color-nocturne-warn: #e0a36a;
+  --color-nocturne-rec: #e06a6a;
+
+  --color-nocturne-neutral-100: #f3f5fe;
+  --color-nocturne-neutral-200: #e4e7f5;
+  --color-nocturne-neutral-300: #cfd3e5;
+  --color-nocturne-neutral-400: #b2b6ca;
+  --color-nocturne-neutral-500: #9397ab;
+  --color-nocturne-neutral-600: #75798c;
+  --color-nocturne-neutral-700: #595d6c;
+  --color-nocturne-neutral-800: #3f424d;
+  --color-nocturne-neutral-900: #292b31;
+
+  --color-nocturne-accent-100: #f5f4ff;
+  --color-nocturne-accent-200: #e7e5fe;
+  --color-nocturne-accent-300: #d2cefd;
+  --color-nocturne-accent-400: #b5abfc;
+  --color-nocturne-accent-500: #968ae0;
+  --color-nocturne-accent-600: #796cbf;
+  --color-nocturne-accent-700: #5d5294;
+  --color-nocturne-accent-800: #423a6a;
+  --color-nocturne-accent-900: #2b2741;
+
+  --animate-tm-rise: tm-rise 0.3s cubic-bezier(0.2, 0.7, 0.3, 1);
+  --animate-tm-drawer: tm-drawer 0.22s cubic-bezier(0.2, 0.7, 0.3, 1);
+  --animate-tm-blink: tm-blink 3.2s ease-in-out infinite;
+  --animate-tm-glow: tm-glow 9s ease-in-out infinite;
+  --animate-tm-pulse: tm-glow 2.4s ease-in-out infinite;
+  --animate-tm-sweep: tm-sweep 1.5s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+
+  @keyframes tm-rise {
+    from {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+  @keyframes tm-drawer {
+    from {
+      opacity: 0;
+      transform: translateY(-6px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+  @keyframes tm-blink {
+    0%,
+    45% {
+      opacity: 1;
+    }
+    50%,
+    95% {
+      opacity: 0.25;
+    }
+  }
+  @keyframes tm-glow {
+    0%,
+    100% {
+      opacity: 0.35;
+    }
+    50% {
+      opacity: 0.8;
+    }
+  }
+  @keyframes tm-sweep {
+    0% {
+      transform: translateY(-100%);
+      opacity: 0;
+    }
+    12%,
+    88% {
+      opacity: 1;
+    }
+    100% {
+      transform: translateY(1200%);
+      opacity: 0;
+    }
   }
 }
 
 @theme inline {
+  /* Nocturne pairs Inter with Inter; IBM Plex Mono carries every readout. */
+  --font-display: var(--font-inter);
+  --font-body: var(--font-inter);
+  --font-mono: var(--font-plex-mono);
+  --font-nocturne: var(--font-inter);
+  --font-nocturne-mono: var(--font-plex-mono);
   --color-bg-primary: var(--bg-primary);
   --color-bg-secondary: var(--bg-secondary);
   --color-bg-elevated: var(--bg-elevated);
@@ -59,12 +179,34 @@
   --radius-md: var(--radius-md);
   --radius-lg: var(--radius-lg);
   --color-glow-accent: var(--glow-accent);
-  --font-display: var(--font-syne);
-  --font-body: var(--font-outfit);
-}
 
-body {
-  background: var(--bg-primary);
-  color: var(--text-primary);
-  font-family: var(--font-body), sans-serif;
+  /*
+   * Ramp aliases so site components can reach the tonal steps the design calls
+   * for by name — `text-accent-300` for accent-coloured body copy (the accent
+   * itself only clears 3:1, enough for chrome but not paragraphs), `bg-accent-900`
+   * for tinted fills, `text-neutral-*` for the muted scale.
+   */
+  --color-accent-100: var(--color-nocturne-accent-100);
+  --color-accent-200: var(--color-nocturne-accent-200);
+  --color-accent-300: var(--color-nocturne-accent-300);
+  --color-accent-400: var(--color-nocturne-accent-400);
+  --color-accent-500: var(--color-nocturne-accent-500);
+  --color-accent-600: var(--color-nocturne-accent-600);
+  --color-accent-700: var(--color-nocturne-accent-700);
+  --color-accent-800: var(--color-nocturne-accent-800);
+  --color-accent-900: var(--color-nocturne-accent-900);
+
+  --color-neutral-100: var(--color-nocturne-neutral-100);
+  --color-neutral-200: var(--color-nocturne-neutral-200);
+  --color-neutral-300: var(--color-nocturne-neutral-300);
+  --color-neutral-400: var(--color-nocturne-neutral-400);
+  --color-neutral-500: var(--color-nocturne-neutral-500);
+  --color-neutral-600: var(--color-nocturne-neutral-600);
+  --color-neutral-700: var(--color-nocturne-neutral-700);
+  --color-neutral-800: var(--color-nocturne-neutral-800);
+  --color-neutral-900: var(--color-nocturne-neutral-900);
+
+  /* Deck-scale grounds — the one place a saturated fill is allowed. */
+  --color-section: #262a60;
+  --color-section-glow: #353b80;
 }

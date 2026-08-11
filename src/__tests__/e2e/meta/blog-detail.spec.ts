@@ -25,8 +25,8 @@ test.describe("blog detail", () => {
     // Breadcrumb chain: Home → Blog → <post title>. Both intermediate links
     // must be navigable.
     const crumbs = page.locator('nav[aria-label="Breadcrumb"]');
-    await expect(crumbs.locator('a[href="/"]')).toHaveText("Home");
-    await expect(crumbs.locator('a[href="/blog"]')).toHaveText("Blog");
+    await expect(crumbs.locator('a[href="/"]')).toHaveText(/^Home$/i);
+    await expect(crumbs.locator('a[href="/blog"]')).toHaveText(/^Blog$/i);
 
     // Article body is rendered into the .prose container by the MDX import.
     await expect(page.locator("article.prose")).toBeVisible();
@@ -39,7 +39,7 @@ test.describe("blog detail", () => {
     ).toBeVisible();
 
     // Related tools section lists at least one card.
-    const relatedHeader = page.getByRole("heading", { name: /Related tools/i });
+    const relatedHeader = page.getByText(/ALSO MENTIONED/i).first();
     await expect(relatedHeader).toBeVisible();
   });
 
@@ -49,7 +49,8 @@ test.describe("blog detail", () => {
       .locator('nav[aria-label="Breadcrumb"] a[href="/blog"]')
       .click();
     await expect(page).toHaveURL(/\/blog\/?$/);
-    await expect(page.locator("h1")).toHaveText("Blog");
+    // The blog index H1 is the section title, not the literal word "Blog".
+    await expect(page.locator("h1")).toHaveText(/Notes on file formats/i);
   });
 
   test("blog index links lead to working post pages", async ({ page }) => {

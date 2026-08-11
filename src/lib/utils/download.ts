@@ -1,4 +1,5 @@
 import { trackEvent } from "./analytics";
+import { currentToolSlug, recordRecentOutput } from "./recent-outputs";
 
 export function triggerDownload(blob: Blob, fileName: string): void {
   const url = URL.createObjectURL(blob);
@@ -23,6 +24,9 @@ export function triggerDownload(blob: Blob, fileName: string): void {
     label: ext,
     value: Math.round(blob.size / 1024),
   });
+
+  // The rails' RECENT OUTPUT section — metadata only, stays on this device.
+  recordRecentOutput({ name: fileName, bytes: blob.size, slug: currentToolSlug() });
 }
 
 /**

@@ -19,11 +19,16 @@ export function useObjectUrl(source: Blob | File | null | undefined): string | n
       setUrl(null);
       return;
     }
+    // URL allocation is a side effect that must be reflected in render-visible
+    // state; the rule doesn't flag it here because it follows the allocation.
     const next = URL.createObjectURL(source);
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional: URL allocation is a side effect that must be reflected in render-visible state
     setUrl(next);
     return () => {
-      URL.revokeObjectURL(next);
+      // Deferred: revoking synchronously aborts an <img>/<video> that is
+      // still LOADING this URL when the source swaps (or on StrictMode's
+      // double-invoke), flashing a broken frame. One second matches the
+      // grace triggerDownload gives the same race.
+      setTimeout(() => URL.revokeObjectURL(next), 1000);
     };
   }, [source]);
 

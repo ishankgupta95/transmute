@@ -3,6 +3,9 @@
  * for hardware-accelerated frame decoding.
  */
 
+import type { ProcessingContext } from "@/hooks/useFileProcessor";
+import { abortError, throwIfAborted } from "@/lib/utils/abort";
+
 /**
  * Create a muted, off-screen video element.
  */
@@ -113,14 +116,21 @@ export async function pickH264Config(base: {
  *   memory buildup from unbounded encoder queues.
  *
  * The video must be attached to the DOM for rVFC to fire.
+ *
+ * `ctx.signal` cancels the walk: playback stops and the returned promise
+ * rejects with an `AbortError`. Both waits here — the initial seek and the
+ * frame loop — are event-driven with no timeout, so each needs its own abort
+ * listener or a cancel mid-seek would simply be ignored.
  */
 export async function playAndExtractFrames(
   video: HTMLVideoElement,
   startTime: number,
   endTime: number,
   onFrame: (video: HTMLVideoElement, timestampUs: number) => void | Promise<void>,
-  onProgress?: (progress: number) => void,
+  { onProgress, signal }: ProcessingContext = {},
 ): Promise<void> {
+  throwIfAborted(signal);
+
   // Attach to DOM (hidden) — rVFC requires the element to be connected
   video.style.position = "fixed";
   video.style.top = "-9999px";
@@ -129,19 +139,34 @@ export async function playAndExtractFrames(
   document.body.appendChild(video);
 
   const duration = endTime - startTime;
+  let abortRun: (() => void) | null = null;
 
   try {
     // Seek to start time
     if (startTime > 0) {
-      await new Promise<void>((resolve) => {
-        const onSeeked = () => { video.removeEventListener("seeked", onSeeked); resolve(); };
+      await new Promise<void>((resolve, reject) => {
+        const cleanup = () => {
+          video.removeEventListener("seeked", onSeeked);
+          signal?.removeEventListener("abort", onAbort);
+        };
+        const onSeeked = () => { cleanup(); resolve(); };
+        const onAbort = () => { cleanup(); reject(abortError()); };
         video.addEventListener("seeked", onSeeked);
+        signal?.addEventListener("abort", onAbort, { once: true });
         video.currentTime = startTime;
       });
     }
 
     await new Promise<void>((resolve, reject) => {
       let stopped = false;
+
+      abortRun = () => {
+        if (stopped) return;
+        stopped = true;
+        video.pause();
+        reject(abortError());
+      };
+      signal?.addEventListener("abort", abortRun);
 
       const processFrame = async () => {
         if (stopped) return;
@@ -166,6 +191,10 @@ export async function playAndExtractFrames(
           return;
         }
 
+        // `onFrame` can take a while; a cancel during it must not schedule
+        // another frame.
+        if (stopped) return;
+
         const elapsed = currentTime - startTime;
         onProgress?.(Math.round((elapsed / duration) * 100));
 
@@ -187,6 +216,7 @@ export async function playAndExtractFrames(
       video.play().catch(reject);
     });
   } finally {
+    if (abortRun) signal?.removeEventListener("abort", abortRun);
     video.pause();
     document.body.removeChild(video);
   }

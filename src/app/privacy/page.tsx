@@ -1,143 +1,117 @@
 import type { Metadata } from "next";
 
-const LAST_UPDATED = "April 7, 2026";
+const LAST_UPDATED = "7 APR 2026";
 
 export const metadata: Metadata = {
   title: "Privacy Policy",
-  description: "Transmute privacy policy — your files never leave your device. Learn how we protect your data with 100% browser-based processing.",
+  description:
+    "Transmute privacy policy — your files never leave your device. Learn how we protect your data with 100% browser-based processing.",
   alternates: { canonical: "/privacy" },
 };
 
+const SECTIONS = [
+  {
+    h: "Files you process",
+    b: "The files you select stay on your device. They are read into browser memory, processed locally, and offered back as a download. At no point are they transmitted. Close the tab and the memory is released.",
+  },
+  {
+    h: "Cookies and local storage",
+    b: "Transmute sets no first-party cookies and stores no personal data locally.",
+  },
+  {
+    h: "Analytics",
+    b: "Privacy-respecting analytics may record aggregate traffic — page views and popular tools. No personally identifiable information is collected, and nothing about the files you process is ever recorded.",
+  },
+  {
+    h: "Advertising",
+    b: "Transmute carries no advertising, and no ad network is loaded on any page.",
+  },
+  {
+    h: "External resources",
+    b: "The heavy WebAssembly engines some tools rely on — FFmpeg.wasm and MuPDF — are served from this site rather than a third-party CDN, so opening a video or PDF tool hands nobody else your IP address. Every font is self-hosted too, including the Markdown to PDF tool's print typefaces. Beyond the analytics described below, the site makes no third-party requests at all — and nothing it fetches ever carries your file data.",
+  },
+  {
+    h: "Children's privacy",
+    b: "Transmute does not knowingly collect personal information from children under 13. The site is a general-purpose utility and requires no account or personal data entry.",
+  },
+  {
+    h: "Changes to this policy",
+    b: "This policy may be updated from time to time. Any change is reflected on this page with a new date.",
+  },
+] as const;
+
 export default function PrivacyPage() {
   return (
-    <main className="flex-1 px-4 py-16 max-w-3xl mx-auto w-full">
-      <h1 className="text-3xl md:text-4xl font-bold font-display tracking-tight text-text-primary mb-6">
-        Privacy Policy
-      </h1>
+    <main className="mx-auto w-full max-w-[700px] flex-1 px-4 py-11 md:px-8">
+      <div className="flex flex-col gap-6.5">
+        <div className="flex flex-wrap items-baseline justify-between gap-5">
+          <h1 className="m-0 font-display text-[clamp(28px,5vw,36px)] leading-[1.14] font-medium tracking-[-0.028em] text-text-primary">
+            Privacy policy
+          </h1>
+          <span className="font-mono text-[10.5px] leading-none whitespace-nowrap text-text-muted">
+            UPDATED {LAST_UPDATED}
+          </span>
+        </div>
 
-      <p className="text-text-muted text-sm mb-8">Last updated: {LAST_UPDATED}</p>
+        {/* The whole policy in one sentence; everything below is detail. */}
+        <div className="flex items-start gap-3.5 rounded-[11px] border border-[rgba(126,224,168,.3)] bg-[rgba(126,224,168,.06)] p-[18px]">
+          <svg
+            width="17"
+            height="17"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="var(--color-success)"
+            strokeWidth="1.7"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className="mt-0.5 flex-none"
+            aria-hidden="true"
+          >
+            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+          </svg>
+          <div className="flex flex-col gap-[5px]">
+            <span className="font-display text-[13.5px] leading-[1.4] font-medium text-success">
+              Your files never leave your device.
+            </span>
+            <span className="font-body text-[12.5px] leading-[1.6] text-neutral-400">
+              Everything below is detail. That sentence is the policy.
+            </span>
+          </div>
+        </div>
 
-      <div className="space-y-8 text-text-secondary leading-relaxed">
-        <section>
-          <h2 className="text-xl font-bold font-display text-text-primary mb-3">
-            Overview
-          </h2>
-          <p>
-            Transmute is designed to be private by default. All file processing
-            happens locally in your browser using WebAssembly and native browser
-            APIs. Your files are never uploaded to any server operated by
-            Transmute or any third party.
-          </p>
-        </section>
-
-        <section>
-          <h2 className="text-xl font-bold font-display text-text-primary mb-3">
-            Files You Process
-          </h2>
-          <p>
-            When you use any Transmute tool, the files you select stay on your
-            device. They are read into your browser&rsquo;s memory, processed
-            locally, and the result is offered as a download. At no point are
-            your files transmitted over the network. Once you close the tab, the
-            browser releases all associated memory.
-          </p>
-        </section>
-
-        <section>
-          <h2 className="text-xl font-bold font-display text-text-primary mb-3">
-            Cookies &amp; Local Storage
-          </h2>
-          <p>
-            Transmute does not set any first-party cookies or store personal
-            data in local storage. If third-party advertising is enabled on the
-            site, ad network scripts may set their own cookies in accordance
-            with their respective privacy policies.
-          </p>
-        </section>
-
-        <section>
-          <h2 className="text-xl font-bold font-display text-text-primary mb-3">
-            Analytics
-          </h2>
-          <p>
-            Transmute may use privacy-respecting analytics to understand
-            aggregate traffic patterns such as page views and popular tools. No
-            personally identifiable information is collected, and no data about
-            the files you process is ever recorded.
-          </p>
-        </section>
-
-        <section>
-          <h2 className="text-xl font-bold font-display text-text-primary mb-3">
-            Third-Party Advertising
-          </h2>
-          <p>
-            Transmute may display advertisements provided by third-party ad
-            networks such as Google AdSense. These networks may use cookies and
-            similar technologies to serve ads based on your browsing activity.
-            You can opt out of personalized advertising at{" "}
-            <a
-              href="https://www.google.com/settings/ads"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-accent underline hover:opacity-80 transition-opacity"
+        <div className="flex flex-col">
+          {SECTIONS.map((s, i) => (
+            <section
+              key={s.h}
+              className="flex items-start gap-[18px] border-b border-border py-[17px]"
             >
-              Google Ads Settings
-            </a>
-            .
-          </p>
-        </section>
+              <span className="w-5 flex-none font-mono text-[10px] leading-[1.7] text-text-muted">
+                {String(i + 1).padStart(2, "0")}
+              </span>
+              <div className="flex min-w-0 flex-col gap-1.5">
+                <h2 className="m-0 font-display text-[13.5px] leading-[1.35] font-medium text-text-primary">
+                  {s.h}
+                </h2>
+                <p className="m-0 font-body text-[12.5px] leading-[1.65] text-neutral-400">
+                  {s.b}
+                </p>
+              </div>
+            </section>
+          ))}
+        </div>
 
-        <section>
-          <h2 className="text-xl font-bold font-display text-text-primary mb-3">
-            External Resources
-          </h2>
-          <p>
-            Some tools load open-source WebAssembly modules from CDNs (for
-            example, FFmpeg.wasm from unpkg). These requests are standard
-            browser resource fetches and do not transmit any of your file data.
-          </p>
-        </section>
-
-        <section>
-          <h2 className="text-xl font-bold font-display text-text-primary mb-3">
-            Children&rsquo;s Privacy
-          </h2>
-          <p>
-            Transmute does not knowingly collect any personal information from
-            children under the age of 13. The site is a general-purpose utility
-            tool and does not require account creation or personal data entry.
-          </p>
-        </section>
-
-        <section>
-          <h2 className="text-xl font-bold font-display text-text-primary mb-3">
-            Changes to This Policy
-          </h2>
-          <p>
-            This privacy policy may be updated from time to time. Any changes
-            will be reflected on this page with an updated date.
-          </p>
-        </section>
-
-        <section>
-          <h2 className="text-xl font-bold font-display text-text-primary mb-3">
-            Contact
-          </h2>
-          <p>
-            If you have questions about this privacy policy, you can reach the
-            maintainer at{" "}
-            <a
-              href="https://ishank.dev"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-accent underline hover:opacity-80 transition-opacity"
-            >
-              ishank.dev
-            </a>
-            .
-          </p>
-        </section>
+        <p className="m-0 font-body text-[12.5px] leading-[1.65] text-neutral-400">
+          Questions about this policy? Reach the maintainer at{" "}
+          <a
+            href="https://ishank.dev"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-accent underline underline-offset-[3px] transition-colors duration-200 hover:text-accent-400"
+          >
+            ishank.dev
+          </a>
+          .
+        </p>
       </div>
     </main>
   );

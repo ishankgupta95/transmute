@@ -92,7 +92,11 @@ describe("TextDiffUI", () => {
     // Diff section should have content rendered
     expect(screen.getByText("Diff")).toBeInTheDocument();
     // Verify the diff container has the expected span elements
-    const diffContainer = screen.getByText("Diff").nextElementSibling!;
+    // The diff parts sit in the pane body, a sibling of the pane's header row.
+    const diffContainer = screen
+      .getByText("Diff")
+      .closest("div")!
+      .parentElement!.querySelector("div:last-child")!;
     const spans = diffContainer.querySelectorAll("span");
     expect(spans).toHaveLength(3);
     expect(spans[0].textContent).toBe("hello ");

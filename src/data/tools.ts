@@ -65,10 +65,24 @@ export interface Tool {
   subtitle: string;
   acceptFormats: string;
   sourceFormat?: string;
-  targetFormat?: "jpeg" | "png" | "webp" | "bmp";
+  /** BMP is a source-only format — see `ImageConvertOptions`. */
+  targetFormat?: "jpeg" | "png" | "webp";
   relatedTools: string[];
   aboutText: string;
   defaultTargetSizeKb?: number; // For compress variant pages
+  /**
+   * Hard input-size limit the tool actually enforces (FFmpeg tools call
+   * `validateVideoFileSize`). Absent means genuinely uncapped — the status
+   * surfaces render "NO SIZE CAP"/"NONE" from this field, so setting it
+   * only where enforced is what keeps that claim honest.
+   */
+  maxSizeMB?: number;
+  /**
+   * <title> override for tools whose `h1` runs past ~60 chars once the
+   * " | Transmute" template suffix lands. The on-page H1 keeps its longer
+   * copy; only the tab/SERP title shortens.
+   */
+  titleTag?: string;
 }
 
 export const tools: Tool[] = [
@@ -76,6 +90,7 @@ export const tools: Tool[] = [
   {
     name: "HEIC to JPG",
     slug: "heic-to-jpg",
+    titleTag: "Convert HEIC to JPG Online — Free & Private",
     category: "image-tools",
     toolType: "image-convert",
     description: "Convert iPhone HEIC and HEIF photos to JPG instantly in your browser. Batch-process multiple files with adjustable quality. No upload, no sign-up.",
@@ -151,6 +166,7 @@ export const tools: Tool[] = [
   {
     name: "JPG to WebP",
     slug: "jpg-to-webp",
+    titleTag: "Convert JPG to WebP Online — Smaller Files",
     category: "image-tools",
     toolType: "image-convert",
     description: "Convert JPG to WebP for 25-35% smaller files at the same quality. Speed up websites and improve Core Web Vitals scores instantly.",
@@ -243,6 +259,7 @@ export const tools: Tool[] = [
   {
     name: "Image Compressor",
     slug: "compress-image",
+    titleTag: "Compress Images Online — Free & Private",
     category: "image-tools",
     toolType: "image-compress",
     description: "Compress JPG, PNG, and WebP images by quality or to a target file size in KB. Smart binary search picks the best quality automatically.",
@@ -300,6 +317,7 @@ export const tools: Tool[] = [
   {
     name: "Image Resizer",
     slug: "resize-image",
+    titleTag: "Resize Images Online — Quality Resampling",
     category: "image-tools",
     toolType: "image-resize",
     description: "Resize images to exact dimensions or social media presets (Instagram, Twitter, LinkedIn). Lanczos3 resampling preserves sharpness.",
@@ -315,6 +333,7 @@ export const tools: Tool[] = [
   {
     name: "Image Cropper",
     slug: "crop-image",
+    titleTag: "Crop Images Online — Free Interactive Tool",
     category: "image-tools",
     toolType: "image-crop",
     description: "Crop images visually with interactive handles, aspect ratio presets, and rotation. Export as PNG with full quality preserved.",
@@ -360,6 +379,7 @@ export const tools: Tool[] = [
   {
     name: "PNG to ICO",
     slug: "png-to-ico",
+    titleTag: "Convert PNG to ICO — Favicons Instantly",
     category: "image-tools",
     toolType: "png-to-ico",
     description: "Convert PNG images to ICO format for website favicons. Generates multi-size ICO files (16, 32, 48 px) compatible with every browser.",
@@ -390,6 +410,7 @@ export const tools: Tool[] = [
   {
     name: "Image Color Palette",
     slug: "image-color-palette",
+    titleTag: "Extract a Color Palette from Any Image",
     category: "image-tools",
     toolType: "color-palette",
     description: "Extract the dominant colors from any image using median-cut quantization. Get hex codes and download a palette for design or branding work.",
@@ -564,6 +585,7 @@ export const tools: Tool[] = [
   {
     name: "Password Generator",
     slug: "password-generator",
+    titleTag: "Password Generator — Strong & Secure",
     category: "developer-tools",
     toolType: "password-generator",
     acceptFormats: "",
@@ -590,6 +612,7 @@ export const tools: Tool[] = [
   {
     name: "Lorem Ipsum Generator",
     slug: "lorem-ipsum-generator",
+    titleTag: "Lorem Ipsum Generator — Words to Paragraphs",
     category: "developer-tools",
     toolType: "lorem-ipsum-generator",
     acceptFormats: "",
@@ -685,6 +708,7 @@ export const tools: Tool[] = [
   {
     name: "Timestamp Converter",
     slug: "timestamp-converter",
+    titleTag: "Timestamp Converter — Unix, ISO & Human",
     category: "developer-tools",
     toolType: "timestamp-converter",
     acceptFormats: "",
@@ -842,6 +866,7 @@ export const tools: Tool[] = [
   {
     name: "Markdown to PDF",
     slug: "markdown-to-pdf",
+    titleTag: "Markdown to PDF Converter — Free, In-Browser",
     category: "pdf-tools",
     toolType: "markdown-to-pdf",
     acceptFormats: ".md,.markdown,.txt,text/markdown",
@@ -876,6 +901,7 @@ export const tools: Tool[] = [
   {
     name: "WAV to MP3",
     slug: "wav-to-mp3",
+    titleTag: "Convert WAV to MP3 Online — Free & Fast",
     category: "audio-tools",
     toolType: "wav-to-mp3",
     description: "Convert WAV to MP3 with adjustable bitrate (96-320 kbps). Shrink audio files by up to 90% while keeping listening quality intact.",
@@ -910,7 +936,7 @@ export const tools: Tool[] = [
     subtitle: "Upload any audio file, set start and end times, and download the trimmed clip.",
     acceptFormats: ".mp3,.wav,.ogg,.m4a,.flac,.aac",
     relatedTools: ["mp3-to-wav", "wav-to-mp3", "m4a-to-mp3", "merge-audio"],
-    aboutText: "Need to cut a section from an audio file? Whether you are creating a custom ringtone, extracting a sound effect, clipping a favorite part of a song, isolating a quote from an interview, or trimming silence from the beginning and end of a recording, this tool handles it with precision. Upload your MP3, WAV, OGG, M4A, or FLAC file and use the waveform display to visually set the start and end times for your clip. Fine-tune the selection by typing exact timestamps for frame-accurate trimming. Choose to export the trimmed clip as MP3 (smaller file size, great for sharing) or WAV (lossless quality, ideal for further editing). The tool decodes your audio using the Web Audio API, slices the AudioBuffer to the specified time range, and re-encodes it cleanly without any glitches or artifacts at the cut points. Everything runs in your browser — no files are uploaded to any server, keeping your audio completely private. This makes it safe for trimming confidential interviews, personal recordings, and licensed audio content.",
+    aboutText: "Need to cut a section from an audio file? Whether you are creating a custom ringtone, extracting a sound effect, clipping a favorite part of a song, isolating a quote from an interview, or trimming silence from the beginning and end of a recording, this tool handles it with precision. Upload your MP3, WAV, OGG, M4A, or FLAC file and use the waveform display to visually set the start and end times for your clip. Fine-tune the selection by typing exact timestamps — the cut is made on the decoded samples, so it lands exactly where you asked rather than snapping to a keyframe the way video trimming does. Choose to export the trimmed clip as MP3 (smaller file size, great for sharing) or WAV (lossless quality, ideal for further editing). The tool decodes your audio using the Web Audio API, slices the AudioBuffer to the specified time range, and re-encodes it cleanly without any glitches or artifacts at the cut points. Everything runs in your browser — no files are uploaded to any server, keeping your audio completely private. This makes it safe for trimming confidential interviews, personal recordings, and licensed audio content.",
   },
   {
     name: "Merge Audio",
@@ -945,13 +971,14 @@ export const tools: Tool[] = [
     slug: "video-trimmer",
     category: "video-tools",
     toolType: "video-trimmer",
-    description: "Trim video clips by setting precise start and end times. Lossless trim preserves the original codec — exports in the same format as input.",
+    description: "Trim video clips by setting start and end times. Lossless stream copy preserves the original codec — exports in the same format as input.",
     keywords: ["video trimmer", "trim video online", "cut video", "video cutter", "trim mp4 online"],
     h1: "Trim Video Online — Free Video Cutter",
     subtitle: "Upload a video, set start and end times, and download the trimmed clip instantly.",
     acceptFormats: ".mp4,.webm,.mov,.avi,.mkv",
+    maxSizeMB: 100,
     relatedTools: ["video-to-gif", "compress-video", "mp4-to-mp3", "webm-to-mp4"],
-    aboutText: "Need to cut a section from a video? Whether you are extracting a highlight from a long recording, clipping a specific scene for a presentation, trimming the beginning and end of a screen recording, or isolating a moment to share on social media, this tool makes it quick and easy. Upload your MP4, WebM, MOV, AVI, or MKV file and use the built-in video player to preview the content and set precise start and end times. Download just the clip you need in the same format as the original, preserving video and audio quality. The trimming uses stream copy mode (no re-encoding), which means processing is near-instant regardless of the video length — it simply extracts the selected segment from the container without touching the compressed video data. This preserves the original resolution, bitrate, and quality exactly. Powered by FFmpeg.wasm running entirely in your browser via WebAssembly, so no video files are uploaded to any server. This makes it safe for trimming confidential meeting recordings, personal videos, and proprietary content.",
+    aboutText: "Need to cut a section from a video? Whether you are extracting a highlight from a long recording, clipping a specific scene for a presentation, trimming the beginning and end of a screen recording, or isolating a moment to share on social media, this tool makes it quick and easy. Upload your MP4, WebM, MOV, AVI, or MKV file and use the built-in video player to preview the content and set the start and end times. Download just the clip you need in the same format as the original, preserving video and audio quality. The trimming uses stream copy mode (no re-encoding), which means processing is near-instant regardless of the video length — it simply extracts the selected segment from the container without touching the compressed video data. This preserves the original resolution, bitrate, and quality exactly. The trade-off is that a stream copy can only cut on a keyframe, so the clip starts at the nearest keyframe at or before the time you picked — usually within a second or two, and frame-accurate cutting would require a full re-encode. Powered by FFmpeg.wasm running entirely in your browser via WebAssembly, so no video files are uploaded to any server. This makes it safe for trimming confidential meeting recordings, personal videos, and proprietary content.",
   },
   {
     name: "MP4 to MP3",
@@ -963,6 +990,7 @@ export const tools: Tool[] = [
     h1: "Extract Audio from MP4 — Convert to MP3 Online",
     subtitle: "Pull the audio track from any video file and download it as an MP3.",
     acceptFormats: ".mp4,.webm,.mov,.avi,.mkv",
+    maxSizeMB: 100,
     relatedTools: ["video-trimmer", "video-to-gif", "wav-to-mp3", "m4a-to-mp3"],
     aboutText: "Want just the audio from a video? There are many situations where the audio track is all you need — extracting background music from a video, saving the audio from a lecture or conference talk for listening on the go, pulling the soundtrack from a movie trailer, converting a video podcast to an audio-only format for your podcast player, or saving the narration from a tutorial. Upload your MP4, WebM, MOV, AVI, or MKV file and extract the audio track as an MP3 file with your preferred bitrate. Choose from 128 kbps for spoken word content and smaller files, 192 kbps for a good balance, or 256-320 kbps for music where quality matters most. The tool uses FFmpeg.wasm to decode the video container and encode the audio stream, running entirely in your browser via WebAssembly. No video files are uploaded to any server, ensuring complete privacy for personal recordings, copyrighted content, and confidential meeting recordings. The extraction process focuses on the audio stream, so even very large video files produce compact MP3 output.",
   },
@@ -977,7 +1005,7 @@ export const tools: Tool[] = [
     subtitle: "Turn WebM screen recordings into universally compatible MP4 files.",
     acceptFormats: ".webm",
     relatedTools: ["video-trimmer", "compress-video", "video-to-gif", "screen-recorder"],
-    aboutText: "WebM is the default format for browser screen recordings and many web-based recording tools, but it has limited compatibility outside the web. Many devices, social media platforms (Instagram, TikTok, LinkedIn), video editors (iMovie, Premiere Pro, DaVinci Resolve), and messaging apps do not handle WebM well or at all. This tool transcodes your WebM file to H.264/AAC MP4 — the most widely supported video format across virtually every device, platform, and application. The H.264 codec provides excellent compression while maintaining sharp video quality, and AAC audio ensures the soundtrack comes through cleanly. Uses FFmpeg.wasm running entirely in your browser via WebAssembly, so no video files are uploaded to any server. This makes it safe for converting screen recordings of confidential work, product demos, internal presentations, and any other sensitive content. Common use cases include converting screen recordings for upload to social media, preparing tutorial videos for platforms that require MP4, and making recordings compatible with video editing software for post-production.",
+    aboutText: "WebM is the default format for browser screen recordings and many web-based recording tools, but it has limited compatibility outside the web. Many devices, social media platforms (Instagram, TikTok, LinkedIn), video editors (iMovie, Premiere Pro, DaVinci Resolve), and messaging apps do not handle WebM well or at all. This tool transcodes your WebM file to H.264/AAC MP4 — the most widely supported video format across virtually every device, platform, and application. The H.264 codec provides excellent compression while maintaining sharp video quality, and AAC audio ensures the soundtrack comes through cleanly. Note that this is a genuine re-encode rather than a container swap: the WebM's VP8/VP9 video is decoded and re-encoded as H.264, so expect a small quality cost. Encoding uses the browser's built-in WebCodecs API with mp4-muxer — hardware-accelerated where your device offers it — and runs entirely in the tab, so no video files are uploaded to any server. In-browser encoding requires Chrome or Edge. This makes it safe for converting screen recordings of confidential work, product demos, internal presentations, and any other sensitive content. Common use cases include converting screen recordings for upload to social media, preparing tutorial videos for platforms that require MP4, and making recordings compatible with video editing software for post-production.",
   },
   {
     name: "Compress Video",
@@ -995,6 +1023,7 @@ export const tools: Tool[] = [
   {
     name: "Screen Recorder",
     slug: "screen-recorder",
+    titleTag: "Screen Recorder — Free, In Your Browser",
     category: "video-tools",
     toolType: "screen-recorder",
     description: "Record your screen, window, or browser tab — with optional microphone audio. No extension required. Save as WebM, ready to share or edit.",
@@ -1013,4 +1042,42 @@ export function getToolBySlug(slug: string): Tool | undefined {
 
 export function getToolsByCategory(category: string): Tool[] {
   return tools.filter((t) => t.category === category);
+}
+
+/**
+ * Tool types whose whole job is moving a file from one format to another. The
+ * rest — compress, resize, trim, generate, inspect — either keep the format or
+ * produce a different kind of artifact, and read as utilities on a category hub.
+ */
+const CONVERTER_TOOL_TYPES = new Set<ToolType>([
+  "image-convert",
+  "pdf-to-jpg",
+  "images-to-pdf",
+  "markdown-to-pdf",
+  "mp3-to-wav",
+  "wav-to-mp3",
+  "m4a-to-mp3",
+  "video-to-gif",
+  "mp4-to-mp3",
+  "webm-to-mp4",
+  "json-to-csv",
+  "csv-to-json",
+  "markdown-to-html",
+  "html-to-markdown",
+  "base64-encode-decode",
+  "url-encode-decode",
+  "jwt-decoder",
+  "html-entity-encode-decode",
+]);
+
+export function isConverter(tool: Tool): boolean {
+  return CONVERTER_TOOL_TYPES.has(tool.toolType);
+}
+
+/** Split a category's tools into the two groups a hub page shows. */
+export function splitByJob(list: Tool[]): { utilities: Tool[]; converters: Tool[] } {
+  return {
+    utilities: list.filter((t) => !isConverter(t)),
+    converters: list.filter(isConverter),
+  };
 }

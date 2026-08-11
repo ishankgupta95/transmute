@@ -7,6 +7,15 @@ import { DownloadButton } from "@/components/tools/DownloadButton";
 import { ProgressBar } from "@/components/tools/ProgressBar";
 import { RotateCw } from "lucide-react";
 import { rotatePdfPages, getPageCount, loadPdfjsDocument, renderPageFromDoc } from "@/lib/tools/pdf-engine";
+import {
+  ToolActions,
+  ToolAside,
+  ToolAsideSection,
+  ToolChoice,
+  ToolOutput,
+  ToolResetLink,
+} from "@/components/tools/ToolAside";
+import { CanvasHeader, PageDeck, PageTile } from "@/components/tools/ToolCanvas";
 
 export function RotatePdfUI() {
   const [file, setFile] = useState<File | null>(null);
@@ -110,86 +119,106 @@ export function RotatePdfUI() {
   if (!file) return <DropZone accept=".pdf" onFiles={handleFiles} />;
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <p className="text-sm text-text-secondary">
-          {file.name} — {pageCount} page{pageCount !== 1 ? "s" : ""}
-        </p>
-        <button onClick={handleReset} className="text-sm text-text-muted hover:text-text-secondary transition-colors">
-          Change file
-        </button>
-      </div>
+    <>
+      <div className="min-w-0 space-y-[13px]">
+        <CanvasHeader
+          file={file.name}
+          meta={`${pageCount} page${pageCount !== 1 ? "s" : ""}`}
+          trailing={`${selectedPages.size} PAGES SELECTED`}
+        />
 
-      <div className="flex flex-wrap items-center gap-4">
-        <div>
-          <label className="block text-xs text-text-muted mb-1">Rotation</label>
-          <select
-            value={angle}
-            onChange={(e) => setAngle(Number(e.target.value))}
-            className="rounded-md border border-border bg-bg-secondary px-3 py-2 text-sm text-text-primary focus:border-accent focus:outline-none"
-          >
-            <option value={90}>90° clockwise</option>
-            <option value={180}>180°</option>
-            <option value={270}>270° (90° counter-clockwise)</option>
-          </select>
-        </div>
-        <div className="flex gap-2 self-end">
-          <button onClick={selectAll} className="text-xs text-accent hover:text-accent-hover transition-colors">Select all</button>
-          <button onClick={selectNone} className="text-xs text-text-muted hover:text-text-secondary transition-colors">Deselect all</button>
-        </div>
-      </div>
-
-      {thumbnails.length > 0 && (
-        <div className="grid grid-cols-4 sm:grid-cols-6 lg:grid-cols-8 gap-3">
-          {thumbnails.map((thumb, idx) => (
-            <button
+        <PageDeck>
+          {Array.from({ length: pageCount }, (_, idx) => (
+            <PageTile
               key={idx}
+              number={idx + 1}
+              thumb={thumbnails[idx] || undefined}
+              selected={selectedPages.has(idx)}
               onClick={() => togglePage(idx)}
-              className={`relative rounded-md border-2 overflow-hidden transition-colors ${
-                selectedPages.has(idx) ? "border-accent" : "border-border hover:border-border-hover"
-              }`}
-            >
-              {thumb ? (
-                <img src={thumb} alt={`Page ${idx + 1}`} className="w-full" />
-              ) : (
-                <div className="aspect-[3/4] bg-bg-elevated flex items-center justify-center text-xs text-text-muted">
-                  {idx + 1}
-                </div>
-              )}
-              <span className="absolute bottom-0 left-0 right-0 bg-bg-primary/80 text-center text-xs text-text-secondary py-0.5">
-                {idx + 1}
-              </span>
-              {selectedPages.has(idx) && (
-                <div className="absolute top-1 right-1">
-                  <RotateCw size={12} className="text-accent" />
-                </div>
-              )}
-            </button>
+              badge={
+                selectedPages.has(idx) ? (
+                  <span className="absolute top-1 right-1 rounded-sm bg-[rgba(12,14,23,.72)] p-0.5">
+                    <RotateCw size={11} className="text-accent" aria-hidden="true" />
+                  </span>
+                ) : undefined
+              }
+            />
           ))}
-        </div>
-      )}
-
-      {(status === "loading" || status === "processing") && <ProgressBar progress={null} />}
-      {error && <ErrorMessage message={error} />}
-
-      <div className="flex items-center gap-3">
-        {selectedPages.size > 0 && status !== "done" && (
-          <button
-            onClick={handleRotate}
-            disabled={status === "processing"}
-            className="inline-flex items-center gap-2 rounded-md bg-accent px-5 py-2.5 text-sm font-medium text-bg-primary hover:bg-accent-hover transition-colors disabled:opacity-50"
-          >
-            <RotateCw size={14} />
-            {status === "processing" ? "Rotating…" : `Rotate ${selectedPages.size} page${selectedPages.size !== 1 ? "s" : ""}`}
-          </button>
+        </PageDeck>
+        {pageCount > 50 && (
+          <p className="m-0 font-mono text-[9.5px] leading-none tracking-[0.06em] text-text-muted">
+            THUMBNAILS RENDERED FOR THE FIRST 50 OF {pageCount} PAGES — EVERY PAGE STAYS SELECTABLE
+          </p>
         )}
-        {result && (
-          <DownloadButton
-            blob={result}
-            fileName={file.name.replace(/\.pdf$/i, "-rotated.pdf")}
-          />
-        )}
+
+        {(status === "loading" || status === "processing") && <ProgressBar progress={null} />}
+        {error && <ErrorMessage message={error} />}
       </div>
-    </div>
+
+      <ToolAside
+        footer={
+          <>
+            {result ? (
+              <DownloadButton
+                blob={result}
+                fileName={file.name.replace(/\.pdf$/i, "-rotated.pdf")}
+                className="w-full justify-center"
+              />
+            ) : (
+              <ToolActions
+                primaryLabel={
+                  status === "processing"
+                    ? "Rotating…"
+                    : `Rotate ${selectedPages.size} page${selectedPages.size !== 1 ? "s" : ""}`
+                }
+                onPrimary={handleRotate}
+                primaryDisabled={selectedPages.size === 0 || status === "processing"}
+              />
+            )}
+            <ToolResetLink onClick={handleReset} label="CHANGE FILE" />
+          </>
+        }
+      >
+        <ToolAsideSection label="ROTATION">
+          <ToolChoice
+            label="Rotation angle"
+            fill
+            value={angle}
+            onChange={setAngle}
+            options={[
+              { value: 90, label: "90°" },
+              { value: 180, label: "180°" },
+              { value: 270, label: "270°" },
+            ]}
+          />
+          <span className="font-body text-[10.5px] leading-[1.5] text-text-muted">
+            Clockwise. 270° is the same as 90° counter-clockwise.
+          </span>
+        </ToolAsideSection>
+
+        <ToolAsideSection label="PAGES">
+          <div className="flex gap-2">
+            <button
+              onClick={selectAll}
+              className="cursor-pointer text-xs text-accent transition-colors hover:text-accent-hover"
+            >
+              Select all
+            </button>
+            <button
+              onClick={selectNone}
+              className="cursor-pointer text-xs text-text-muted transition-colors hover:text-text-secondary"
+            >
+              Deselect all
+            </button>
+          </div>
+          <ToolOutput
+            rows={[
+              ["Selected", `${selectedPages.size} of ${pageCount}`],
+              ["Angle", `${angle}°`],
+            ]}
+          />
+        </ToolAsideSection>
+      </ToolAside>
+    </>
   );
 }

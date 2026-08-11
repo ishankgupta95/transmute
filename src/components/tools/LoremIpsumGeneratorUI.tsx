@@ -3,6 +3,19 @@
 import { useCallback, useState } from "react";
 
 import { copyText } from "@/lib/utils/clipboard";
+import {
+  ToolActions,
+  ToolAside,
+  ToolAsideSection,
+  ToolChoice,
+} from "@/components/tools/ToolAside";
+import {
+  CanvasFootnote,
+  lineCount,
+  TEXT_PANE_BODY,
+  TextPane,
+  TextPanes,
+} from "@/components/tools/ToolCanvas";
 
 const LOREM_WORDS = "lorem ipsum dolor sit amet consectetur adipiscing elit sed do eiusmod tempor incididunt ut labore et dolore magna aliqua ut enim ad minim veniam quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur excepteur sint occaecat cupidatat non proident sunt in culpa qui officia deserunt mollit anim id est laborum".split(" ");
 
@@ -30,7 +43,10 @@ function generateWords(count: number): string {
     result.push(LOREM_WORDS[i % LOREM_WORDS.length]);
   }
   result[0] = "Lorem";
-  return result.join(" ") + ".";
+  // A word list, not a sentence: asking for N words used to return N words
+  // plus a bolted-on period — wrong the moment it lands in a design comp.
+  // Sentence punctuation belongs to the sentences/paragraphs modes.
+  return result.join(" ");
 }
 
 function generateSentences(count: number): string {
@@ -86,51 +102,70 @@ export function LoremIpsumGeneratorUI() {
   }, [output]);
 
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-center gap-3">
-        <input
-          type="number"
-          min={1}
-          max={100}
-          value={count}
-          onChange={(e) => setCount(Math.max(1, Math.min(100, Number(e.target.value))))}
-          className="w-20 rounded-md border border-border bg-bg-elevated px-3 py-2 text-sm text-text-primary text-center font-mono"
-        />
-        {(["paragraphs", "sentences", "words"] as const).map((u) => (
-          <button
-            key={u}
-            onClick={() => setUnit(u)}
-            className={`rounded-md px-4 py-2 text-sm font-medium transition-colors ${
-              unit === u ? "bg-accent text-bg-primary" : "bg-bg-elevated text-text-secondary hover:bg-bg-hover"
-            }`}
-          >
-            {u.charAt(0).toUpperCase() + u.slice(1)}
-          </button>
-        ))}
+    <>
+      {/* ── Canvas: the generated copy, in the doc's OUT pane ── */}
+      <div className="min-w-0 space-y-[13px]">
+        {output ? (
+          <>
+            <TextPanes columns={1}>
+              <TextPane
+                tone="out"
+                label="Output"
+                lines={lineCount(output)}
+                action={
+                  <button
+                    onClick={handleCopy}
+                    className="cursor-pointer text-accent transition-colors hover:text-accent-hover"
+                  >
+                    {copied ? "Copied!" : "Copy"}
+                  </button>
+                }
+              >
+                <div className={TEXT_PANE_BODY}>{output}</div>
+              </TextPane>
+            </TextPanes>
+            <CanvasFootnote>GENERATED LOCALLY · NOTHING LOGGED</CanvasFootnote>
+          </>
+        ) : (
+          <p className="py-10 text-center font-body text-sm text-text-muted">
+            Choose a unit and a count, then generate.
+          </p>
+        )}
       </div>
 
-      <div className="flex justify-center">
-        <button
-          onClick={handleGenerate}
-          className="rounded-md bg-accent px-6 py-2.5 text-sm font-medium text-bg-primary hover:bg-accent-hover transition-colors"
-        >
-          Generate
-        </button>
-      </div>
+      <ToolAside footer={<ToolActions primaryLabel="Generate" onPrimary={handleGenerate} />}>
+        <ToolAsideSection label="UNIT">
+          <ToolChoice
+            label="Unit"
+            fill
+            value={unit}
+            onChange={(u) => {
+              setUnit(u);
+              setOutput(""); // three paragraphs under a lit "Words" chip lie
+            }}
+            options={[
+              { value: "paragraphs" as const, label: "Paragraphs" },
+              { value: "sentences" as const, label: "Sentences" },
+              { value: "words" as const, label: "Words" },
+            ]}
+          />
+        </ToolAsideSection>
 
-      {output && (
-        <div>
-          <div className="flex items-center justify-between mb-1">
-            <label className="text-sm font-medium text-text-secondary">Output</label>
-            <button onClick={handleCopy} className="text-xs text-accent hover:text-accent-hover transition-colors">
-              {copied ? "Copied!" : "Copy"}
-            </button>
-          </div>
-          <div className="w-full rounded-lg border border-border bg-bg-elevated p-3 text-sm text-text-primary whitespace-pre-wrap max-h-96 overflow-y-auto">
-            {output}
-          </div>
-        </div>
-      )}
-    </div>
+        <ToolAsideSection label="HOW MANY">
+          <input
+            type="number"
+            min={1}
+            max={100}
+            value={count}
+            onChange={(e) => {
+              setCount(Math.max(1, Math.min(100, Number(e.target.value))));
+              setOutput("");
+            }}
+            aria-label={`Number of ${unit}`}
+            className="w-24 rounded-md border border-border bg-bg-elevated px-3 py-2 text-center font-mono text-sm text-text-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+          />
+        </ToolAsideSection>
+      </ToolAside>
+    </>
   );
 }

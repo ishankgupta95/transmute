@@ -24,7 +24,8 @@ test.describe("generators", () => {
 
   test("UUID generator can produce a batch", async ({ page }) => {
     await page.goto("/uuid-generator");
-    await page.locator("select").selectOption("10");
+    // The count control is a ToolChoice chip group, not a <select>.
+    await page.getByRole("button", { name: "10", exact: true }).click();
     await page.getByRole("button", { name: /Generate/, exact: true }).click();
     await expect(page.locator("code")).toHaveCount(10);
   });

@@ -147,12 +147,10 @@ describe("RegexTesterUI", () => {
       target: { value: "<script>alert('xss')</script> test" },
     });
 
-    // The highlighted output div is the one with whitespace-pre-wrap class inside Matches section
-    const highlighted = document.querySelector(".whitespace-pre-wrap");
-    expect(highlighted).not.toBeNull();
+    const highlighted = screen.getByTestId("regex-highlight");
     // The raw HTML should contain escaped script tags, not actual script elements
-    expect(highlighted!.innerHTML).toContain("&lt;script&gt;");
-    expect(highlighted!.innerHTML).not.toContain("<script>");
+    expect(highlighted.innerHTML).toContain("&lt;script&gt;");
+    expect(highlighted.innerHTML).not.toContain("<script>");
   });
 
   it("does not show matches section when no pattern entered", () => {
@@ -203,9 +201,8 @@ describe("RegexTesterUI", () => {
     fireEvent.change(patternInput, { target: { value: "world" } });
     fireEvent.change(testInput, { target: { value: "hello world" } });
 
-    const highlighted = document.querySelector(".whitespace-pre-wrap");
-    expect(highlighted).not.toBeNull();
-    expect(highlighted!.innerHTML).toContain("<mark");
-    expect(highlighted!.innerHTML).toContain("world");
+    const highlighted = screen.getByTestId("regex-highlight");
+    expect(highlighted.innerHTML).toContain("<mark");
+    expect(highlighted.innerHTML).toContain("world");
   });
 });

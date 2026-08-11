@@ -1,83 +1,114 @@
-import { PDFDocument } from "pdf-lib";
-import type * as MuPDF from "mupdf";
+import type { ProcessingContext } from "@/hooks/useFileProcessor";
+import type {
+  PageNumberPosition,
+  PageSize,
+} from "./pdf-engine-core";
+import type { PdfJob, PdfJobResult } from "@/lib/workers/pdf-protocol";
 
-// ── MuPDF lazy loader ──────────────────────────────────────────────
+export type { PageNumberPosition, PageSize };
 
-let _mupdf: typeof MuPDF | null = null;
+/**
+ * PDF operations, split across two engines (Phase 3):
+ *
+ * - MuPDF / pdf-lib ops (merge, split, rotate, reorder, page numbers,
+ *   compress, images→PDF) run in a single pool worker — their synchronous
+ *   WASM saves froze the tab on multi-hundred-page documents. The
+ *   implementations live in pdf-engine-core.ts; the wrappers here keep the
+ *   old call signatures so UIs don't care where the work runs. One worker
+ *   only: each would hold its own ~10 MB MuPDF heap, and these tools handle
+ *   one document at a time — ops serialise, like the FFmpeg queue.
+ *
+ * - pdfjs rendering (pdfToImages, page thumbnails) stays here: pdfjs ships
+ *   its own worker for the raster math, and its output canvases are DOM
+ *   objects. Page ENCODING (canvas → JPG/PNG bytes) does go through the
+ *   image worker pool, so a 60-page export doesn't serialise 60 encodes on
+ *   the main thread.
+ *
+ * Environments without Worker (jsdom) fall back to running the core inline.
+ */
 
-async function getMupdf(): Promise<typeof MuPDF> {
-  if (_mupdf) return _mupdf;
-  // Configure WASM location before mupdf initializes
-  const basePath = (process.env.__NEXT_ROUTER_BASEPATH as string) || "";
-  globalThis.$libmupdf_wasm_Module = {
-    locateFile: (name: string) =>
-      name.endsWith(".wasm") ? `${basePath}/mupdf-wasm.wasm` : name,
-  };
-  _mupdf = await import("mupdf");
-  return _mupdf;
+// ── MuPDF / pdf-lib ops via the PDF worker ─────────────────────────
+
+let pdfWorkerPool: import("@/lib/workers/pool").WorkerPool | null = null;
+
+async function runPdfJob<T extends PdfJobResult>(job: PdfJob): Promise<T> {
+  if (typeof Worker === "undefined") {
+    // jsdom / ancient browsers: same code, main thread.
+    const core = await import("./pdf-engine-core");
+    return dispatchInline(core, job) as Promise<T>;
+  }
+  if (!pdfWorkerPool) {
+    const { WorkerPool } = await import("@/lib/workers/pool");
+    pdfWorkerPool = new WorkerPool({
+      // Pre-bundled by scripts/build-workers.mjs — see image-client.ts.
+      createWorker: () =>
+        new Worker(`${process.env.__NEXT_ROUTER_BASEPATH ?? ""}/workers/pdf.worker.js`, {
+          type: "module",
+        }),
+      maxWorkers: 1,
+    });
+  }
+  const bytes = jobBytes(job);
+  return pdfWorkerPool.run<T>(job, {
+    // Peak ≈ source bytes pinned in the WASM heap + the saved copy.
+    memoryBytes: bytes * 3,
+  });
+}
+
+function jobBytes(job: PdfJob): number {
+  switch (job.op) {
+    case "mergePdfs":
+      return job.buffers.reduce((sum, b) => sum + b.byteLength, 0);
+    case "imagesToPdf":
+      return job.images.reduce((sum, i) => sum + i.bytes.byteLength, 0);
+    default:
+      return job.data.byteLength;
+  }
+}
+
+function dispatchInline(
+  core: typeof import("./pdf-engine-core"),
+  job: PdfJob,
+): Promise<PdfJobResult> {
+  switch (job.op) {
+    case "getPageCount":
+      return core.getPageCount(job.data);
+    case "mergePdfs":
+      return core.mergePdfs(job.buffers);
+    case "splitPdf":
+      return core.splitPdf(job.data, job.pageIndices);
+    case "rotatePdfPages":
+      return core.rotatePdfPages(job.data, job.pageIndices, job.angle);
+    case "reorderPdfPages":
+      return core.reorderPdfPages(job.data, job.newOrder);
+    case "addPageNumbers":
+      return core.addPageNumbers(job.data, job.position, job.startNumber);
+    case "compressPdf":
+      return core.compressPdf(job.data);
+    case "imagesToPdf":
+      return core.imagesToPdf(job.images, job.pageSize);
+  }
 }
 
 function toUint8Array(buf: ArrayBuffer | Uint8Array): Uint8Array {
   return buf instanceof Uint8Array ? buf : new Uint8Array(buf);
 }
 
-// ── Load / Info ────────────────────────────────────────────────────
-
 export async function getPageCount(data: ArrayBuffer | Uint8Array): Promise<number> {
-  const mupdf = await getMupdf();
-  const doc = mupdf.Document.openDocument(toUint8Array(data), "application/pdf");
-  const count = doc.countPages();
-  doc.destroy();
-  return count;
+  return runPdfJob({ op: "getPageCount", data: toUint8Array(data) });
 }
-
-// ── Merge (mupdf) ──────────────────────────────────────────────────
 
 export async function mergePdfs(buffers: ArrayBuffer[]): Promise<Uint8Array> {
-  const mupdf = await getMupdf();
-  const out = new mupdf.PDFDocument();
-
-  let insertAt = 0;
-  for (const buf of buffers) {
-    const src = new mupdf.PDFDocument(toUint8Array(buf));
-    const count = src.countPages();
-    const graftMap = out.newGraftMap();
-    for (let i = 0; i < count; i++) {
-      graftMap.graftPage(insertAt++, src, i);
-    }
-    src.destroy();
-  }
-
-  const result = out.saveToBuffer("compress");
-  const bytes = result.asUint8Array().slice();
-  out.destroy();
-  return bytes;
+  return runPdfJob({ op: "mergePdfs", buffers });
 }
-
-// ── Split (mupdf) ──────────────────────────────────────────────────
 
 /** Extract specific pages (0-indexed) into a new PDF. */
 export async function splitPdf(
   data: ArrayBuffer | Uint8Array,
   pageIndices: number[],
 ): Promise<Uint8Array> {
-  const mupdf = await getMupdf();
-  const src = new mupdf.PDFDocument(toUint8Array(data));
-  const out = new mupdf.PDFDocument();
-  const graftMap = out.newGraftMap();
-
-  for (let i = 0; i < pageIndices.length; i++) {
-    graftMap.graftPage(i, src, pageIndices[i]);
-  }
-
-  const result = out.saveToBuffer("compress");
-  const bytes = result.asUint8Array().slice();
-  src.destroy();
-  out.destroy();
-  return bytes;
+  return runPdfJob({ op: "splitPdf", data: toUint8Array(data), pageIndices });
 }
-
-// ── Rotate (mupdf) ────────────────────────────────────────────────
 
 /** Rotate specified pages by the given angle (90, 180, 270). */
 export async function rotatePdfPages(
@@ -85,212 +116,39 @@ export async function rotatePdfPages(
   pageIndices: number[],
   angle: number,
 ): Promise<Uint8Array> {
-  const mupdf = await getMupdf();
-  const doc = new mupdf.PDFDocument(toUint8Array(data));
-
-  for (const idx of pageIndices) {
-    if (idx >= 0 && idx < doc.countPages()) {
-      const pageObj = doc.findPage(idx);
-      const current = pageObj.get("Rotate")?.asNumber() ?? 0;
-      pageObj.put("Rotate", doc.newInteger((current + angle) % 360));
-    }
-  }
-
-  const result = doc.saveToBuffer("compress");
-  const bytes = result.asUint8Array().slice();
-  doc.destroy();
-  return bytes;
+  return runPdfJob({ op: "rotatePdfPages", data: toUint8Array(data), pageIndices, angle });
 }
-
-// ── Reorder (mupdf) ───────────────────────────────────────────────
 
 /** Reorder pages based on the given order (0-indexed). */
 export async function reorderPdfPages(
   data: ArrayBuffer | Uint8Array,
   newOrder: number[],
 ): Promise<Uint8Array> {
-  const mupdf = await getMupdf();
-  const src = new mupdf.PDFDocument(toUint8Array(data));
-  const out = new mupdf.PDFDocument();
-  const graftMap = out.newGraftMap();
-
-  for (let i = 0; i < newOrder.length; i++) {
-    graftMap.graftPage(i, src, newOrder[i]);
-  }
-
-  const result = out.saveToBuffer("compress");
-  const bytes = result.asUint8Array().slice();
-  src.destroy();
-  out.destroy();
-  return bytes;
+  return runPdfJob({ op: "reorderPdfPages", data: toUint8Array(data), newOrder });
 }
-
-// ── Add Page Numbers (pdf-lib — creates content on existing pages) ─
-
-export type PageNumberPosition = "bottom-left" | "bottom-center" | "bottom-right" | "top-left" | "top-center" | "top-right";
 
 export async function addPageNumbers(
   data: ArrayBuffer | Uint8Array,
   position: PageNumberPosition = "bottom-center",
   startNumber: number = 1,
 ): Promise<Uint8Array> {
-  const mupdf = await getMupdf();
-  const doc = new mupdf.PDFDocument(toUint8Array(data));
-  const font = new mupdf.Font("Helvetica");
-  const fontObj = doc.addSimpleFont(font);
-  const fontSize = 10;
-
-  const count = doc.countPages();
-  for (let i = 0; i < count; i++) {
-    const pageObj = doc.findPage(i);
-    const bounds = doc.loadPage(i).getBounds(); // [x0, y0, x1, y1]
-    const width = bounds[2] - bounds[0];
-    const text = String(startNumber + i);
-
-    // Measure text width by summing glyph advances
-    let textWidth = 0;
-    for (const ch of text) {
-      const gid = font.encodeCharacter(ch);
-      textWidth += font.advanceGlyph(gid) * fontSize;
-    }
-
-    const isTop = position.startsWith("top");
-    const y = isTop ? bounds[3] - 30 : bounds[1] + 20;
-    let x: number;
-    if (position.endsWith("left")) {
-      x = bounds[0] + 40;
-    } else if (position.endsWith("right")) {
-      x = bounds[2] - 40 - textWidth;
-    } else {
-      x = bounds[0] + (width - textWidth) / 2;
-    }
-
-    // Escape parentheses in text for PDF string literal
-    const escaped = text.replace(/([()\\])/g, "\\$1");
-    const stream = `q BT /Fn ${fontSize} Tf ${x} ${y} Td (${escaped}) Tj ET Q`;
-
-    // Ensure page has Resources > Font dict, add our font.
-    // /Resources can be INHERITED from a parent Pages node — findPage returns the
-    // raw page dict without resolving inheritance. Creating a fresh empty dict in
-    // that case would shadow the inherited fonts/XObjects and visually corrupt the
-    // page, so walk the /Parent chain and reuse the inherited Resources instead.
-    let resources = pageObj.get("Resources");
-    if (resources.isNull()) {
-      let parent = pageObj.get("Parent");
-      let depth = 0;
-      while (!parent.isNull() && depth < 32) {
-        const inherited = parent.get("Resources");
-        if (!inherited.isNull()) {
-          resources = inherited;
-          break;
-        }
-        parent = parent.get("Parent");
-        depth++;
-      }
-      if (resources.isNull()) {
-        pageObj.put("Resources", doc.newDictionary());
-        resources = pageObj.get("Resources");
-      } else {
-        // Attach the inherited dict to the page so our /Fn font is reachable.
-        pageObj.put("Resources", resources);
-      }
-    }
-    let fonts = resources.get("Font");
-    if (fonts.isNull()) {
-      resources.put("Font", doc.newDictionary());
-      fonts = resources.get("Font");
-    }
-    fonts.put("Fn", fontObj);
-
-    // Append content stream to page
-    const streamObj = doc.addStream(stream, {});
-    const contents = pageObj.get("Contents");
-    if (contents.isArray()) {
-      contents.push(streamObj);
-    } else if (!contents.isNull()) {
-      // Single stream — wrap in array with old + new
-      const arr = doc.newArray();
-      arr.push(contents);
-      arr.push(streamObj);
-      pageObj.put("Contents", arr);
-    } else {
-      pageObj.put("Contents", streamObj);
-    }
-  }
-
-  const result = doc.saveToBuffer("compress");
-  const bytes = result.asUint8Array().slice();
-  doc.destroy();
-  return bytes;
+  return runPdfJob({
+    op: "addPageNumbers",
+    data: toUint8Array(data),
+    position,
+    startNumber,
+  });
 }
 
-// ── Images to PDF (pdf-lib — creating from scratch) ────────────────
-
-export type PageSize = "a4" | "letter" | "fit";
-
-const PAGE_SIZES: Record<string, { width: number; height: number }> = {
-  a4: { width: 595.28, height: 841.89 },
-  letter: { width: 612, height: 792 },
-};
+export async function compressPdf(data: ArrayBuffer | Uint8Array): Promise<Uint8Array> {
+  return runPdfJob({ op: "compressPdf", data: toUint8Array(data) });
+}
 
 export async function imagesToPdf(
   images: { bytes: Uint8Array; type: string }[],
   pageSize: PageSize = "a4",
 ): Promise<Uint8Array> {
-  const pdf = await PDFDocument.create();
-
-  for (const img of images) {
-    let embedded;
-    if (img.type === "image/png") {
-      embedded = await pdf.embedPng(img.bytes);
-    } else {
-      embedded = await pdf.embedJpg(img.bytes);
-    }
-
-    const imgDims = embedded.scale(1);
-
-    let pageWidth: number;
-    let pageHeight: number;
-
-    if (pageSize === "fit") {
-      pageWidth = imgDims.width;
-      pageHeight = imgDims.height;
-    } else {
-      const dims = PAGE_SIZES[pageSize];
-      pageWidth = dims.width;
-      pageHeight = dims.height;
-    }
-
-    const page = pdf.addPage([pageWidth, pageHeight]);
-
-    if (pageSize === "fit") {
-      page.drawImage(embedded, { x: 0, y: 0, width: pageWidth, height: pageHeight });
-    } else {
-      const margin = 40;
-      const maxW = pageWidth - margin * 2;
-      const maxH = pageHeight - margin * 2;
-      const scale = Math.min(maxW / imgDims.width, maxH / imgDims.height, 1);
-      const w = imgDims.width * scale;
-      const h = imgDims.height * scale;
-      const x = (pageWidth - w) / 2;
-      const y = (pageHeight - h) / 2;
-      page.drawImage(embedded, { x, y, width: w, height: h });
-    }
-  }
-
-  return pdf.save();
-}
-
-// ── Compress PDF (mupdf) ───────────────────────────────────────────
-
-export async function compressPdf(data: ArrayBuffer | Uint8Array): Promise<Uint8Array> {
-  const mupdf = await getMupdf();
-  const doc = new mupdf.PDFDocument(toUint8Array(data));
-  // "compress,garbage" linearizes, compresses streams, and removes unused objects
-  const result = doc.saveToBuffer("compress,garbage");
-  const bytes = result.asUint8Array().slice();
-  doc.destroy();
-  return bytes;
+  return runPdfJob({ op: "imagesToPdf", images, pageSize });
 }
 
 // ── PDF to Images (using pdfjs-dist) ────────────────────────────────
@@ -312,11 +170,24 @@ export async function pdfToImages(
   format: "jpeg" | "png" = "jpeg",
   quality: number = 0.85,
   scale: number = 2,
+  ctx: ProcessingContext = {},
 ): Promise<{ blob: Blob; name: string }[]> {
   const pdfjs = await getPdfjs();
   const doc = await pdfjs.getDocument({ data: new Uint8Array(data).slice() }).promise;
-  const results: { blob: Blob; name: string }[] = [];
 
+  const ext = format === "jpeg" ? "jpg" : "png";
+  const mimeType = `image/${format}`;
+  let encodedCount = 0;
+  const reportDone = () => {
+    encodedCount++;
+    ctx.onProgress?.((encodedCount / doc.numPages) * 100);
+  };
+
+  // Pages render sequentially — pdfjs serialises the raster math in its own
+  // worker anyway — but each rendered canvas is handed straight to the image
+  // pool for encoding, so a 60-page export overlaps render(n+1) with
+  // encode(n..) instead of blocking the main thread per page.
+  const encodes: Promise<{ blob: Blob; name: string }>[] = [];
   for (let i = 1; i <= doc.numPages; i++) {
     const page = await doc.getPage(i);
     const viewport = page.getViewport({ scale });
@@ -325,15 +196,57 @@ export async function pdfToImages(
     canvas.height = viewport.height;
     await page.render({ canvas, viewport }).promise;
 
-    const ext = format === "jpeg" ? "jpg" : "png";
-    const mimeType = `image/${format}`;
-    const blob = await new Promise<Blob>((resolve) => {
-      canvas.toBlob((b) => resolve(b!), mimeType, quality);
-    });
-    results.push({ blob, name: `page-${i}.${ext}` });
+    encodes.push(
+      encodePageCanvas(canvas, i, mimeType, quality)
+        .then((blob) => {
+          reportDone();
+          return { blob, name: `page-${i}.${ext}` };
+        }),
+    );
   }
 
-  return results;
+  return Promise.all(encodes);
+}
+
+/**
+ * Encode one rendered page. Worker path: pixels cross as an ImageBitmap and
+ * the encode runs in the image pool. Fallback (no worker-side canvas): the
+ * old toBlob, whose null result — canvas too large for the browser encoder
+ * (big page × high scale) — still surfaces as the sized error message.
+ */
+async function encodePageCanvas(
+  canvas: HTMLCanvasElement,
+  pageNumber: number,
+  mimeType: string,
+  quality: number,
+): Promise<Blob> {
+  const tooLarge = () =>
+    new Error(
+      `Page ${pageNumber} is too large to render at this quality (${canvas.width}×${canvas.height}). Try a lower scale.`,
+    );
+
+  if (
+    typeof Worker !== "undefined" &&
+    typeof OffscreenCanvas !== "undefined" &&
+    typeof createImageBitmap !== "undefined"
+  ) {
+    const { encodeBitmap } = await import("@/lib/workers/image-client");
+    const bitmap = await createImageBitmap(canvas);
+    try {
+      return await encodeBitmap(bitmap, mimeType, quality, canvas.width * canvas.height * 4);
+    } catch (err) {
+      throw err instanceof Error && /too large|allocation|memory/i.test(err.message)
+        ? tooLarge()
+        : err;
+    }
+  }
+
+  return new Promise<Blob>((resolve, reject) => {
+    canvas.toBlob((b) => {
+      if (b) resolve(b);
+      else reject(tooLarge());
+    }, mimeType, quality);
+  });
 }
 
 /**

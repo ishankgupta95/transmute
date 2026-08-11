@@ -9,7 +9,12 @@ const MockAudioContext = vi.fn(function () {
 });
 vi.stubGlobal("AudioContext", MockAudioContext);
 
-import { createVideo, waitForReady, detectAudio } from "@/lib/tools/video-utils";
+import {
+  createVideo,
+  waitForReady,
+  detectAudio,
+  playAndExtractFrames,
+} from "@/lib/tools/video-utils";
 
 describe("createVideo", () => {
   it("creates an HTMLVideoElement", () => {
@@ -121,5 +126,93 @@ describe("detectAudio", () => {
     await detectAudio(file);
 
     expect(mockAudioClose).toHaveBeenCalled();
+  });
+});
+
+describe("playAndExtractFrames — cancellation", () => {
+  /**
+   * A real element (the function appends it to the DOM) with the two APIs
+   * jsdom lacks stubbed out, so frames only advance when a test drives them.
+   */
+  function stubVideo() {
+    const video = document.createElement("video");
+    const frameCallbacks: (() => void)[] = [];
+    Object.assign(video, {
+      play: vi.fn().mockResolvedValue(undefined),
+      pause: vi.fn(),
+      requestVideoFrameCallback: vi.fn((cb: () => void) => {
+        frameCallbacks.push(cb);
+        return 1;
+      }),
+    });
+    return { video, frameCallbacks };
+  }
+
+  it("never starts when the signal is already aborted", async () => {
+    const { video } = stubVideo();
+    const onFrame = vi.fn();
+    const controller = new AbortController();
+    controller.abort();
+
+    await expect(
+      playAndExtractFrames(video, 0, 5, onFrame, { signal: controller.signal }),
+    ).rejects.toMatchObject({ name: "AbortError" });
+
+    expect(onFrame).not.toHaveBeenCalled();
+    // Bailing before the append must not leave the hidden element behind.
+    expect(video.isConnected).toBe(false);
+  });
+
+  it("rejects when aborted mid-walk and detaches the element", async () => {
+    const { video } = stubVideo();
+    const controller = new AbortController();
+
+    // No frame callback is ever driven, so the only way out is the abort —
+    // which is exactly the state a user cancels from.
+    const walk = playAndExtractFrames(video, 0, 5, vi.fn(), {
+      signal: controller.signal,
+    });
+    await Promise.resolve();
+    expect(video.isConnected).toBe(true);
+
+    controller.abort();
+
+    await expect(walk).rejects.toMatchObject({ name: "AbortError" });
+    expect(video.isConnected).toBe(false);
+    expect(video.pause).toHaveBeenCalled();
+  });
+
+  it("rejects when aborted during the initial seek", async () => {
+    const { video } = stubVideo();
+    const controller = new AbortController();
+
+    // `seeked` never fires here, so without its own abort listener the seek
+    // would wait forever and a cancel would appear to do nothing.
+    const walk = playAndExtractFrames(video, 2, 5, vi.fn(), {
+      signal: controller.signal,
+    });
+    await Promise.resolve();
+    controller.abort();
+
+    await expect(walk).rejects.toMatchObject({ name: "AbortError" });
+    expect(video.isConnected).toBe(false);
+  });
+
+  it("stops invoking onFrame once aborted", async () => {
+    const { video, frameCallbacks } = stubVideo();
+    const controller = new AbortController();
+    const onFrame = vi.fn();
+
+    const walk = playAndExtractFrames(video, 0, 5, onFrame, {
+      signal: controller.signal,
+    });
+    await Promise.resolve();
+
+    controller.abort();
+    // A frame that was already queued must be a no-op after the abort.
+    frameCallbacks.forEach((cb) => cb());
+
+    await expect(walk).rejects.toMatchObject({ name: "AbortError" });
+    expect(onFrame).not.toHaveBeenCalled();
   });
 });

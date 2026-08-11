@@ -7,9 +7,24 @@ import "cropperjs/dist/cropper.css";
 import { DropZone } from "@/components/tools/DropZone";
 import { DownloadButton } from "@/components/tools/DownloadButton";
 import { ProgressBar } from "@/components/tools/ProgressBar";
-import { cropImage, type CropData } from "@/lib/tools/image-crop";
+import { cropImage } from "@/lib/tools/image-crop";
 import type { ProcessedResult } from "@/hooks/useFileProcessor";
+import { useObjectUrl } from "@/hooks/useObjectUrl";
 import { formatFileSize } from "@/lib/utils/file-helpers";
+import {
+  ToolActions,
+  ToolAside,
+  ToolAsideSection,
+  ToolChoice,
+  ToolOutput,
+  ToolResetLink,
+  ToolSlider,
+} from "@/components/tools/ToolAside";
+import {
+  CanvasHeader,
+  CanvasStage,
+  StatStrip,
+} from "@/components/tools/ToolCanvas";
 
 const ASPECT_RATIOS = [
   { label: "Free", value: NaN },
@@ -26,12 +41,14 @@ interface ImageCropperUIProps {
 export function ImageCropperUI({ acceptFormats }: ImageCropperUIProps) {
   const [file, setFile] = useState<File | null>(null);
   const [imageUrl, setImageUrl] = useState<string | null>(null);
+  const [aspect, setAspect] = useState("Free");
   const [rotation, setRotation] = useState(0);
   const [result, setResult] = useState<ProcessedResult | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const imgRef = useRef<HTMLImageElement>(null);
   const cropperRef = useRef<Cropper | null>(null);
+  const resultUrl = useObjectUrl(result?.blob ?? null);
 
   const handleFiles = useCallback((files: File[]) => {
     const f = files[0];
@@ -40,6 +57,7 @@ export function ImageCropperUI({ acceptFormats }: ImageCropperUIProps) {
     setResult(null);
     setError(null);
     setRotation(0);
+    setAspect("Free");
     setImageUrl(URL.createObjectURL(f));
   }, []);
 
@@ -64,7 +82,9 @@ export function ImageCropperUI({ acceptFormats }: ImageCropperUIProps) {
     };
   }, [imageUrl]);
 
-  const handleAspectRatio = useCallback((ratio: number) => {
+  const handleAspectRatio = useCallback((label: string) => {
+    setAspect(label);
+    const ratio = ASPECT_RATIOS.find((ar) => ar.label === label)?.value ?? NaN;
     cropperRef.current?.setAspectRatio(ratio);
   }, []);
 
@@ -83,15 +103,12 @@ export function ImageCropperUI({ acceptFormats }: ImageCropperUIProps) {
     setError(null);
 
     try {
-      const data = cropperRef.current.getData(true);
-      const cropData: CropData = {
-        x: data.x,
-        y: data.y,
-        width: data.width,
-        height: data.height,
-        rotate: data.rotate,
-      };
-      const output = await cropImage(file, cropData);
+      // Let the cropper do the transform — see `image-crop.ts` for why
+      // reconstructing it from `getData()` cut the wrong region once the image
+      // was rotated.
+      const croppedCanvas = cropperRef.current.getCroppedCanvas();
+      if (!croppedCanvas) throw new Error("Could not read the cropped region");
+      const output = await cropImage(croppedCanvas, file);
       setResult(output);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Crop failed");
@@ -106,106 +123,122 @@ export function ImageCropperUI({ acceptFormats }: ImageCropperUIProps) {
     setResult(null);
     setError(null);
     setRotation(0);
+    setAspect("Free");
   }, [imageUrl]);
 
+  if (!file) {
+    return <DropZone accept={acceptFormats} onFiles={handleFiles} />;
+  }
+
   return (
-    <div className="space-y-6">
-      {!file ? (
-        <DropZone accept={acceptFormats} onFiles={handleFiles} />
-      ) : result ? (
-        <>
-          {/* Result preview */}
-          <div className="flex flex-col items-center gap-4">
-            <img
-              src={URL.createObjectURL(result.blob)}
-              alt="Cropped"
-              className="max-h-96 rounded border border-border"
+    <>
+      {/* ── Canvas: the crop frame, then the cropped result ──── */}
+      <div className="min-w-0 space-y-[13px]">
+        <CanvasHeader
+          file={file.name}
+          meta={formatFileSize(file.size)}
+          trailing={result ? "CROPPED" : aspect === "Free" ? "FREE" : aspect}
+        />
+
+        {result ? (
+          <CanvasStage className="flex items-center justify-center bg-[#0c0e17] p-4">
+            {resultUrl && (
+              /* eslint-disable-next-line @next/next/no-img-element -- blob: URL, nothing for next/image to optimise */
+              <img src={resultUrl} alt="Cropped" className="max-h-96 w-full object-contain" />
+            )}
+          </CanvasStage>
+        ) : (
+          <>
+            <CanvasStage className="max-h-[500px] bg-bg-secondary">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                ref={imgRef}
+                src={imageUrl!}
+                alt="Crop preview"
+                className="block max-w-full"
+              />
+            </CanvasStage>
+
+            {isProcessing && (
+              <div className="space-y-2">
+                <ProgressBar progress={null} />
+                <p className="text-sm text-text-muted text-center">Cropping...</p>
+              </div>
+            )}
+            {error && <ErrorMessage message={error} />}
+          </>
+        )}
+
+        <StatStrip
+          stats={[
+            { label: "SOURCE", value: formatFileSize(file.size), tone: "neutral" },
+            { label: "ASPECT", value: aspect === "Free" ? "FREE" : aspect },
+            { label: "ROTATION", value: `${rotation}°`, tone: "neutral" },
+            { label: "CROPPED", value: result ? formatFileSize(result.newSize) : "—", tone: "ok" },
+          ]}
+        />
+      </div>
+
+      {/* ── Controls: the doc's right-hand rail / bottom sheet ── */}
+      <ToolAside
+        footer={
+          result ? (
+            <>
+              <DownloadButton
+                blob={result.blob}
+                fileName={result.fileName}
+                className="w-full justify-center"
+              />
+              <ToolResetLink onClick={handleReset} label="CROP ANOTHER" />
+            </>
+          ) : (
+            <ToolActions
+              primaryLabel={isProcessing ? "Cropping…" : "Crop"}
+              onPrimary={handleCrop}
+              primaryDisabled={isProcessing}
+              onReset={handleReset}
+              resetLabel="CANCEL"
             />
-            <p className="text-sm text-text-muted">
-              {formatFileSize(result.newSize)}
-            </p>
-          </div>
-          <div className="flex items-center justify-center gap-3">
-            <DownloadButton blob={result.blob} fileName={result.fileName} />
-            <button
-              onClick={handleReset}
-              className="rounded-md border border-border px-4 py-2.5 text-sm text-text-secondary hover:bg-bg-hover transition-colors"
-            >
-              Crop another
-            </button>
-          </div>
-        </>
-      ) : (
-        <>
-          {/* Cropper area */}
-          <div className="max-h-[500px] overflow-hidden rounded-lg border border-border bg-bg-secondary">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              ref={imgRef}
-              src={imageUrl!}
-              alt="Crop preview"
-              className="block max-w-full"
-            />
-          </div>
+          )
+        }
+      >
+        {!result && (
+          <>
+            <ToolAsideSection label="ASPECT">
+              <ToolChoice
+                label="Aspect ratio"
+                value={aspect}
+                onChange={handleAspectRatio}
+                disabled={isProcessing}
+                options={ASPECT_RATIOS.map((ar) => ({ value: ar.label, label: ar.label }))}
+              />
+            </ToolAsideSection>
 
-          {/* Aspect ratio presets */}
-          <div className="flex items-center justify-center gap-2 flex-wrap">
-            <span className="text-sm text-text-muted mr-1">Aspect:</span>
-            {ASPECT_RATIOS.map((ar) => (
-              <button
-                key={ar.label}
-                onClick={() => handleAspectRatio(ar.value)}
-                className="rounded-md bg-bg-elevated px-3 py-1.5 text-sm text-text-secondary hover:bg-bg-hover transition-colors"
-              >
-                {ar.label}
-              </button>
-            ))}
-          </div>
+            <ToolAsideSection>
+              <ToolSlider
+                label="Rotation"
+                display={`${rotation}°`}
+                hint="Drag the handles on the canvas to move or resize the crop box."
+                min={-180}
+                max={180}
+                step={1}
+                value={rotation}
+                onChange={handleRotation}
+                disabled={isProcessing}
+              />
+            </ToolAsideSection>
+          </>
+        )}
 
-          {/* Rotation slider */}
-          <div>
-            <label className="flex items-center justify-between text-sm text-text-secondary mb-2">
-              <span>Rotation</span>
-              <span className="font-mono text-text-muted">{rotation}°</span>
-            </label>
-            <input
-              type="range"
-              min={-180}
-              max={180}
-              step={1}
-              value={rotation}
-              onChange={(e) => handleRotation(Number(e.target.value))}
-              className="w-full accent-accent"
-            />
-          </div>
-
-          {/* Progress / Error */}
-          {isProcessing && (
-            <div className="space-y-2">
-              <ProgressBar progress={null} />
-              <p className="text-sm text-text-muted text-center">Cropping...</p>
-            </div>
-          )}
-          {error && <ErrorMessage message={error} />}
-
-          {/* Actions */}
-          <div className="flex items-center justify-center gap-3">
-            <button
-              onClick={handleCrop}
-              disabled={isProcessing}
-              className="inline-flex items-center gap-2 rounded-md bg-accent px-6 py-2.5 text-sm font-medium text-bg-primary hover:bg-accent-hover transition-colors disabled:opacity-50"
-            >
-              Crop
-            </button>
-            <button
-              onClick={handleReset}
-              className="rounded-md border border-border px-4 py-2.5 text-sm text-text-secondary hover:bg-bg-hover transition-colors"
-            >
-              Cancel
-            </button>
-          </div>
-        </>
-      )}
-    </div>
+        <ToolAsideSection label="OUTPUT">
+          <ToolOutput
+            rows={[
+              ["Source", formatFileSize(file.size)],
+              ["Cropped", result ? formatFileSize(result.newSize) : "—"],
+            ]}
+          />
+        </ToolAsideSection>
+      </ToolAside>
+    </>
   );
 }

@@ -60,6 +60,16 @@ describe("TextCaseConverterUI", () => {
       typeAndConvert("hello-world", "Title Case");
       expect(screen.getByDisplayValue("Hello World")).toBeInTheDocument();
     });
+
+    it("keeps acronyms intact — NASA must not become Nasa", () => {
+      typeAndConvert("NASA launch report", "Title Case");
+      expect(screen.getByDisplayValue("NASA Launch Report")).toBeInTheDocument();
+    });
+
+    it("splits embedded acronyms at the right boundary", () => {
+      typeAndConvert("parseHTMLString", "Title Case");
+      expect(screen.getByDisplayValue("Parse HTML String")).toBeInTheDocument();
+    });
   });
 
   describe("camelCase", () => {
@@ -197,13 +207,19 @@ describe("TextCaseConverterUI", () => {
       expect(navigator.clipboard.writeText).toHaveBeenCalledWith("HELLO WORLD");
     });
 
-    it("shows active case label above output", () => {
+    it("names the active case on the output pane", () => {
       typeAndConvert("hello", "PascalCase");
-      // The label appears both as a button and as the output label
+      // The name appears twice: the rail's chip, and the output pane's header.
       const labels = screen.getAllByText("PascalCase");
       expect(labels.length).toBeGreaterThanOrEqual(2);
-      // One of them should be the label element
-      expect(labels.some((el) => el.tagName === "LABEL")).toBe(true);
+      // One of them is the chip; the other heads the pane holding the result.
+      expect(labels.some((el) => el.tagName === "BUTTON")).toBe(true);
+      const paneHeading = labels.find((el) => el.tagName === "SPAN");
+      expect(paneHeading).toBeDefined();
+      // The heading sits in the pane's header row, a sibling of the output body.
+      expect(
+        paneHeading!.closest("div")?.parentElement?.querySelector("textarea[readonly]"),
+      ).not.toBeNull();
     });
   });
 });

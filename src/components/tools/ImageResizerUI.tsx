@@ -2,19 +2,36 @@
 
 import { useCallback, useState } from "react";
 import { DropZone } from "@/components/tools/DropZone";
-import { FilePreview } from "@/components/tools/FilePreview";
 import { DownloadButton } from "@/components/tools/DownloadButton";
 import { ProgressBar } from "@/components/tools/ProgressBar";
 import { ErrorMessage } from "@/components/tools/ErrorMessage";
 import { StatusMessage } from "@/components/tools/StatusMessage";
 import {
-  resizeImage,
   RESIZE_PRESETS,
   PERCENTAGE_PRESETS,
   type ImageResizeOptions,
 } from "@/lib/tools/image-resize";
+// Worker-pool path: resize runs off the main thread (Phase 3); falls back to
+// the lib/tools implementation where workers can't do canvas.
+import { resizeImage } from "@/lib/workers/image-client";
 import type { ProcessedResult } from "@/hooks/useFileProcessor";
 import { useObjectUrl } from "@/hooks/useObjectUrl";
+import { formatFileSize } from "@/lib/utils/file-helpers";
+import { cn } from "@/lib/utils/cn";
+import {
+  ToolActions,
+  ToolAside,
+  ToolAsideSection,
+  ToolChoice,
+  ToolOutput,
+  ToolResetLink,
+  ToolSlider,
+} from "@/components/tools/ToolAside";
+import {
+  CanvasHeader,
+  CompareStage,
+  StatStrip,
+} from "@/components/tools/ToolCanvas";
 
 interface ImageResizerUIProps {
   acceptFormats: string;
@@ -22,6 +39,7 @@ interface ImageResizerUIProps {
 
 export function ImageResizerUI({ acceptFormats }: ImageResizerUIProps) {
   const [file, setFile] = useState<File | null>(null);
+  const [split, setSplit] = useState(50);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [naturalSize, setNaturalSize] = useState<{ w: number; h: number } | null>(null);
   const [mode, setMode] = useState<"custom" | "preset" | "percentage">("preset");
@@ -117,185 +135,213 @@ export function ImageResizerUI({ acceptFormats }: ImageResizerUIProps) {
     setError(null);
   }, [previewUrl]);
 
+  if (!file) {
+    return (
+      <DropZone accept={acceptFormats} onFiles={handleFiles} label="Upload an image to resize" />
+    );
+  }
+
+  const outDims =
+    mode === "percentage" && naturalSize
+      ? `${Math.round((naturalSize.w * percentage) / 100)} × ${Math.round((naturalSize.h * percentage) / 100)}`
+      : `${width} × ${height}`;
+
   return (
-    <div className="space-y-6">
-      {!file ? (
-        <DropZone accept={acceptFormats} onFiles={handleFiles} label="Upload an image to resize" />
-      ) : (
-        <>
-          {/* Preview */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <FilePreview
-              fileName={file.name}
-              fileSize={file.size}
-              previewUrl={previewUrl ?? undefined}
-              label={naturalSize ? `Original (${naturalSize.w}×${naturalSize.h})` : "Original"}
-            />
-            {result && (
-              <FilePreview
+    <>
+      {/* ── Canvas: the doc's before/after wipe + stat strip ── */}
+      <div className="min-w-0 space-y-[13px]">
+        <CanvasHeader
+          file={file.name}
+          meta={naturalSize ? `${naturalSize.w} × ${naturalSize.h}` : formatFileSize(file.size)}
+          trailing={outDims}
+        />
+
+        <CompareStage
+          beforeUrl={previewUrl}
+          afterUrl={resultPreviewUrl}
+          inLabel="ORIGINAL"
+          outLabel="RESIZED"
+          split={split}
+          onSplitChange={setSplit}
+          busy={isProcessing}
+          caption={result ? "drag to compare" : "resize to see the result"}
+        />
+
+        <StatStrip
+          stats={[
+            {
+              label: "SOURCE",
+              value: naturalSize ? `${naturalSize.w}×${naturalSize.h}` : "—",
+              tone: "neutral",
+            },
+            { label: "TARGET", value: outDims },
+            { label: "IN", value: formatFileSize(file.size), tone: "neutral" },
+            { label: "OUT", value: result ? formatFileSize(result.newSize) : "—", tone: "ok" },
+          ]}
+        />
+
+        {isProcessing && (
+          <div className="space-y-2">
+            <ProgressBar progress={null} label="Resizing image" />
+            <StatusMessage>Resizing...</StatusMessage>
+          </div>
+        )}
+        {error && <ErrorMessage message={error} />}
+      </div>
+
+      <ToolAside
+        footer={
+          <>
+            {result ? (
+              <DownloadButton
+                blob={result.blob}
                 fileName={result.fileName}
-                fileSize={result.newSize}
-                previewUrl={resultPreviewUrl ?? undefined}
-                label="Resized"
+                className="w-full justify-center"
+              />
+            ) : (
+              <ToolActions
+                primaryLabel="Resize"
+                onPrimary={handleResize}
+                primaryDisabled={isProcessing}
               />
             )}
-          </div>
+            <ToolResetLink
+              onClick={handleReset}
+              label={result ? "RESIZE ANOTHER" : "CLEAR"}
+            />
+          </>
+        }
+      >
+        <ToolAsideSection label="MODE">
+          <ToolChoice
+            label="Resize mode"
+            fill
+            disabled={isProcessing}
+            value={mode}
+            onChange={setMode}
+            options={[
+              { value: "preset" as const, label: "Presets" },
+              { value: "custom" as const, label: "Custom" },
+              { value: "percentage" as const, label: "%" },
+            ]}
+          />
+        </ToolAsideSection>
 
-          {/* Mode tabs */}
-          <div className="flex items-center justify-center gap-2">
-            {(["preset", "custom", "percentage"] as const).map((m) => (
-              <button
-                key={m}
-                onClick={() => setMode(m)}
-                className={`rounded-md px-4 py-2 text-sm font-medium capitalize transition-colors ${
-                  mode === m
-                    ? "bg-accent text-bg-primary"
-                    : "bg-bg-elevated text-text-secondary hover:bg-bg-hover"
-                }`}
-              >
-                {m === "percentage" ? "Percentage" : m === "preset" ? "Presets" : "Custom"}
-              </button>
-            ))}
-          </div>
-
-          {/* Preset buttons */}
-          {mode === "preset" && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+        {mode === "preset" && (
+          <ToolAsideSection label="PRESET">
+            <div className="flex flex-col gap-1.5">
               {RESIZE_PRESETS.map((p) => (
                 <button
                   key={p.label}
+                  type="button"
                   onClick={() => handlePreset(p.width, p.height)}
-                  className={`rounded-md border px-3 py-2 text-sm text-left transition-colors ${
+                  aria-pressed={width === p.width && height === p.height}
+                  className={cn(
+                    "cursor-pointer rounded-md border px-3 py-2 text-left font-body text-xs transition-colors duration-200",
+                    "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent",
                     width === p.width && height === p.height
-                      ? "border-accent bg-accent-muted text-text-primary"
-                      : "border-border bg-bg-secondary text-text-secondary hover:bg-bg-hover"
-                  }`}
+                      ? "border-accent bg-accent/12 text-accent"
+                      : "border-border text-neutral-400 hover:border-accent/40 hover:text-accent-200",
+                  )}
                 >
                   {p.label}
                 </button>
               ))}
             </div>
-          )}
+          </ToolAsideSection>
+        )}
 
-          {/* Custom dimensions */}
-          {(mode === "custom" || mode === "preset") && (
-            <div className="flex items-center justify-center gap-3">
-              <div>
-                <label className="block text-xs text-text-muted mb-1">Width</label>
+        {(mode === "custom" || mode === "preset") && (
+          <ToolAsideSection label="DIMENSIONS">
+            <div className="flex items-end gap-2">
+              <label className="flex min-w-0 flex-1 flex-col gap-1">
+                <span className="font-body text-[11px] text-text-muted">Width</span>
                 <input
                   type="number"
                   min={1}
                   max={8192}
                   value={width}
                   onChange={(e) => handleWidthChange(Number(e.target.value))}
-                  className="w-24 rounded-md border border-border bg-bg-elevated px-3 py-2 text-sm text-text-primary"
+                  className="w-full rounded-md border border-border bg-bg-elevated px-2.5 py-2 text-sm text-text-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
                   disabled={isProcessing}
                 />
-              </div>
+              </label>
               <button
+                type="button"
                 onClick={() => setLockAspect(!lockAspect)}
-                className={`mt-4 rounded p-1.5 text-sm transition-colors ${
-                  lockAspect ? "text-accent" : "text-text-muted"
-                }`}
+                className={cn(
+                  "mb-1 cursor-pointer rounded p-1.5 text-sm transition-colors",
+                  lockAspect ? "text-accent" : "text-text-muted",
+                )}
                 title={lockAspect ? "Aspect ratio locked" : "Aspect ratio unlocked"}
                 aria-label={lockAspect ? "Unlock aspect ratio" : "Lock aspect ratio"}
                 aria-pressed={lockAspect}
               >
                 {lockAspect ? "🔗" : "🔓"}
               </button>
-              <div>
-                <label className="block text-xs text-text-muted mb-1">Height</label>
+              <label className="flex min-w-0 flex-1 flex-col gap-1">
+                <span className="font-body text-[11px] text-text-muted">Height</span>
                 <input
                   type="number"
                   min={1}
                   max={8192}
                   value={height}
                   onChange={(e) => handleHeightChange(Number(e.target.value))}
-                  className="w-24 rounded-md border border-border bg-bg-elevated px-3 py-2 text-sm text-text-primary"
+                  className="w-full rounded-md border border-border bg-bg-elevated px-2.5 py-2 text-sm text-text-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
                   disabled={isProcessing}
                 />
-              </div>
-              <span className="mt-4 text-xs text-text-muted">px</span>
+              </label>
             </div>
-          )}
+          </ToolAsideSection>
+        )}
 
-          {/* Percentage */}
-          {mode === "percentage" && (
-            <div className="flex items-center justify-center gap-2 flex-wrap">
-              {PERCENTAGE_PRESETS.map((p) => (
-                <button
-                  key={p}
-                  onClick={() => setPercentage(p)}
-                  className={`rounded-md px-4 py-2 text-sm font-medium transition-colors ${
-                    percentage === p
-                      ? "bg-accent text-bg-primary"
-                      : "bg-bg-elevated text-text-secondary hover:bg-bg-hover"
-                  }`}
-                >
-                  {p}%
-                </button>
-              ))}
+        {mode === "percentage" && (
+          <ToolAsideSection label="SCALE">
+            <ToolChoice
+              label="Scale percentage"
+              disabled={isProcessing}
+              value={percentage}
+              onChange={setPercentage}
+              options={PERCENTAGE_PRESETS.map((p) => ({ value: p, label: `${p}%` }))}
+            />
+            <div className="flex items-center gap-2">
               <input
                 type="number"
                 min={1}
                 max={500}
                 value={percentage}
                 onChange={(e) => setPercentage(Number(e.target.value))}
-                className="w-20 rounded-md border border-border bg-bg-elevated px-3 py-2 text-sm text-text-primary"
+                aria-label="Scale percentage"
+                className="w-20 rounded-md border border-border bg-bg-elevated px-2.5 py-2 text-sm text-text-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
               />
               <span className="text-xs text-text-muted">%</span>
             </div>
-          )}
+          </ToolAsideSection>
+        )}
 
-          {/* Quality */}
-          <div>
-            <label className="flex items-center justify-between text-sm text-text-secondary mb-2">
-              <span>Output quality</span>
-              <span className="font-mono text-text-muted">{Math.round(quality * 100)}%</span>
-            </label>
-            <input
-              type="range"
-              min={0.1}
-              max={1}
-              step={0.05}
-              value={quality}
-              onChange={(e) => setQuality(Number(e.target.value))}
-              className="w-full accent-accent"
-              disabled={isProcessing}
-            />
-          </div>
+        <ToolAsideSection>
+          <ToolSlider
+            label="Output quality"
+            display={`${Math.round(quality * 100)}%`}
+            min={0.1}
+            max={1}
+            step={0.05}
+            value={quality}
+            onChange={setQuality}
+            disabled={isProcessing}
+          />
+        </ToolAsideSection>
 
-          {/* Progress / Error */}
-          {isProcessing && (
-            <div className="space-y-2">
-              <ProgressBar progress={null} label="Resizing image" />
-              <StatusMessage>Resizing...</StatusMessage>
-            </div>
-          )}
-          {error && <ErrorMessage message={error} />}
-
-          {/* Actions */}
-          <div className="flex items-center justify-center gap-3">
-            {!result && !isProcessing && (
-              <button
-                onClick={handleResize}
-                className="inline-flex items-center gap-2 rounded-md bg-accent px-6 py-2.5 text-sm font-medium text-bg-primary hover:bg-accent-hover transition-colors"
-              >
-                Resize
-              </button>
-            )}
-            {result && (
-              <DownloadButton blob={result.blob} fileName={result.fileName} />
-            )}
-            <button
-              onClick={handleReset}
-              className="rounded-md border border-border px-4 py-2.5 text-sm text-text-secondary hover:bg-bg-hover transition-colors"
-            >
-              {result ? "Resize another" : "Cancel"}
-            </button>
-          </div>
-        </>
-      )}
-    </div>
+        <ToolAsideSection label="OUTPUT">
+          <ToolOutput
+            rows={[
+              ["Dimensions", outDims],
+              ["In", formatFileSize(file.size)],
+              ["Out", result ? formatFileSize(result.newSize) : "—"],
+            ]}
+          />
+        </ToolAsideSection>
+      </ToolAside>
+    </>
   );
 }

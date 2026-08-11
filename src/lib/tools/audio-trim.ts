@@ -1,4 +1,4 @@
-import type { ProcessedResult } from "@/hooks/useFileProcessor";
+import type { ProcessedResult, ProcessingContext } from "@/hooks/useFileProcessor";
 
 export interface AudioTrimOptions {
   startTime: number; // seconds
@@ -9,17 +9,25 @@ export interface AudioTrimOptions {
 
 /**
  * Trim an audio file to a specified time range.
- * Decodes the input, slices the AudioBuffer, and re-encodes.
+ * Decodes the input (main thread — Web Audio), slices the AudioBuffer, and
+ * re-encodes in the audio worker pool.
  */
 export async function trimAudio(
   file: File,
   options: AudioTrimOptions,
+  ctx: ProcessingContext = {},
 ): Promise<ProcessedResult> {
+  const { startTime, endTime, outputFormat, bitrate } = options;
+  // Validate BEFORE the (expensive) decode. NaN survives every relational
+  // comparison below, so without this a NaN start/end reached the sample
+  // loop and produced silent zero-filled output.
+  if (!Number.isFinite(startTime) || !Number.isFinite(endTime)) {
+    throw new Error("Trim times must be numbers");
+  }
+  if (startTime >= endTime) throw new Error("Start time must be before end time");
+
   const { decodeAudioFile } = await import("./audio-decode");
   const audioBuffer = await decodeAudioFile(file);
-
-  const { startTime, endTime, outputFormat, bitrate } = options;
-  if (startTime >= endTime) throw new Error("Start time must be before end time");
 
   const sampleRate = audioBuffer.sampleRate;
   // Clamp to the decoded buffer rather than throwing — a media element's reported
@@ -47,12 +55,13 @@ export async function trimAudio(
   let fileName: string;
 
   if (outputFormat === "mp3") {
-    const { encodeToMp3 } = await import("./audio-encode-mp3");
-    blob = encodeToMp3(newBuffer, bitrate ?? 192);
+    const { resampleForMp3 } = await import("./audio-encode-mp3");
+    const { encodeMp3 } = await import("@/lib/workers/audio-client");
+    blob = await encodeMp3(await resampleForMp3(newBuffer), bitrate ?? 192, ctx);
     fileName = `${baseName}-trimmed.mp3`;
   } else {
-    const { encodeToWav } = await import("./audio-encode-wav");
-    blob = encodeToWav(newBuffer);
+    const { encodeWav } = await import("@/lib/workers/audio-client");
+    blob = await encodeWav(newBuffer, ctx);
     fileName = `${baseName}-trimmed.wav`;
   }
 

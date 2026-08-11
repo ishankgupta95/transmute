@@ -3,6 +3,18 @@
 import { useCallback, useState } from "react";
 
 import { copyText } from "@/lib/utils/clipboard";
+import {
+  ToolActions,
+  ToolAside,
+  ToolAsideSection,
+  ToolChoice,
+} from "@/components/tools/ToolAside";
+import {
+  lineCount,
+  TEXT_PANE_BODY,
+  TextPane,
+  TextPanes,
+} from "@/components/tools/ToolCanvas";
 
 function encodeHtmlEntities(text: string): string {
   const map: Record<string, string> = {
@@ -55,50 +67,73 @@ export function HtmlEntityEncodeDecodeUI() {
   }, [output]);
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-center gap-2">
-        {(["encode", "decode"] as const).map((m) => (
-          <button
-            key={m}
-            onClick={() => handleModeChange(m)}
-            className={`rounded-md px-4 py-2 text-sm font-medium transition-colors ${
-              mode === m ? "bg-accent text-bg-primary" : "bg-bg-elevated text-text-secondary hover:bg-bg-hover"
-            }`}
+    <>
+      {/* ── Canvas: the doc's two-up IN / OUT panes ──────────── */}
+      <div className="min-w-0 space-y-[13px]">
+        <TextPanes columns={output ? 2 : 1}>
+          <TextPane
+            label={mode === "encode" ? "Text to Encode" : "HTML Entities to Decode"}
+            lines={lineCount(input)}
           >
-            {m === "encode" ? "Encode" : "Decode"}
-          </button>
-        ))}
+            <textarea
+              value={input}
+              onChange={(e) => handleConvert(e.target.value, mode)}
+              placeholder={
+                mode === "encode"
+                  ? '<p>Hello & "World"</p>'
+                  : "&lt;p&gt;Hello &amp; &quot;World&quot;&lt;/p&gt;"
+              }
+              aria-label={mode === "encode" ? "Text to encode" : "HTML entities to decode"}
+              className={TEXT_PANE_BODY}
+            />
+          </TextPane>
+
+          {output && (
+            <TextPane
+              tone="out"
+              label="Output"
+              lines={lineCount(output)}
+              action={
+                <button
+                  onClick={handleCopy}
+                  className="cursor-pointer text-accent transition-colors hover:text-accent-hover"
+                >
+                  {copied ? "Copied!" : "Copy"}
+                </button>
+              }
+            >
+              <textarea readOnly value={output} aria-label="Output" className={TEXT_PANE_BODY} />
+            </TextPane>
+          )}
+        </TextPanes>
       </div>
 
-      <div>
-        <label className="block text-sm font-medium text-text-secondary mb-1">
-          {mode === "encode" ? "Text to Encode" : "HTML Entities to Decode"}
-        </label>
-        <textarea
-          value={input}
-          onChange={(e) => handleConvert(e.target.value, mode)}
-          placeholder={mode === "encode" ? '<p>Hello & "World"</p>' : "&lt;p&gt;Hello &amp; &quot;World&quot;&lt;/p&gt;"}
-          rows={5}
-          className="w-full rounded-lg border border-border bg-bg-elevated p-3 text-sm text-text-primary font-mono resize-y placeholder:text-text-muted"
-        />
-      </div>
-
-      {output && (
-        <div>
-          <div className="flex items-center justify-between mb-1">
-            <label className="text-sm font-medium text-text-secondary">Output</label>
-            <button onClick={handleCopy} className="text-xs text-accent hover:text-accent-hover transition-colors">
-              {copied ? "Copied!" : "Copy"}
-            </button>
-          </div>
-          <textarea
-            readOnly
-            value={output}
-            rows={5}
-            className="w-full rounded-lg border border-border bg-bg-elevated p-3 text-sm text-text-primary font-mono resize-y"
+      <ToolAside
+        footer={
+          output ? (
+            <ToolActions
+              primaryLabel={copied ? "Copied to clipboard" : "Copy output"}
+              onPrimary={handleCopy}
+            />
+          ) : undefined
+        }
+      >
+        <ToolAsideSection label="DIRECTION">
+          <ToolChoice
+            label="Direction"
+            fill
+            value={mode}
+            onChange={handleModeChange}
+            options={[
+              { value: "encode" as const, label: "Encode" },
+              { value: "decode" as const, label: "Decode" },
+            ]}
           />
-        </div>
-      )}
-    </div>
+          <span className="font-body text-[10.5px] leading-[1.5] text-text-muted">
+            Converts as you type — nothing to run.
+          </span>
+        </ToolAsideSection>
+      </ToolAside>
+    </>
   );
 }

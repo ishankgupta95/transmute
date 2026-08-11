@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { posts } from "@/data/posts";
+import { posts, postTag } from "@/data/posts";
 import { BreadcrumbSchema } from "@/components/seo/BreadcrumbSchema";
 
 const BASE_URL = "https://transmute.tools";
@@ -9,7 +9,7 @@ export const metadata: Metadata = {
   title: "Blog",
   description:
     "Practical guides on file conversion, image formats, PDFs, and developer tooling — written for the long-tail of how-to questions our tools quietly answer.",
-  alternates: { canonical: `${BASE_URL}/blog` },
+  alternates: { canonical: "/blog" },
   openGraph: {
     title: "Transmute Blog",
     description:
@@ -50,61 +50,88 @@ const formatDate = (iso: string) =>
 
 export default function BlogIndexPage() {
   const sorted = [...posts].sort((a, b) => b.publishedAt.localeCompare(a.publishedAt));
+  const totalReading = posts.reduce((n, p) => n + p.readingTime, 0);
+  const latest = sorted[0]?.updatedAt ?? sorted[0]?.publishedAt;
 
   return (
-    <main className="flex-1 px-4 py-14 max-w-4xl mx-auto w-full">
+    <main className="flex-1">
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(blogSchema) }}
       />
       <BreadcrumbSchema items={breadcrumbs} />
 
-      <nav aria-label="Breadcrumb" className="mb-8">
-        <ol className="flex items-center gap-2 text-sm text-text-muted">
-          <li>
-            <Link href="/" className="hover:text-text-secondary transition-colors duration-200">
-              Home
-            </Link>
-          </li>
-          <li className="flex items-center gap-2">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="opacity-40" aria-hidden="true">
-              <polyline points="9 18 15 12 9 6" />
-            </svg>
-            <span className="text-text-secondary">Blog</span>
-          </li>
-        </ol>
-      </nav>
+      <div className="mx-auto max-w-[1440px] px-4 pt-12 pb-10 md:px-11">
+        <nav aria-label="Breadcrumb" className="mb-6">
+          <ol className="flex items-center gap-2 font-mono text-[11px] leading-none text-text-muted">
+            <li>
+              <Link href="/" className="transition-colors duration-200 hover:text-accent-200">
+                HOME
+              </Link>
+            </li>
+            <li aria-hidden="true" className="opacity-40">/</li>
+            <li className="text-neutral-300">BLOG</li>
+          </ol>
+        </nav>
 
-      <header className="mb-12">
-        <h1 className="text-3xl md:text-4xl font-bold font-display tracking-tight text-text-primary mb-3">
-          Blog
-        </h1>
-        <p className="text-text-secondary text-lg leading-relaxed max-w-2xl">
-          Practical guides on file conversion, image formats, PDFs, and developer
-          tooling — written to answer the questions our tools quietly solve.
-        </p>
-      </header>
+        <div className="grid items-end gap-10 lg:grid-cols-[1fr_380px] lg:gap-16">
+          <div>
+            <h1 className="m-0 mb-4 font-display text-[clamp(30px,5vw,44px)] leading-[1.1] font-medium tracking-[-0.028em] text-text-primary">
+              Notes on file formats
+            </h1>
+            <p className="m-0 max-w-[560px] font-body text-[15px] leading-[1.7] text-neutral-400">
+              Practical guides on conversion, image formats, PDFs and developer tooling —
+              written to answer the questions the tools quietly solve.
+            </p>
+          </div>
 
-      <ul className="space-y-6">
-        {sorted.map((post) => (
-          <li key={post.slug}>
-            <Link
-              href={`/blog/${post.slug}`}
-              className="group block rounded-lg border border-border bg-bg-elevated p-6 transition-all duration-300 hover:bg-bg-hover hover:border-border-hover hover:-translate-y-0.5"
-            >
-              <div className="flex items-center gap-3 text-xs text-text-muted mb-3">
-                <time dateTime={post.publishedAt}>{formatDate(post.publishedAt)}</time>
-                <span aria-hidden>·</span>
-                <span>{post.readingTime} min read</span>
+          <div className="flex gap-px overflow-hidden rounded-[9px] border border-border bg-border">
+            {[
+              ["POSTS", String(posts.length)],
+              ["READING", `${totalReading} MIN`],
+              ["UPDATED", formatDate(latest).toUpperCase()],
+            ].map(([k, v]) => (
+              <div key={k} className="flex flex-1 flex-col gap-[5px] bg-bg-primary px-4 py-3">
+                <span className="font-mono text-[9.5px] leading-none tracking-[0.12em] text-text-muted">
+                  {k}
+                </span>
+                <span className="font-mono text-[15px] leading-none font-medium text-neutral-300">
+                  {v}
+                </span>
               </div>
-              <h2 className="text-xl font-bold font-display text-text-primary group-hover:text-accent transition-colors duration-200 mb-2">
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div className="mx-auto grid max-w-[1440px] grid-cols-1 gap-x-12 px-4 pb-13 md:px-11 lg:grid-cols-2">
+        {sorted.map((post, i) => (
+          <Link
+            key={post.slug}
+            href={`/blog/${post.slug}`}
+            className="flex items-start gap-[18px] border-b border-border py-5.5 transition-[padding-left] duration-200 hover:pl-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+          >
+            <span className="w-[22px] flex-none font-mono text-[10.5px] leading-[1.8] text-text-muted">
+              {String(i + 1).padStart(2, "0")}
+            </span>
+            <span className="flex min-w-0 flex-1 flex-col gap-[7px]">
+              <span className="flex items-center gap-2.5 font-mono text-[10.5px] leading-none text-text-muted">
+                <time dateTime={post.publishedAt}>{formatDate(post.publishedAt).toUpperCase()}</time>
+                <span aria-hidden="true" className="opacity-40">·</span>
+                <span>{post.readingTime} MIN</span>
+                <span aria-hidden="true" className="opacity-40">·</span>
+                <span className="text-accent-300">{postTag(post)}</span>
+              </span>
+              <span className="font-display text-base leading-[1.35] font-medium text-text-primary">
                 {post.title}
-              </h2>
-              <p className="text-sm text-text-secondary leading-relaxed">{post.description}</p>
-            </Link>
-          </li>
+              </span>
+              <span className="font-body text-[12.5px] leading-[1.6] text-text-muted">
+                {post.description}
+              </span>
+            </span>
+          </Link>
         ))}
-      </ul>
+      </div>
     </main>
   );
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { FileText, Printer } from "lucide-react";
+import { FileText } from "lucide-react";
 import { DropZone } from "./DropZone";
 import { ErrorMessage } from "./ErrorMessage";
 import { StatusMessage } from "./StatusMessage";
@@ -9,6 +9,13 @@ import { PrintFrame } from "./markdown-pdf/PrintFrame";
 import { renderMarkdown, type MarkdownPdfTheme, type MarkdownPdfFont } from "@/lib/tools/markdown-to-pdf";
 import { buildPrintHtml } from "@/lib/tools/markdown-pdf-print-css";
 import { cn } from "@/lib/utils/cn";
+import {
+  ToolActions,
+  ToolAside,
+  ToolAsideSection,
+  ToolChoice,
+} from "@/components/tools/ToolAside";
+import { StatStrip } from "@/components/tools/ToolCanvas";
 
 const MAX_FILE_BYTES = 10 * 1024 * 1024; // 10 MB
 
@@ -137,116 +144,138 @@ export function MarkdownToPdfUI() {
   const exportDisabled = useMemo(() => !markdown.trim(), [markdown]);
 
   return (
-    <div className="space-y-4">
-      {/* Mode + style toolbar */}
-      <div className="flex flex-wrap items-center gap-3 text-sm">
-        <ModeTabs mode={mode} onChange={setMode} />
-        <span aria-hidden="true" className="hidden sm:inline text-text-muted">·</span>
-        <SegmentedControl
-          label="Theme"
-          value={theme}
-          onChange={(v) => setTheme(v as MarkdownPdfTheme)}
-          options={[
-            { value: "light", label: "Light" },
-            { value: "dark", label: "Dark" },
-          ]}
-        />
-        <SegmentedControl
-          label="Font"
-          value={font}
-          onChange={(v) => setFont(v as MarkdownPdfFont)}
-          options={[
-            { value: "serif", label: "Serif" },
-            { value: "sans", label: "Sans" },
-          ]}
-        />
-      </div>
-
-      {/* Two-column input + preview */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <div className="flex flex-col gap-3">
-          {mode === "upload" ? (
-            <>
-              <DropZone
-                accept=".md,.markdown,.txt,text/markdown"
-                onFiles={handleFiles}
-                label="Upload a Markdown or text file"
-              />
-              {markdown && (
-                <textarea
-                  value={markdown}
-                  onChange={(e) => setMarkdown(e.target.value)}
-                  rows={14}
-                  className="w-full rounded-lg border border-border bg-bg-elevated p-3 text-sm text-text-primary font-mono resize-y"
-                  aria-label="Uploaded Markdown content (editable)"
+    <>
+      {/* ── Canvas: source on the left, live preview on the right ── */}
+      <div className="min-w-0 space-y-4">
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          <div className="flex flex-col gap-3">
+            {mode === "upload" ? (
+              <>
+                <DropZone
+                  accept=".md,.markdown,.txt,text/markdown"
+                  onFiles={handleFiles}
+                  label="Upload a Markdown or text file"
                 />
-              )}
-            </>
-          ) : (
-            <textarea
-              value={markdown}
-              onChange={(e) => setMarkdown(e.target.value)}
-              placeholder={SAMPLE_MARKDOWN}
-              rows={20}
-              className="w-full rounded-lg border border-border bg-bg-elevated p-3 text-sm text-text-primary font-mono resize-y placeholder:text-text-muted min-h-[28rem]"
-              aria-label="Markdown source"
-            />
-          )}
-        </div>
-
-        <div className="flex flex-col gap-2">
-          <span className="text-sm text-text-secondary">Preview</span>
-          <div
-            className={cn(
-              "w-full rounded-lg border border-border p-6 prose prose-sm max-w-none min-h-[28rem] overflow-y-auto",
-              previewBackground,
-              previewText,
-              theme === "dark" ? "prose-invert" : "",
+                {markdown && (
+                  <textarea
+                    value={markdown}
+                    onChange={(e) => setMarkdown(e.target.value)}
+                    rows={14}
+                    className="w-full rounded-lg border border-border bg-bg-elevated p-3 text-sm text-text-primary font-mono resize-y"
+                    aria-label="Uploaded Markdown content (editable)"
+                  />
+                )}
+              </>
+            ) : (
+              <textarea
+                value={markdown}
+                onChange={(e) => setMarkdown(e.target.value)}
+                placeholder={SAMPLE_MARKDOWN}
+                rows={20}
+                className="w-full rounded-lg border border-border bg-bg-elevated p-3 text-sm text-text-primary font-mono resize-y placeholder:text-text-muted min-h-[28rem]"
+                aria-label="Markdown source"
+              />
             )}
-            data-testid="markdown-pdf-preview"
-            dangerouslySetInnerHTML={{
-              __html:
-                previewHtml ||
-                '<p class="text-text-muted italic">Your rendered Markdown will appear here. Type or paste on the left to start.</p>',
-            }}
-          />
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <span className="text-sm text-text-secondary">Preview</span>
+            <div
+              className={cn(
+                "w-full rounded-lg border border-border p-6 prose prose-sm max-w-none min-h-[28rem] overflow-y-auto",
+                previewBackground,
+                previewText,
+                theme === "dark" ? "prose-invert" : "",
+              )}
+              data-testid="markdown-pdf-preview"
+              dangerouslySetInnerHTML={{
+                __html:
+                  previewHtml ||
+                  '<p class="text-text-muted italic">Your rendered Markdown will appear here. Type or paste on the left to start.</p>',
+              }}
+            />
+          </div>
         </div>
+
+        <StatStrip
+          stats={[
+            { label: "WORDS", value: String(markdown.trim() ? markdown.trim().split(/\s+/).length : 0), tone: "neutral" },
+            { label: "LINES", value: String(markdown ? markdown.split("\n").length : 0), tone: "neutral" },
+            { label: "THEME", value: theme.toUpperCase() },
+            { label: "FONT", value: font.toUpperCase(), tone: "ok" },
+          ]}
+        />
+
+        <ErrorMessage message={error} />
+
+        {exportingHtml && <PrintFrame html={exportingHtml} onDone={handlePrintDone} />}
       </div>
 
-      <ErrorMessage message={error} />
+      {/* ── Controls: the doc's right-hand rail / bottom sheet ── */}
+      <ToolAside
+        footer={
+          <>
+            <ToolActions
+              primaryLabel="Export to PDF"
+              onPrimary={handleExport}
+              primaryDisabled={exportDisabled || exportingHtml !== null}
+            />
+            {status && <StatusMessage>{status}</StatusMessage>}
+          </>
+        }
+      >
+        <ToolAsideSection label="SOURCE">
+          <ModeTabs mode={mode} onChange={setMode} />
+        </ToolAsideSection>
 
-      <div className="flex flex-col gap-2 items-center pt-1">
-        <button
-          type="button"
-          onClick={handleExport}
-          disabled={exportDisabled || exportingHtml !== null}
-          className="inline-flex items-center justify-center gap-2 rounded-md bg-accent px-5 py-2.5 text-sm font-medium text-bg-primary transition-colors hover:bg-accent-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-bg-primary disabled:opacity-50 disabled:cursor-not-allowed min-h-11"
-        >
-          <Printer size={16} aria-hidden="true" />
-          Export to PDF
-        </button>
-        {status && <StatusMessage>{status}</StatusMessage>}
-        <p className="text-xs text-text-muted text-center max-w-md leading-relaxed">
-          Your browser&rsquo;s print dialog opens — pick &ldquo;Save as PDF&rdquo; as the destination. Firefox users:
-          turn on &ldquo;Print backgrounds&rdquo; in the dialog so the code-block tints render.
-        </p>
-      </div>
+        <ToolAsideSection label="THEME">
+          <ToolChoice
+            label="Theme"
+            fill
+            value={theme}
+            onChange={(v) => setTheme(v as MarkdownPdfTheme)}
+            options={[
+              { value: "light", label: "Light" },
+              { value: "dark", label: "Dark" },
+            ]}
+          />
+        </ToolAsideSection>
 
-      {exportingHtml && <PrintFrame html={exportingHtml} onDone={handlePrintDone} />}
-    </div>
+        <ToolAsideSection label="FONT">
+          <ToolChoice
+            label="Font"
+            fill
+            value={font}
+            onChange={(v) => setFont(v as MarkdownPdfFont)}
+            options={[
+              { value: "serif", label: "Serif" },
+              { value: "sans", label: "Sans" },
+            ]}
+          />
+        </ToolAsideSection>
+
+        <ToolAsideSection label="EXPORT">
+          <span className="font-body text-[10.5px] leading-[1.5] text-text-muted">
+            Your browser&rsquo;s print dialog opens — pick &ldquo;Save as PDF&rdquo; as the
+            destination. Firefox users: turn on &ldquo;Print backgrounds&rdquo; in the dialog so
+            the code-block tints render.
+          </span>
+        </ToolAsideSection>
+      </ToolAside>
+    </>
   );
 }
 
 function ModeTabs({ mode, onChange }: { mode: Mode; onChange: (m: Mode) => void }) {
   return (
-    <div className="inline-flex items-center rounded-md border border-border bg-bg-elevated p-0.5" role="tablist" aria-label="Input mode">
+    <div className="flex items-center rounded-md border border-border bg-bg-elevated p-0.5" role="tablist" aria-label="Input mode">
       <button
         type="button"
         role="tab"
         aria-selected={mode === "paste"}
         onClick={() => onChange("paste")}
         className={cn(
-          "inline-flex items-center gap-1.5 rounded-[5px] px-3 py-1.5 text-xs font-medium transition-colors min-h-9",
+          "inline-flex flex-1 items-center justify-center gap-1.5 rounded-[5px] px-3 py-1.5 text-xs font-medium transition-colors min-h-9",
           mode === "paste"
             ? "bg-accent-muted text-accent"
             : "text-text-muted hover:text-text-secondary",
@@ -260,7 +289,7 @@ function ModeTabs({ mode, onChange }: { mode: Mode; onChange: (m: Mode) => void 
         aria-selected={mode === "upload"}
         onClick={() => onChange("upload")}
         className={cn(
-          "inline-flex items-center gap-1.5 rounded-[5px] px-3 py-1.5 text-xs font-medium transition-colors min-h-9",
+          "inline-flex flex-1 items-center justify-center gap-1.5 rounded-[5px] px-3 py-1.5 text-xs font-medium transition-colors min-h-9",
           mode === "upload"
             ? "bg-accent-muted text-accent"
             : "text-text-muted hover:text-text-secondary",
@@ -268,39 +297,6 @@ function ModeTabs({ mode, onChange }: { mode: Mode; onChange: (m: Mode) => void 
       >
         Upload .md
       </button>
-    </div>
-  );
-}
-
-interface SegmentedControlProps {
-  label: string;
-  value: string;
-  onChange: (v: string) => void;
-  options: { value: string; label: string }[];
-}
-
-function SegmentedControl({ label, value, onChange, options }: SegmentedControlProps) {
-  return (
-    <div className="inline-flex items-center gap-2">
-      <span className="text-xs text-text-muted">{label}</span>
-      <div className="inline-flex rounded-md border border-border bg-bg-elevated p-0.5" role="group" aria-label={label}>
-        {options.map((opt) => (
-          <button
-            key={opt.value}
-            type="button"
-            onClick={() => onChange(opt.value)}
-            aria-pressed={value === opt.value}
-            className={cn(
-              "rounded-[5px] px-2.5 py-1 text-xs font-medium transition-colors",
-              value === opt.value
-                ? "bg-accent-muted text-accent"
-                : "text-text-muted hover:text-text-secondary",
-            )}
-          >
-            {opt.label}
-          </button>
-        ))}
-      </div>
     </div>
   );
 }

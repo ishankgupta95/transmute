@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
+import { render, screen, fireEvent, act } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { QrCodeGeneratorUI } from "@/components/tools/QrCodeGeneratorUI";
 
@@ -26,7 +26,6 @@ describe("QrCodeGeneratorUI", () => {
     global.URL.revokeObjectURL = vi.fn();
 
     // Make canvas.toDataURL return a proper data URL
-    const origGetContext = HTMLCanvasElement.prototype.getContext;
     vi.spyOn(HTMLCanvasElement.prototype, "toDataURL").mockReturnValue(
       "data:image/png;base64,fakedata"
     );
@@ -42,8 +41,8 @@ describe("QrCodeGeneratorUI", () => {
 
   it("renders foreground and background color pickers", () => {
     render(<QrCodeGeneratorUI />);
-    expect(screen.getByText("Foreground:")).toBeInTheDocument();
-    expect(screen.getByText("Background:")).toBeInTheDocument();
+    expect(screen.getByText("Foreground")).toBeInTheDocument();
+    expect(screen.getByText("Background")).toBeInTheDocument();
   });
 
   it("does not generate QR for empty input", async () => {

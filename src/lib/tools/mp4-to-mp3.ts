@@ -1,5 +1,5 @@
-import { getFFmpeg, fileToUint8Array, validateVideoFileSize } from "./ffmpeg-loader";
-import type { ProcessedResult } from "@/hooks/useFileProcessor";
+import { runFFmpegTask, fileToUint8Array, validateVideoFileSize } from "./ffmpeg-loader";
+import type { ProcessedResult, ProcessingContext } from "@/hooks/useFileProcessor";
 
 export interface Mp4ToMp3Options {
   bitrate: number;
@@ -8,31 +8,34 @@ export interface Mp4ToMp3Options {
 export async function mp4ToMp3(
   file: File,
   options: Mp4ToMp3Options,
-  onProgress?: (progress: number) => void,
+  ctx: ProcessingContext = {},
 ): Promise<ProcessedResult> {
   validateVideoFileSize(file);
-  const ffmpeg = await getFFmpeg(onProgress);
 
   const inputName = "input" + file.name.substring(file.name.lastIndexOf("."));
   const outputName = "output.mp3";
 
-  await ffmpeg.writeFile(inputName, await fileToUint8Array(file));
+  const blob = await runFFmpegTask(async (ffmpeg) => {
+    await ffmpeg.writeFile(inputName, await fileToUint8Array(file));
 
-  // -vn skips video decoding entirely = much faster
-  const ret = await ffmpeg.exec([
-    "-i", inputName,
-    "-vn",
-    "-b:a", `${options.bitrate}k`,
-    outputName,
-  ]);
+    // -vn skips video decoding entirely = much faster
+    const ret = await ffmpeg.exec([
+      "-i", inputName,
+      "-vn",
+      "-b:a", `${options.bitrate}k`,
+      outputName,
+    ]);
 
-  if (ret !== 0) throw new Error("FFmpeg audio extraction failed");
+    if (ret !== 0) throw new Error("FFmpeg audio extraction failed");
 
-  const data = await ffmpeg.readFile(outputName);
-  const blob = new Blob([data as BlobPart], { type: "audio/mpeg" });
+    const data = await ffmpeg.readFile(outputName);
+    const output = new Blob([data as BlobPart], { type: "audio/mpeg" });
 
-  await ffmpeg.deleteFile(inputName);
-  await ffmpeg.deleteFile(outputName);
+    await ffmpeg.deleteFile(inputName);
+    await ffmpeg.deleteFile(outputName);
+
+    return output;
+  }, ctx);
 
   const baseName = file.name.replace(/\.[^.]+$/, "");
   return {

@@ -7,14 +7,21 @@ const { mockWriteFile, mockExec, mockReadFile, mockDeleteFile } = vi.hoisted(() 
   mockDeleteFile: vi.fn().mockResolvedValue(undefined),
 }));
 
+/**
+ * `runFFmpegTask` owns the queue, the scoped progress handler and the
+ * terminate-on-abort wiring; from a tool's point of view it just hands over a
+ * loaded instance, so the fake runs the task against the mock FFmpeg.
+ */
 vi.mock("@/lib/tools/ffmpeg-loader", () => ({
   validateVideoFileSize: vi.fn(),
-  getFFmpeg: vi.fn().mockResolvedValue({
-    writeFile: mockWriteFile,
-    exec: mockExec,
-    readFile: mockReadFile,
-    deleteFile: mockDeleteFile,
-  }),
+  runFFmpegTask: vi.fn((task: (ffmpeg: unknown) => Promise<unknown>) =>
+    task({
+      writeFile: mockWriteFile,
+      exec: mockExec,
+      readFile: mockReadFile,
+      deleteFile: mockDeleteFile,
+    }),
+  ),
   fileToUint8Array: vi.fn().mockResolvedValue(new Uint8Array([0x00])),
 }));
 

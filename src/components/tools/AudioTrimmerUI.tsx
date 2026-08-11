@@ -2,28 +2,85 @@
 
 import { useCallback, useRef, useState } from "react";
 import { DropZone } from "@/components/tools/DropZone";
-import { FilePreview } from "@/components/tools/FilePreview";
 import { DownloadButton } from "@/components/tools/DownloadButton";
 import { ProgressBar } from "@/components/tools/ProgressBar";
 import { ErrorMessage } from "@/components/tools/ErrorMessage";
 import { StatusMessage } from "@/components/tools/StatusMessage";
-import { useFileProcessor } from "@/hooks/useFileProcessor";
+import { useFileProcessor, type FileProcessorContext } from "@/hooks/useFileProcessor";
 import { trimAudio, type AudioTrimOptions } from "@/lib/tools/audio-trim";
 import { formatFileSize } from "@/lib/utils/file-helpers";
+import {
+  ToolActions,
+  ToolAdvanced,
+  ToolAside,
+  ToolAsideSection,
+  ToolChoice,
+  ToolOutput,
+  ToolPresets,
+  ToolResetLink,
+} from "@/components/tools/ToolAside";
+
+/*
+  The doc's presets, constrained to the format/bitrate chips this tool has —
+  its "Podcast: mono" and "64 kbps" claims need channel and lower-bitrate
+  controls that don't exist, so those presets say only what they set.
+*/
+const PRESETS = [
+  { id: "podcast", label: "Podcast", note: "MP3 at 128 kbps — speech-tuned, small file." },
+  { id: "music", label: "Music", note: "MP3 at 320 kbps. No normalisation applied." },
+  { id: "lossless", label: "Lossless", note: "WAV — uncompressed, roughly ten times the size." },
+  { id: "custom", label: "Custom", note: "Every control unlocked. Nothing is assumed." },
+] as const;
+import {
+  CanvasHeader,
+  CanvasStage,
+  StatStrip,
+  TrimControls,
+  Waveform,
+  WaveformSkeleton,
+} from "@/components/tools/ToolCanvas";
+import { TrimOverlay } from "@/components/tools/ToolCanvas";
+import { computeWaveform } from "@/lib/tools/media-preview";
+
+/** Bar count the doc's waveform draws at; wide enough to read as a shape. */
+const WAVEFORM_BARS = 90;
 
 export function AudioTrimmerUI() {
   const [file, setFile] = useState<File | null>(null);
+  const [peaks, setPeaks] = useState<number[] | null>(null);
   const [duration, setDuration] = useState(0);
   const [startTime, setStartTime] = useState(0);
   const [endTime, setEndTime] = useState(0);
   const [outputFormat, setOutputFormat] = useState<"wav" | "mp3">("mp3");
   const [bitrate, setBitrate] = useState(192);
+  const [preset, setPreset] = useState<string>("custom");
+
+  const applyPreset = useCallback((id: string) => {
+    setPreset(id);
+    if (id === "podcast") {
+      setOutputFormat("mp3");
+      setBitrate(128);
+    } else if (id === "music") {
+      setOutputFormat("mp3");
+      setBitrate(320);
+    } else if (id === "lossless") {
+      setOutputFormat("wav");
+    }
+  }, []);
+
+  // Any hand edit un-lights the preset chip, so what's lit is what runs.
+  const touch = useCallback(<T,>(setter: (v: T) => void) => {
+    return (v: T) => {
+      setPreset("custom");
+      setter(v);
+    };
+  }, []);
   const [loadError, setLoadError] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
 
   const processFn = useCallback(
-    (f: File, opts: AudioTrimOptions) => trimAudio(f, opts),
+    (f: File, opts: AudioTrimOptions, ctx: FileProcessorContext) => trimAudio(f, opts, ctx),
     [],
   );
 
@@ -41,7 +98,14 @@ export function AudioTrimmerUI() {
       setFile(f);
       setLoadError(null);
       setDuration(0);
+      setPeaks(null);
       reset();
+
+      // Decoration only — a decode failure must not block trimming, which reads
+      // duration from the <audio> element independently.
+      computeWaveform(f, WAVEFORM_BARS)
+        .then((w) => setPeaks(w.peaks))
+        .catch(() => setPeaks(null));
     },
     [reset],
   );
@@ -74,159 +138,170 @@ export function AudioTrimmerUI() {
     reset();
   }, [audioUrl, reset]);
 
+  if (!file) {
+    return (
+      <DropZone
+        accept=".mp3,.wav,.ogg,.m4a,.flac,.aac"
+        onFiles={handleFiles}
+        label="Upload an audio file to trim"
+      />
+    );
+  }
+
+  // The overlay and the bar colouring work in percentages of the clip.
+  const startPct = duration ? (startTime / duration) * 100 : 0;
+  const endPct = duration ? (endTime / duration) * 100 : 100;
+
   return (
-    <div className="space-y-6">
-      {!file ? (
-        <DropZone
-          accept=".mp3,.wav,.ogg,.m4a,.flac,.aac"
-          onFiles={handleFiles}
-          label="Upload an audio file to trim"
+    <>
+      {/* ── Canvas: the waveform, with the selection cut into it ─ */}
+      <div className="min-w-0 space-y-[15px]">
+        {/* No trailing stat — `TrimControls` already carries the SEL readout. */}
+        <CanvasHeader
+          file={file.name}
+          meta={`${formatFileSize(file.size)} · ${formatTime(duration)}`}
         />
-      ) : (
-        <>
-          {/* Audio player */}
-          {audioUrl && (
-            <div className="rounded-lg border border-border bg-bg-elevated p-4">
-              <div className="flex items-center justify-between mb-2">
-                <p className="text-sm font-medium text-text-primary truncate">{file.name}</p>
-                <span className="text-xs text-text-muted">{formatFileSize(file.size)}</span>
-              </div>
-              <audio
-                ref={audioRef}
-                src={audioUrl}
-                controls
-                onLoadedMetadata={handleAudioLoadedMetadata}
-                onError={handleAudioError}
-                className="w-full h-10"
-              />
-              <p className="text-xs text-text-muted mt-2">
-                Duration: {formatTime(duration)}
-              </p>
-            </div>
+
+        <CanvasStage>
+          <div className="absolute inset-x-0 top-1/2 h-px bg-border" aria-hidden="true" />
+          {peaks ? (
+            <Waveform peaks={peaks} startPct={startPct} endPct={endPct} />
+          ) : (
+            <WaveformSkeleton />
           )}
+          <TrimOverlay trimA={startPct} trimB={endPct} />
+          <span className="absolute bottom-2.5 left-3.5 font-mono text-[9.5px] leading-none text-text-muted">
+            {formatTime(0)}
+          </span>
+          <span className="absolute right-3.5 bottom-2.5 font-mono text-[9.5px] leading-none text-text-muted">
+            {formatTime(duration)}
+          </span>
+        </CanvasStage>
 
-          {loadError && <ErrorMessage message={loadError} />}
+        <TrimControls
+          start={startTime}
+          end={endTime}
+          duration={duration}
+          onStartChange={setStartTime}
+          onEndChange={setEndTime}
+          format={formatTime}
+          summaryLabel="SEL"
+          startName="Selection start"
+          endName="Selection end"
+          disabled={status === "processing"}
+        />
 
-          {/* Time range inputs */}
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm text-text-secondary mb-1">Start time</label>
-              <input
-                type="number"
-                min={0}
-                max={endTime}
-                step={0.1}
-                value={startTime}
-                onChange={(e) => setStartTime(Number(e.target.value))}
-                disabled={status === "processing"}
-                className="w-full rounded-md border border-border bg-bg-primary px-3 py-2 text-sm text-text-primary focus:border-accent focus:outline-none"
-              />
-              <span className="text-xs text-text-muted">{formatTime(startTime)}</span>
-            </div>
-            <div>
-              <label className="block text-sm text-text-secondary mb-1">End time</label>
-              <input
-                type="number"
-                min={startTime}
-                max={duration}
-                step={0.1}
-                value={Number(endTime.toFixed(1))}
-                onChange={(e) => setEndTime(Number(e.target.value))}
-                disabled={status === "processing"}
-                className="w-full rounded-md border border-border bg-bg-primary px-3 py-2 text-sm text-text-primary focus:border-accent focus:outline-none"
-              />
-              <span className="text-xs text-text-muted">{formatTime(endTime)}</span>
-            </div>
+        {audioUrl && (
+          <audio
+            ref={audioRef}
+            src={audioUrl}
+            controls
+            onLoadedMetadata={handleAudioLoadedMetadata}
+            onError={handleAudioError}
+            aria-label={`Preview ${file.name}`}
+            className="h-10 w-full"
+          />
+        )}
+
+        {loadError && <ErrorMessage message={loadError} />}
+
+        {status === "processing" && (
+          <div className="space-y-2">
+            <ProgressBar progress={null} label="Trimming audio" />
+            <StatusMessage>Trimming...</StatusMessage>
           </div>
+        )}
 
-          {/* Selection duration */}
-          <p className="text-sm text-text-secondary text-center">
-            Selected: {formatTime(Math.max(0, endTime - startTime))}
-          </p>
+        {status === "error" && error && <ErrorMessage message={error} />}
 
-          {/* Output format */}
-          <div className="flex items-center gap-4">
-            <span className="text-sm text-text-secondary">Output format:</span>
-            <div className="flex gap-2">
-              {(["mp3", "wav"] as const).map((fmt) => (
-                <button
-                  key={fmt}
-                  onClick={() => setOutputFormat(fmt)}
-                  disabled={status === "processing"}
-                  className={`rounded-md border px-4 py-1.5 text-sm font-medium transition-colors ${
-                    outputFormat === fmt
-                      ? "border-accent bg-accent-muted text-accent"
-                      : "border-border text-text-secondary hover:bg-bg-hover"
-                  }`}
-                >
-                  {fmt.toUpperCase()}
-                </button>
-              ))}
-            </div>
-          </div>
+        <StatStrip
+          stats={[
+            { label: "IN", value: formatFileSize(file.size), tone: "neutral" },
+            { label: "OUT", value: result ? formatFileSize(result.newSize) : "—" },
+            { label: "SEL", value: formatTime(Math.max(0, endTime - startTime)), tone: "ok" },
+            { label: "FORMAT", value: outputFormat.toUpperCase(), tone: "neutral" },
+          ]}
+        />
+      </div>
 
-          {/* Bitrate selector for MP3 */}
-          {outputFormat === "mp3" && (
-            <div>
-              <label className="flex items-center justify-between text-sm text-text-secondary mb-2">
-                <span>Bitrate</span>
-                <span className="font-mono text-text-muted">{bitrate} kbps</span>
-              </label>
-              <div className="flex gap-2">
-                {[128, 192, 256, 320].map((b) => (
-                  <button
-                    key={b}
-                    onClick={() => setBitrate(b)}
-                    disabled={status === "processing"}
-                    className={`flex-1 rounded-md border px-3 py-2 text-sm font-medium transition-colors ${
-                      bitrate === b
-                        ? "border-accent bg-accent-muted text-accent"
-                        : "border-border text-text-secondary hover:bg-bg-hover"
-                    }`}
-                  >
-                    {b}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {status === "processing" && (
-            <div className="space-y-2">
-              <ProgressBar progress={null} label="Trimming audio" />
-              <StatusMessage>Trimming...</StatusMessage>
-            </div>
-          )}
-
-          {status === "error" && error && <ErrorMessage message={error} />}
-
-          {result && (
-            <FilePreview fileName={result.fileName} fileSize={result.newSize} label="Trimmed" />
-          )}
-
-          <div className="flex items-center justify-center gap-3">
-            {status !== "done" && status !== "processing" && (
-              <button
-                onClick={handleTrim}
-                disabled={loadError !== null}
-                className="inline-flex items-center gap-2 rounded-md bg-accent px-6 py-2.5 text-sm font-medium text-bg-primary hover:bg-accent-hover transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                Trim
-              </button>
+      {/* ── Controls: the doc's right-hand rail / bottom sheet ── */}
+      <ToolAside
+        footer={
+          <>
+            {result ? (
+              <DownloadButton
+                blob={result.blob}
+                fileName={result.fileName}
+                className="w-full justify-center"
+              />
+            ) : (
+              <ToolActions
+                primaryLabel={status === "processing" ? "Trimming…" : "Trim"}
+                onPrimary={handleTrim}
+                primaryDisabled={loadError !== null || status === "processing"}
+              />
             )}
-            {result && (
-              <DownloadButton blob={result.blob} fileName={result.fileName} />
-            )}
-            <button
-              onClick={handleReset}
-              className="rounded-md border border-border px-4 py-2.5 text-sm text-text-secondary hover:bg-bg-hover transition-colors"
-            >
-              {result ? "Trim another" : "Cancel"}
-            </button>
-          </div>
-        </>
-      )}
-    </div>
+            <ToolResetLink onClick={handleReset} label={result ? "TRIM ANOTHER" : "CANCEL"} />
+          </>
+        }
+      >
+        <ToolPresets
+          presets={PRESETS}
+          active={preset}
+          onSelect={applyPreset}
+          disabled={status === "processing"}
+        />
+
+        <ToolAsideSection label="FORMAT">
+          <ToolChoice
+            label="Output format"
+            fill
+            value={outputFormat}
+            onChange={touch(setOutputFormat)}
+            disabled={status === "processing"}
+            options={[
+              { value: "mp3" as const, label: "MP3" },
+              { value: "wav" as const, label: "WAV" },
+            ]}
+          />
+        </ToolAsideSection>
+
+        {outputFormat === "mp3" && (
+          <ToolAsideSection label="BITRATE">
+            <ToolChoice
+              label="MP3 bitrate"
+              fill
+              value={bitrate}
+              onChange={touch(setBitrate)}
+              disabled={status === "processing"}
+              options={[128, 192, 256, 320].map((b) => ({ value: b, label: String(b) }))}
+            />
+            <span className="font-body text-[10.5px] leading-[1.5] text-text-muted">
+              kbps
+            </span>
+          </ToolAsideSection>
+        )}
+
+        {/* Engine facts — true of audio-trim.ts + the WAV/MP3 encoders. */}
+        <ToolAdvanced
+          rows={[
+            ["Precision", "SAMPLE-ACCURATE"],
+            ["WAV channels", "PRESERVED"],
+            ["MP3 surround", "FOLDED TO STEREO −3 dB"],
+          ]}
+        />
+
+        <ToolAsideSection label="OUTPUT">
+          <ToolOutput
+            rows={[
+              ["Selected", formatTime(Math.max(0, endTime - startTime))],
+              ["Format", outputFormat.toUpperCase()],
+              ["Trimmed", result ? formatFileSize(result.newSize) : "—"],
+            ]}
+          />
+        </ToolAsideSection>
+      </ToolAside>
+    </>
   );
 }
 

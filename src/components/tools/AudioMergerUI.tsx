@@ -8,6 +8,15 @@ import { ProgressBar } from "@/components/tools/ProgressBar";
 import { mergeAudio, type AudioMergeOptions } from "@/lib/tools/audio-merge";
 import { formatFileSize } from "@/lib/utils/file-helpers";
 import type { ProcessedResult } from "@/hooks/useFileProcessor";
+import {
+  ToolActions,
+  ToolAside,
+  ToolAsideSection,
+  ToolChoice,
+  ToolOutput,
+  ToolResetLink,
+} from "@/components/tools/ToolAside";
+import { CanvasHeader, StatStrip } from "@/components/tools/ToolCanvas";
 
 export function AudioMergerUI() {
   const [files, setFiles] = useState<File[]>([]);
@@ -60,159 +69,186 @@ export function AudioMergerUI() {
     setError(null);
   }, []);
 
+  const totalSize = files.reduce((sum, f) => sum + f.size, 0);
+
   return (
-    <div className="space-y-6">
-      <DropZone
-        accept=".mp3,.wav,.ogg,.m4a,.flac,.aac"
-        multiple
-        onFiles={handleFiles}
-      />
+    <>
+      {/* ── Canvas: the queue, in the order it will be joined ── */}
+      <div className="min-w-0 space-y-[15px]">
+        <DropZone
+          accept=".mp3,.wav,.ogg,.m4a,.flac,.aac"
+          multiple
+          onFiles={handleFiles}
+          disabled={status === "processing"}
+        />
 
-      {files.length > 0 && (
-        <>
-          {/* File list */}
-          <div className="rounded-lg border border-border divide-y divide-border">
-            {files.map((file, index) => (
-              <div
-                key={`${file.name}-${index}`}
-                className="flex items-center gap-3 px-4 py-3"
-              >
-                <span className="text-xs font-mono text-text-muted w-6 text-center">
-                  {index + 1}
-                </span>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-text-primary truncate">{file.name}</p>
-                  <p className="text-xs text-text-muted">{formatFileSize(file.size)}</p>
-                </div>
-                <div className="flex items-center gap-1">
-                  <button
-                    onClick={() => index > 0 && moveFile(index, index - 1)}
-                    disabled={index === 0 || status === "processing"}
-                    className="rounded p-1 text-text-muted hover:text-text-secondary hover:bg-bg-hover transition-colors disabled:opacity-30"
-                    aria-label="Move up"
-                  >
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                      <polyline points="18 15 12 9 6 15" />
-                    </svg>
-                  </button>
-                  <button
-                    onClick={() => index < files.length - 1 && moveFile(index, index + 1)}
-                    disabled={index === files.length - 1 || status === "processing"}
-                    className="rounded p-1 text-text-muted hover:text-text-secondary hover:bg-bg-hover transition-colors disabled:opacity-30"
-                    aria-label="Move down"
-                  >
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                      <polyline points="6 9 12 15 18 9" />
-                    </svg>
-                  </button>
-                  <button
-                    onClick={() => removeFile(index)}
-                    disabled={status === "processing"}
-                    className="rounded p-1 text-text-muted hover:text-error hover:bg-bg-hover transition-colors disabled:opacity-30"
-                    aria-label="Remove file"
-                  >
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                      <line x1="18" y1="6" x2="6" y2="18" />
-                      <line x1="6" y1="6" x2="18" y2="18" />
-                    </svg>
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
+        {files.length > 0 && (
+          <>
+            <div className="flex items-baseline gap-3">
+              <span className="font-display text-[13px] leading-none font-medium text-text-primary">
+                Join order
+              </span>
+              <span className="font-mono text-[10.5px] leading-none text-text-muted">
+                {files.length} FILES · {formatFileSize(totalSize)}
+              </span>
+            </div>
 
-          <p className="text-sm text-text-muted text-center">
-            {files.length} file{files.length !== 1 ? "s" : ""} &middot;{" "}
-            {formatFileSize(files.reduce((sum, f) => sum + f.size, 0))} total
-          </p>
-
-          {/* Output format */}
-          <div className="flex items-center gap-4">
-            <span className="text-sm text-text-secondary">Output format:</span>
-            <div className="flex gap-2">
-              {(["mp3", "wav"] as const).map((fmt) => (
-                <button
-                  key={fmt}
-                  onClick={() => setOutputFormat(fmt)}
-                  disabled={status === "processing"}
-                  className={`rounded-md border px-4 py-1.5 text-sm font-medium transition-colors ${
-                    outputFormat === fmt
-                      ? "border-accent bg-accent-muted text-accent"
-                      : "border-border text-text-secondary hover:bg-bg-hover"
-                  }`}
+            <div className="flex flex-col overflow-hidden rounded-[10px] border border-neutral-800 bg-bg-primary">
+              {files.map((file, index) => (
+                <div
+                  key={`${file.name}-${index}`}
+                  className="flex items-center gap-3.5 border-b border-border px-4 py-3 last:border-b-0"
                 >
-                  {fmt.toUpperCase()}
-                </button>
+                  <span className="w-5 flex-none font-mono text-[10px] leading-none text-text-muted">
+                    {String(index + 1).padStart(2, "0")}
+                  </span>
+                  <span className="min-w-0 flex-1 truncate font-body text-xs leading-none text-neutral-300">
+                    {file.name}
+                  </span>
+                  <span className="flex-none font-mono text-[10px] leading-none text-text-muted">
+                    {formatFileSize(file.size)}
+                  </span>
+                  <div className="flex flex-none items-center gap-1">
+                    <button
+                      onClick={() => index > 0 && moveFile(index, index - 1)}
+                      disabled={index === 0 || status === "processing"}
+                      className="cursor-pointer rounded p-1 text-text-muted transition-colors hover:bg-bg-hover hover:text-text-secondary disabled:opacity-30"
+                      aria-label="Move up"
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                        <polyline points="18 15 12 9 6 15" />
+                      </svg>
+                    </button>
+                    <button
+                      onClick={() => index < files.length - 1 && moveFile(index, index + 1)}
+                      disabled={index === files.length - 1 || status === "processing"}
+                      className="cursor-pointer rounded p-1 text-text-muted transition-colors hover:bg-bg-hover hover:text-text-secondary disabled:opacity-30"
+                      aria-label="Move down"
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                        <polyline points="6 9 12 15 18 9" />
+                      </svg>
+                    </button>
+                    <button
+                      onClick={() => removeFile(index)}
+                      disabled={status === "processing"}
+                      className="cursor-pointer rounded p-1 text-text-muted transition-colors hover:bg-bg-hover hover:text-error disabled:opacity-30"
+                      aria-label="Remove file"
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                        <line x1="18" y1="6" x2="6" y2="18" />
+                        <line x1="6" y1="6" x2="18" y2="18" />
+                      </svg>
+                    </button>
+                  </div>
+                </div>
               ))}
             </div>
+
+            <StatStrip
+              stats={[
+                { label: "FILES", value: String(files.length), tone: "neutral" },
+                { label: "IN", value: formatFileSize(totalSize), tone: "neutral" },
+                { label: "OUT", value: result ? formatFileSize(result.newSize) : "—" },
+                { label: "FORMAT", value: outputFormat.toUpperCase(), tone: "ok" },
+              ]}
+            />
+          </>
+        )}
+
+        {status === "processing" && (
+          <div className="space-y-2">
+            <ProgressBar progress={null} />
+            <p className="text-sm text-text-muted text-center">Merging audio files...</p>
           </div>
+        )}
 
-          {/* Bitrate for MP3 */}
-          {outputFormat === "mp3" && (
-            <div>
-              <label className="flex items-center justify-between text-sm text-text-secondary mb-2">
-                <span>Bitrate</span>
-                <span className="font-mono text-text-muted">{bitrate} kbps</span>
-              </label>
-              <div className="flex gap-2">
-                {[128, 192, 256, 320].map((b) => (
-                  <button
-                    key={b}
-                    onClick={() => setBitrate(b)}
-                    disabled={status === "processing"}
-                    className={`flex-1 rounded-md border px-3 py-2 text-sm font-medium transition-colors ${
-                      bitrate === b
-                        ? "border-accent bg-accent-muted text-accent"
-                        : "border-border text-text-secondary hover:bg-bg-hover"
-                    }`}
-                  >
-                    {b}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
+        {status === "error" && (
+          <ErrorMessage message={error} />
+        )}
 
-          {status === "processing" && (
-            <div className="space-y-2">
-              <ProgressBar progress={null} />
-              <p className="text-sm text-text-muted text-center">Merging audio files...</p>
-            </div>
-          )}
+        {result && (
+          <CanvasHeader
+            file={result.fileName}
+            meta={formatFileSize(result.newSize)}
+            trailing="MERGED"
+          />
+        )}
+      </div>
 
-          {status === "error" && (
-            <ErrorMessage message={error} />
-          )}
-
-          {result && (
-            <div className="flex flex-col items-center gap-3 rounded-lg border border-border bg-bg-elevated p-5">
-              <span className="text-xs font-medium text-text-muted uppercase tracking-wider">Merged</span>
-              <p className="text-sm font-medium text-text-primary">{result.fileName}</p>
-              <p className="text-xs text-text-muted">{formatFileSize(result.newSize)}</p>
-            </div>
-          )}
-
-          <div className="flex items-center justify-center gap-3">
-            {status !== "done" && status !== "processing" && files.length >= 2 && (
-              <button
-                onClick={handleMerge}
-                className="inline-flex items-center gap-2 rounded-md bg-accent px-6 py-2.5 text-sm font-medium text-bg-primary hover:bg-accent-hover transition-colors"
-              >
-                Merge {files.length} files
-              </button>
+      {/* ── Controls: the doc's right-hand rail / bottom sheet ── */}
+      <ToolAside
+        footer={
+          <>
+            {result ? (
+              <DownloadButton
+                blob={result.blob}
+                fileName={result.fileName}
+                className="w-full justify-center"
+              />
+            ) : (
+              <ToolActions
+                primaryLabel={
+                  status === "processing" ? "Merging…" : `Merge ${files.length} files`
+                }
+                onPrimary={handleMerge}
+                primaryDisabled={files.length < 2 || status === "processing"}
+              />
             )}
-            {result && (
-              <DownloadButton blob={result.blob} fileName={result.fileName} />
+            {files.length > 0 && (
+              <ToolResetLink
+                onClick={handleReset}
+                label={result ? "START OVER" : "CLEAR ALL"}
+              />
             )}
-            <button
-              onClick={handleReset}
-              className="rounded-md border border-border px-4 py-2.5 text-sm text-text-secondary hover:bg-bg-hover transition-colors"
-            >
-              {result ? "Start over" : "Clear all"}
-            </button>
-          </div>
-        </>
-      )}
-    </div>
+          </>
+        }
+      >
+        <ToolAsideSection label="FORMAT">
+          <ToolChoice
+            label="Output format"
+            fill
+            value={outputFormat}
+            onChange={setOutputFormat}
+            disabled={status === "processing"}
+            options={[
+              { value: "mp3" as const, label: "MP3" },
+              { value: "wav" as const, label: "WAV" },
+            ]}
+          />
+        </ToolAsideSection>
+
+        {outputFormat === "mp3" && (
+          <ToolAsideSection label="BITRATE">
+            <ToolChoice
+              label="MP3 bitrate"
+              fill
+              value={bitrate}
+              onChange={setBitrate}
+              disabled={status === "processing"}
+              options={[128, 192, 256, 320].map((b) => ({ value: b, label: String(b) }))}
+            />
+            <span className="font-body text-[10.5px] leading-[1.5] text-text-muted">
+              kbps
+            </span>
+          </ToolAsideSection>
+        )}
+
+        <ToolAsideSection label="OUTPUT">
+          <ToolOutput
+            rows={[
+              ["Files", String(files.length)],
+              ["In", files.length > 0 ? formatFileSize(totalSize) : "—"],
+              ["Out", result ? formatFileSize(result.newSize) : "—"],
+            ]}
+          />
+          <span className="font-body text-[10.5px] leading-[1.5] text-text-muted">
+            {files.length < 2
+              ? "Add at least two files to merge."
+              : "They join end to end, top to bottom — use the arrows to reorder."}
+          </span>
+        </ToolAsideSection>
+      </ToolAside>
+    </>
   );
 }

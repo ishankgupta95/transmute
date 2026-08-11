@@ -5,6 +5,19 @@ import { ErrorMessage } from "@/components/tools/ErrorMessage";
 import QRCode from "qrcode";
 import { triggerDownload } from "@/lib/utils/download";
 import { canvasToBlob } from "@/lib/tools/canvas-utils";
+import {
+  ToolActions,
+  ToolAside,
+  ToolAsideSection,
+  ToolOutput,
+} from "@/components/tools/ToolAside";
+import {
+  ColorStage,
+  lineCount,
+  TEXT_PANE_BODY,
+  TextPane,
+  TextPanes,
+} from "@/components/tools/ToolCanvas";
 
 export function QrCodeGeneratorUI() {
   const [input, setInput] = useState("");
@@ -59,65 +72,94 @@ export function QrCodeGeneratorUI() {
   }, [input, fgColor, bgColor]);
 
   return (
-    <div className="space-y-4">
-      <div>
-        <label className="block text-sm font-medium text-text-secondary mb-1">Text or URL</label>
-        <textarea
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          placeholder="https://example.com"
-          rows={3}
-          className="w-full rounded-lg border border-border bg-bg-elevated p-3 text-sm text-text-primary font-mono resize-y placeholder:text-text-muted"
-        />
-      </div>
-
-      {/* Color options */}
-      <div className="flex items-center justify-center gap-4">
-        <label className="flex items-center gap-2 text-sm text-text-secondary">
-          Foreground:
-          <input type="color" value={fgColor} onChange={(e) => setFgColor(e.target.value)} className="w-8 h-8 rounded border border-border cursor-pointer" />
-        </label>
-        <label className="flex items-center gap-2 text-sm text-text-secondary">
-          Background:
-          <input type="color" value={bgColor} onChange={(e) => setBgColor(e.target.value)} className="w-8 h-8 rounded border border-border cursor-pointer" />
-        </label>
-      </div>
-
-      <div className="flex justify-center">
-        <button
-          onClick={handleGenerate}
-          className="rounded-md bg-accent px-6 py-2.5 text-sm font-medium text-bg-primary hover:bg-accent-hover transition-colors"
-        >
-          Generate QR Code
-        </button>
-      </div>
-
-      {error && (
-        <ErrorMessage message={error} />
-      )}
-
-      {/* Canvas (hidden until generated) */}
-      <div className="flex justify-center">
-        <canvas ref={canvasRef} className={qrDataUrl ? "rounded-lg" : "hidden"} />
-      </div>
-
-      {/* Download buttons */}
-      {qrDataUrl && (
-        <div className="flex items-center justify-center gap-3">
-          <button
-            onClick={handleDownloadPng}
-            className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-bg-primary hover:bg-accent-hover transition-colors"
-          >
-            Download PNG
-          </button>
-          <button
-            onClick={handleDownloadSvg}
-            className="rounded-md border border-border px-4 py-2 text-sm text-text-secondary hover:bg-bg-hover transition-colors"
-          >
-            Download SVG
-          </button>
+    <>
+      {/* ── Canvas: the doc's colour stage, checkerboard behind ── */}
+      <div className="min-w-0 space-y-[15px]">
+        <div className="flex items-baseline gap-3">
+          <span className="font-display text-[13px] leading-none font-medium text-text-primary">
+            QR code
+          </span>
+          <span className="ml-auto font-mono text-[10.5px] leading-none text-text-muted">
+            {qrDataUrl ? "READY · PNG" : "ENTER TEXT TO GENERATE"}
+          </span>
         </div>
-      )}
-    </div>
+
+        <TextPanes columns={1}>
+          <TextPane label="Text or URL" lines={lineCount(input)}>
+            <textarea
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              placeholder="https://example.com"
+              aria-label="Text or URL"
+              className={TEXT_PANE_BODY}
+            />
+          </TextPane>
+        </TextPanes>
+
+        {error && <ErrorMessage message={error} />}
+
+        <ColorStage checkered caption="scan target">
+          <canvas ref={canvasRef} className={qrDataUrl ? "rounded-lg" : "hidden"} />
+        </ColorStage>
+      </div>
+
+      <ToolAside
+        footer={
+          qrDataUrl ? (
+            <>
+              <ToolActions primaryLabel="Download PNG" onPrimary={handleDownloadPng} />
+              <button
+                type="button"
+                onClick={handleDownloadSvg}
+                className="h-9 w-full cursor-pointer rounded-[9px] border border-border font-display text-[13px] leading-none font-medium text-neutral-300 transition-colors duration-200 hover:bg-text-primary/7 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+              >
+                Download SVG
+              </button>
+            </>
+          ) : (
+            <ToolActions
+              primaryLabel="Generate QR Code"
+              onPrimary={handleGenerate}
+              primaryDisabled={!input.trim()}
+            />
+          )
+        }
+      >
+        <ToolAsideSection label="COLORS">
+          <label className="flex items-center justify-between gap-3 font-body text-[12.5px] text-neutral-300">
+            Foreground
+            <input
+              type="color"
+              value={fgColor}
+              onChange={(e) => setFgColor(e.target.value)}
+              className="size-8 cursor-pointer rounded border border-border"
+            />
+          </label>
+          <label className="flex items-center justify-between gap-3 font-body text-[12.5px] text-neutral-300">
+            Background
+            <input
+              type="color"
+              value={bgColor}
+              onChange={(e) => setBgColor(e.target.value)}
+              className="size-8 cursor-pointer rounded border border-border"
+            />
+          </label>
+          <span className="font-body text-[10.5px] leading-[1.5] text-text-muted">
+            Keep the contrast high — scanners need it.
+          </span>
+        </ToolAsideSection>
+
+        {qrDataUrl && (
+          <ToolAsideSection label="OUTPUT">
+            <ToolOutput
+              rows={[
+                ["Format", "PNG · SVG"],
+                ["Encoded", `${input.length} chars`],
+              ]}
+            />
+          </ToolAsideSection>
+        )}
+      </ToolAside>
+    </>
   );
 }

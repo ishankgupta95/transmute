@@ -463,9 +463,9 @@ export const faqs: ToolFAQs = {
 
   // ── Video Tools ──────────────────────────────────────────────────
   "video-to-gif": [
-    { question: "What video formats are supported?", answer: "MP4, WebM, MOV, AVI, and MKV. The tool uses FFmpeg.wasm which supports a wide range of video codecs." },
-    { question: "Why is my GIF so large?", answer: "GIFs are inherently large because they use lossless frame-by-frame encoding. Reduce the width, lower the frame rate (10-15 fps is usually smooth enough), and keep clips short to minimize file size." },
-    { question: "How do I get the best GIF quality?", answer: "This tool uses FFmpeg's palettegen filter which analyzes your video to create an optimal 256-color palette, producing much better quality than simple color quantization." },
+    { question: "What video formats are supported?", answer: "MP4, WebM, and MOV — whatever your browser can play back natively, since the tool decodes frames straight from a video element rather than shipping its own decoder." },
+    { question: "Why is my GIF so large?", answer: "GIF stores every frame in full — there is no compression between frames the way there is in a video codec. Reduce the width, lower the frame rate (10-15 fps is usually smooth enough), and keep clips short to minimize file size." },
+    { question: "How do I get the best GIF quality?", answer: "Each frame gets its own 256-color palette, computed from that frame's actual colors, which holds up far better than a single fixed palette across the whole clip. Lowering the width helps quality too, since fewer pixels means less to quantize." },
     { question: "Is there a duration limit?", answer: "No hard limit, but GIFs longer than 10-15 seconds become very large. For longer clips, consider keeping the video format and using lower resolution." },
   ],
   "video-trimmer": [
@@ -480,13 +480,13 @@ export const faqs: ToolFAQs = {
   ],
   "webm-to-mp4": [
     { question: "Why convert WebM to MP4?", answer: "WebM is great for web playback but has limited support on iOS, some Android apps, and many video editors. MP4 (H.264/AAC) is the most universally compatible video format." },
-    { question: "Will the quality change?", answer: "There will be minimal quality difference. The tool uses CRF 23 which provides a good balance between file size and visual quality. The output may be slightly larger or smaller depending on the content." },
-    { question: "How long does conversion take?", answer: "It depends on the video length and your device. A 1-minute WebM typically converts in 30-60 seconds on a modern computer. The FFmpeg.wasm engine runs in your browser using WebAssembly." },
+    { question: "Will the quality change?", answer: "Yes — the video is fully re-encoded from VP8/VP9 to H.264, so this is not a lossless remux. The target is 5 Mbps, high enough that the difference is hard to see on typical screen recordings. The output may be larger or smaller than the original depending on the content." },
+    { question: "How long does conversion take?", answer: "It depends on the video length and your device. Encoding runs through the browser's built-in WebCodecs API, which uses your hardware encoder where one is available, so a 1-minute clip is usually well under a minute. This needs Chrome or Edge — Firefox and older Safari don't expose the encoder." },
   ],
   "compress-video": [
     { question: "Which preset should I choose?", answer: "WhatsApp: optimized for mobile sharing (720p, ~1 Mbps). Email: small enough for email attachments (480p, ~500 kbps). Web: balanced quality for websites and social media (original resolution, higher bitrate)." },
     { question: "How much smaller will my video get?", answer: "Results vary by content. Typical reductions: WhatsApp preset 60-80% smaller, Email preset 70-90% smaller, Web preset 30-60% smaller than the original." },
-    { question: "Is there a file size limit?", answer: "The tool accepts files up to 100 MB. Larger files may cause the browser tab to run out of memory since all processing happens locally." },
+    { question: "Is there a file size limit?", answer: "No limit is enforced, but everything runs in your browser tab, so files much beyond ~100 MB risk exhausting its memory. Trimming the clip first is usually the better route for very long recordings." },
   ],
   "screen-recorder": [
     { question: "Do I need to install anything?", answer: "No. This tool uses the browser's built-in Screen Capture API (getDisplayMedia). It works in Chrome, Edge, Firefox, and other modern browsers without any extensions." },

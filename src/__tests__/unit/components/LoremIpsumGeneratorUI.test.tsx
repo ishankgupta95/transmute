@@ -34,7 +34,7 @@ describe("LoremIpsumGeneratorUI", () => {
     expect(words).toHaveLength(10);
   });
 
-  it("words output starts with capitalized Lorem and ends with period", () => {
+  it("words output is exactly N words — no bolted-on sentence punctuation", () => {
     render(<LoremIpsumGeneratorUI />);
     fireEvent.click(screen.getByText("Words"));
     fireEvent.change(screen.getByRole("spinbutton"), {
@@ -43,7 +43,8 @@ describe("LoremIpsumGeneratorUI", () => {
     fireEvent.click(screen.getByText("Generate"));
     const text = document.querySelector(".whitespace-pre-wrap")!.textContent!;
     expect(text).toMatch(/^Lorem /);
-    expect(text).toMatch(/\.$/);
+    expect(text.split(/\s+/)).toHaveLength(5);
+    expect(text).not.toMatch(/\.$/);
   });
 
   it("generates correct number of sentences", () => {
@@ -107,7 +108,7 @@ describe("LoremIpsumGeneratorUI", () => {
     expect(screen.queryByText("Output")).not.toBeInTheDocument();
   });
 
-  it("single word output works correctly", () => {
+  it("single word output is the bare word", () => {
     render(<LoremIpsumGeneratorUI />);
     fireEvent.click(screen.getByText("Words"));
     fireEvent.change(screen.getByRole("spinbutton"), {
@@ -115,7 +116,7 @@ describe("LoremIpsumGeneratorUI", () => {
     });
     fireEvent.click(screen.getByText("Generate"));
     const text = document.querySelector(".whitespace-pre-wrap")!.textContent!;
-    expect(text).toBe("Lorem.");
+    expect(text).toBe("Lorem");
   });
 
   it("single sentence output works correctly", () => {

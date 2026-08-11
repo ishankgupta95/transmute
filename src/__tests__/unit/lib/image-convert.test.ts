@@ -111,14 +111,11 @@ describe("convertImage", () => {
     expect(result.blob.type).toBe("image/webp");
   });
 
-  it("converts to BMP format", async () => {
-    const file = makeFile("test.png", "image/png");
-    const opts: ImageConvertOptions = { targetFormat: "bmp", quality: 1 };
-    const result = await convertImage(file, opts);
-
-    expect(result.fileName).toBe("test.bmp");
-    expect(result.blob.type).toBe("image/bmp");
-  });
+  // There was a "converts to BMP format" case here. It only passed because
+  // `canvasToBlob` is mocked to echo back whatever MIME it is handed — no real
+  // browser encodes BMP, so `canvas.toBlob` fell back to PNG and the tool
+  // produced PNG bytes named `.bmp`. BMP is source-only now, and the type no
+  // longer admits it as a target.
 
   it("uses natural dimensions when width/height not specified", async () => {
     setupImageMock(800, 600);
@@ -311,5 +308,40 @@ describe("convertImage", () => {
     const file = makeFile("photo.png");
     const opts: ImageConvertOptions = { targetFormat: "png", quality: 1 };
     await expect(convertImage(file, opts)).rejects.toThrow("Canvas 2D context not available");
+  });
+});
+
+/*
+  Dimensionless SVGs (viewBox only) report naturalWidth 0 and used to produce
+  a 0×0 PNG. The raster fallback is pure string parsing — tested directly.
+*/
+import { svgFallbackSize } from "@/lib/tools/image-convert";
+
+describe("svgFallbackSize", () => {
+  it("scales a viewBox to a 1024px longest edge, marked non-explicit", () => {
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 120"></svg>`;
+    expect(svgFallbackSize(svg)).toEqual({ width: 1024, height: 512, explicit: false });
+  });
+
+  it("returns explicit width/height attributes unscaled", () => {
+    const svg = `<svg width="240" height="120" viewBox="0 0 20 10"></svg>`;
+    // An author-chosen 240px must never be inflated to 1024.
+    expect(svgFallbackSize(svg)).toEqual({ width: 240, height: 120, explicit: true });
+  });
+
+  it("never scales DOWN an already-large viewBox", () => {
+    const svg = `<svg viewBox="0 0 4096 2048"></svg>`;
+    expect(svgFallbackSize(svg)).toEqual({ width: 4096, height: 2048, explicit: false });
+  });
+
+  it("handles negative viewBox origins", () => {
+    const svg = `<svg viewBox="-10 -5 200 100"></svg>`;
+    expect(svgFallbackSize(svg)).toEqual({ width: 1024, height: 512, explicit: false });
+  });
+
+  it("returns null for percentage-only or missing dimensions", () => {
+    expect(svgFallbackSize(`<svg width="100%" height="100%"></svg>`)).toBeNull();
+    expect(svgFallbackSize(`<svg xmlns="http://www.w3.org/2000/svg"></svg>`)).toBeNull();
+    expect(svgFallbackSize(`not svg at all`)).toBeNull();
   });
 });

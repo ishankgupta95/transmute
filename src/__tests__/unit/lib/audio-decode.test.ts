@@ -166,3 +166,142 @@ describe("getInt16Samples", () => {
     expect(result.length).toBe(0);
   });
 });
+
+/*
+  sniffSampleRate runs against the REAL checked-in fixtures — the point of the
+  sniffer is to read genuine container headers, so mocked bytes would test
+  nothing. (jsdom can't decode audio, but reading rates is pure byte-walking.)
+*/
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+import { sniffSampleRate } from "@/lib/tools/audio-decode";
+
+// vitest runs from the repo root; import.meta.url is rewritten under jsdom.
+const fixture = (name: string): Uint8Array =>
+  new Uint8Array(readFileSync(resolve(process.cwd(), "src/__tests__/fixtures/samples", name)));
+
+describe("sniffSampleRate", () => {
+  it("reads the fmt chunk of a 44.1 kHz WAV", () => {
+    expect(sniffSampleRate(fixture("sample-audio.wav"))).toBe(44100);
+  });
+
+  it("reads a 96 kHz mono WAV — the rate the old device-rate decode destroyed", () => {
+    expect(sniffSampleRate(fixture("sample-audio-96k-mono.wav"))).toBe(96000);
+  });
+
+  it("reads the first MPEG frame header of an MP3", () => {
+    expect(sniffSampleRate(fixture("sample-audio.mp3"))).toBe(44100);
+  });
+
+  it("reads the mdhd timescale of an M4A", () => {
+    expect(sniffSampleRate(fixture("sample-audio.m4a"))).toBe(44100);
+  });
+
+  it("reads an ID3v2-prefixed MP3", () => {
+    const mp3 = fixture("sample-audio.mp3");
+    // Wrap the real MP3 in a 128-byte ID3v2 tag (synchsafe size = 118).
+    const tag = new Uint8Array(128);
+    tag.set([0x49, 0x44, 0x33, 3, 0, 0, 0, 0, 0, 118]);
+    const wrapped = new Uint8Array(tag.length + mp3.length);
+    wrapped.set(tag);
+    wrapped.set(mp3, tag.length);
+    expect(sniffSampleRate(wrapped)).toBe(44100);
+  });
+
+  it("reads a FLAC STREAMINFO header", () => {
+    // Minimal fLaC + STREAMINFO block with a 48 kHz rate field.
+    const b = new Uint8Array(30);
+    b.set([0x66, 0x4c, 0x61, 0x43]); // fLaC
+    b[18] = 48000 >> 12;
+    b[19] = (48000 >> 4) & 0xff;
+    b[20] = (48000 & 0x0f) << 4;
+    expect(sniffSampleRate(b)).toBe(48000);
+  });
+
+  it("reads a Vorbis identification header inside Ogg", () => {
+    const b = new Uint8Array(64);
+    b.set([0x4f, 0x67, 0x67, 0x53]); // OggS
+    const id = [0x01, ...[...new TextEncoder().encode("vorbis")]];
+    b.set(id, 28);
+    new DataView(b.buffer).setUint32(28 + 12, 22050, true);
+    expect(sniffSampleRate(b)).toBe(22050);
+  });
+
+  it("returns null for garbage, truncated and absurd-rate inputs", () => {
+    expect(sniffSampleRate(new Uint8Array([1, 2, 3]))).toBeNull();
+    expect(sniffSampleRate(new Uint8Array(64).fill(0xab))).toBeNull();
+    expect(sniffSampleRate(fixture("sample-audio.wav").slice(0, 20))).toBeNull();
+    // A WAV header claiming 1 Hz must be treated as unknown, not used.
+    const bogus = fixture("sample-audio.wav").slice();
+    new DataView(bogus.buffer, bogus.byteOffset).setUint32(24, 1, true);
+    expect(sniffSampleRate(bogus)).toBeNull();
+  });
+});
+
+/*
+  FFmpeg-fallback routing. The engine itself is mocked — what's under test is
+  WHEN the fallback fires (allowlisted container whose browser decode failed),
+  and that its WAV output goes back through the normal decode path.
+*/
+const ffmpegMock = vi.hoisted(() => ({
+  runFFmpegTask: vi.fn(),
+  fileToUint8Array: vi.fn(async (f: File) => new Uint8Array(await f.arrayBuffer())),
+}));
+vi.mock("@/lib/tools/ffmpeg-loader", () => ffmpegMock);
+
+function tinyWav(rate: number): Uint8Array {
+  const buf = new Uint8Array(48);
+  const dv = new DataView(buf.buffer);
+  buf.set([0x52, 0x49, 0x46, 0x46]); // RIFF
+  dv.setUint32(4, 40, true);
+  buf.set([0x57, 0x41, 0x56, 0x45], 8); // WAVE
+  buf.set([0x66, 0x6d, 0x74, 0x20], 12); // "fmt "
+  dv.setUint32(16, 16, true);
+  dv.setUint16(20, 1, true);
+  dv.setUint16(22, 1, true);
+  dv.setUint32(24, rate, true);
+  buf.set([0x64, 0x61, 0x74, 0x61], 36); // data
+  dv.setUint32(40, 4, true);
+  return buf;
+}
+
+describe("decodeAudioFile — FFmpeg fallback", () => {
+  const decodedBuffer = createMockAudioBuffer([new Float32Array([0.25])]);
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    // Browser decoder: accepts WAV bytes, rejects everything else — the
+    // Firefox-can't-do-AAC situation.
+    mockDecodeAudioData.mockImplementation(async (ab: ArrayBuffer) => {
+      const head = new Uint8Array(ab.slice(0, 4));
+      if (String.fromCharCode(...head) === "RIFF") return decodedBuffer;
+      throw new Error("Unable to decode audio data");
+    });
+    mockClose.mockResolvedValue(undefined);
+  });
+
+  it("routes an undecodable m4a through FFmpeg and decodes its WAV output", async () => {
+    ffmpegMock.runFFmpegTask.mockResolvedValue(tinyWav(22050));
+    const file = new File(["fake-aac-bytes"], "song.m4a", { type: "audio/mp4" });
+
+    const result = await decodeAudioFile(file);
+
+    expect(ffmpegMock.runFFmpegTask).toHaveBeenCalledTimes(1);
+    expect(result).toBe(decodedBuffer);
+  });
+
+  it("does NOT reach for FFmpeg on unknown extensions", async () => {
+    const file = new File(["junk"], "noise.xyz", { type: "audio/unknown" });
+
+    await expect(decodeAudioFile(file)).rejects.toThrow("Unable to decode audio data");
+    expect(ffmpegMock.runFFmpegTask).not.toHaveBeenCalled();
+  });
+
+  it("surfaces the browser's error when the fallback also fails", async () => {
+    ffmpegMock.runFFmpegTask.mockRejectedValue(new Error("FFmpeg could not decode this audio file"));
+    const file = new File(["truly-corrupt"], "broken.m4a", { type: "audio/mp4" });
+
+    await expect(decodeAudioFile(file)).rejects.toThrow("Unable to decode audio data");
+    expect(ffmpegMock.runFFmpegTask).toHaveBeenCalledTimes(1);
+  });
+});

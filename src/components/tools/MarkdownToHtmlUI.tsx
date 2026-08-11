@@ -4,6 +4,19 @@ import { useCallback, useState } from "react";
 import { marked } from "marked";
 import DOMPurify from "dompurify";
 import { copyText } from "@/lib/utils/clipboard";
+import {
+  ToolActions,
+  ToolAside,
+  ToolAsideSection,
+  ToolChoice,
+} from "@/components/tools/ToolAside";
+import {
+  lineCount,
+  TEXT_PANE_BODY,
+  TextPane,
+  TextPanes,
+} from "@/components/tools/ToolCanvas";
+import { cn } from "@/lib/utils/cn";
 
 export function MarkdownToHtmlUI() {
   const [input, setInput] = useState("");
@@ -26,54 +39,70 @@ export function MarkdownToHtmlUI() {
   }, [html]);
 
   return (
-    <div className="space-y-4">
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {/* Input */}
-        <div>
-          <label className="block text-sm font-medium text-text-secondary mb-1">Markdown</label>
-          <textarea
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            placeholder={"# Hello World\n\nThis is **bold** and *italic*.\n\n- Item 1\n- Item 2"}
-            rows={16}
-            className="w-full rounded-lg border border-border bg-bg-elevated p-3 text-sm text-text-primary font-mono resize-y placeholder:text-text-muted"
-          />
-        </div>
-
-        {/* Output */}
-        <div>
-          <div className="flex items-center justify-between mb-1">
-            <div className="flex gap-2">
-              {(["preview", "html"] as const).map((v) => (
-                <button
-                  key={v}
-                  onClick={() => setView(v)}
-                  className={`text-sm font-medium transition-colors ${
-                    view === v ? "text-accent" : "text-text-muted hover:text-text-secondary"
-                  }`}
-                >
-                  {v === "preview" ? "Preview" : "HTML"}
-                </button>
-              ))}
-            </div>
-            {html && (
-              <button onClick={handleCopy} className="text-xs text-accent hover:text-accent-hover transition-colors">
-                {copied ? "Copied!" : "Copy HTML"}
-              </button>
-            )}
-          </div>
-          {view === "preview" ? (
-            <div
-              className="w-full rounded-lg border border-border bg-bg-elevated p-3 text-sm text-text-primary prose prose-invert max-w-none min-h-[24rem] overflow-y-auto"
-              dangerouslySetInnerHTML={{ __html: safeHtml }}
+    <>
+      {/* ── Canvas: the doc's two-up IN / OUT panes ────────── */}
+      <div className="min-w-0 space-y-[13px]">
+        <TextPanes>
+          <TextPane label="Markdown" lines={lineCount(input)}>
+            <textarea
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              placeholder={"# Hello World\n\nThis is **bold** and *italic*.\n\n- Item 1\n- Item 2"}
+              aria-label="Markdown"
+              className={TEXT_PANE_BODY}
             />
-          ) : (
-            <pre className="w-full rounded-lg border border-border bg-bg-elevated p-3 text-sm text-text-primary font-mono overflow-x-auto whitespace-pre-wrap min-h-[24rem] max-h-96 overflow-y-auto">
-              {html}
-            </pre>
-          )}
-        </div>
+          </TextPane>
+
+          <TextPane
+            tone="out"
+            label={view === "preview" ? "Preview" : "HTML"}
+            lines={lineCount(html)}
+            action={
+              html ? (
+                <button
+                  onClick={handleCopy}
+                  className="cursor-pointer text-accent transition-colors hover:text-accent-hover"
+                >
+                  {copied ? "Copied!" : "Copy"}
+                </button>
+              ) : undefined
+            }
+          >
+            {view === "preview" ? (
+              <div
+                className={cn(TEXT_PANE_BODY, "prose prose-invert max-w-none font-body text-sm leading-normal")}
+                dangerouslySetInnerHTML={{ __html: safeHtml }}
+              />
+            ) : (
+              <pre className={TEXT_PANE_BODY} aria-label="HTML output">{html}</pre>
+            )}
+          </TextPane>
+        </TextPanes>
       </div>
-    </div>
+
+      <ToolAside
+        footer={
+          html ? (
+            <ToolActions primaryLabel="Copy HTML" onPrimary={handleCopy} />
+          ) : undefined
+        }
+      >
+        <ToolAsideSection label="VIEW">
+          <ToolChoice
+            label="Output view"
+            fill
+            value={view}
+            onChange={setView}
+            options={[
+              { value: "preview" as const, label: "Preview" },
+              { value: "html" as const, label: "HTML" },
+            ]}
+          />
+          <span className="font-body text-[10.5px] leading-[1.5] text-text-muted">
+            The preview is sanitised; the HTML view and copy give you the raw output.
+          </span>
+        </ToolAsideSection>
+      </ToolAside>
+    </>
   );
 }

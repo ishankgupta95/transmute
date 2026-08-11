@@ -23,10 +23,12 @@ test.describe("navigation", () => {
       ).toBeVisible();
     }
 
-    // Popular-tools rail renders ≥4 cards; if it 404s on a slug the rail
-    // would silently shrink.
-    const popularTools = page.locator("section").filter({ hasText: /Popular tools/i });
+    // The popular-tools rail is headed "Reached for most" since the redesign.
+    // Assert the rail itself (≥4 tool links) rather than only its heading, so
+    // a copy change cannot mask a rail that silently shrank.
+    const popularTools = page.locator("section").filter({ hasText: /Reached for most/i });
     await expect(popularTools).toBeVisible();
+    expect(await popularTools.locator('a[href^="/"]').count()).toBeGreaterThanOrEqual(4);
   });
 
   test("every category in the navbar navigates to its hub with the right H1", async ({
@@ -41,7 +43,7 @@ test.describe("navigation", () => {
       // The hub renders the category name as its h1 — checking `cat.name`
       // catches a wrong-page render that a /Tools/ regex would let through.
       await expect(page.locator("h1")).toHaveCount(1);
-      await expect(page.locator("h1")).toHaveText(cat.name);
+      await expect(page.locator("h1")).toHaveText(new RegExp(`^${cat.name}$`, "i"));
     }
   });
 
@@ -69,12 +71,12 @@ test.describe("navigation", () => {
     await page.goto("/image-tools");
     const crumbs = page.locator('nav[aria-label="Breadcrumb"]');
     await expect(crumbs).toBeVisible();
-    await expect(crumbs.locator('a[href="/"]')).toHaveText("Home");
+    await expect(crumbs.locator('a[href="/"]')).toHaveText(/^Home$/i);
 
     await page.goto("/heic-to-jpg");
     const toolCrumbs = page.locator('nav[aria-label="Breadcrumb"]');
     await expect(toolCrumbs).toBeVisible();
-    await expect(toolCrumbs.locator('a[href="/"]')).toHaveText("Home");
+    await expect(toolCrumbs.locator('a[href="/"]')).toHaveText(/^Home$/i);
     // Tool breadcrumb should link back to the category hub.
     await expect(toolCrumbs.locator('a[href="/image-tools"]')).toBeVisible();
   });

@@ -1,16 +1,16 @@
 import { test, expect } from "@playwright/test";
 
 /**
- * Video pipelines depend on FFmpeg.wasm (~25 MB CDN download on first use)
- * and WebCodecs (compress-video). They take 10-60s on a warm CDN even for
- * the smallest input, and the WASM blob can stall in CI if unpkg is rate
- * limited. We *don't* invoke the conversion paths in this spec — we only
- * smoke-test that every video tool page renders, the dropzone is wired,
- * and the action button is present.
+ * Video pipelines depend on FFmpeg.wasm (video-trimmer, mp4-to-mp3) and on
+ * WebCodecs (compress-video, webm-to-mp4); video-to-gif is <video> + gifenc.
+ * Loading and encoding takes real seconds even for the smallest input, so this
+ * spec *doesn't* invoke the conversion paths — it only smoke-tests that every
+ * video tool page renders, the dropzone is wired, and the action button is
+ * present.
  *
- * Conversion-path coverage lives in the manual verification checklist
- * (plan.md §2.9) which runs against a deployed URL where the FFmpeg build
- * is cached. Adding it to CI would 4x the wall-clock for marginal value.
+ * Real conversion coverage lives in `src/__tests__/e2e/conversion/video.spec.ts`
+ * (`npm run test:e2e:conversion`), which drives these tools against genuinely
+ * encoded fixtures and asserts on the returned bytes.
  */
 
 const VIDEO_TOOLS = [

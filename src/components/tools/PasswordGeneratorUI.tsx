@@ -3,6 +3,14 @@
 import { useCallback, useState } from "react";
 import { ErrorMessage } from "@/components/tools/ErrorMessage";
 import { copyText } from "@/lib/utils/clipboard";
+import {
+  ToolActions,
+  ToolAside,
+  ToolAsideSection,
+  ToolChoice,
+  ToolSlider,
+} from "@/components/tools/ToolAside";
+import { CanvasFootnote, GenList } from "@/components/tools/ToolCanvas";
 
 interface Options {
   length: number;
@@ -12,17 +20,53 @@ interface Options {
   symbols: boolean;
 }
 
-function generatePassword(opts: Options): string {
-  let chars = "";
-  if (opts.uppercase) chars += "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-  if (opts.lowercase) chars += "abcdefghijklmnopqrstuvwxyz";
-  if (opts.numbers) chars += "0123456789";
-  if (opts.symbols) chars += "!@#$%^&*()_+-=[]{}|;:,.<>?";
-  if (!chars) throw new Error("Select at least one character type");
+const CLASSES = {
+  uppercase: "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+  lowercase: "abcdefghijklmnopqrstuvwxyz",
+  numbers: "0123456789",
+  symbols: "!@#$%^&*()_+-=[]{}|;:,.<>?",
+} as const;
 
-  const arr = new Uint32Array(opts.length);
-  crypto.getRandomValues(arr);
-  return Array.from(arr, (n) => chars[n % chars.length]).join("");
+/**
+ * Uniform random index without modulo bias: `n % len` over a 2³² draw
+ * favours the low characters whenever 2³² isn't a multiple of `len` —
+ * measurable skew in what is literally a security tool. Rejection sampling
+ * redraws the few values above the largest exact multiple instead.
+ */
+function uniformIndex(len: number): number {
+  const limit = Math.floor(0x100000000 / len) * len;
+  const buf = new Uint32Array(1);
+  do {
+    crypto.getRandomValues(buf);
+  } while (buf[0] >= limit);
+  return buf[0] % len;
+}
+
+export function generatePassword(opts: Options): string {
+  const pools = (Object.keys(CLASSES) as (keyof typeof CLASSES)[]).filter(
+    (k) => opts[k],
+  );
+  if (pools.length === 0) throw new Error("Select at least one character type");
+  const all = pools.map((k) => CLASSES[k]).join("");
+
+  // Every selected class appears at least once — a 12-char "with symbols"
+  // password that happens to contain none is a claim the checkbox didn't
+  // keep. One guaranteed pick per class (as far as length allows), the rest
+  // drawn from the combined pool, then shuffled so the guaranteed picks
+  // don't sit at the front.
+  const out: string[] = [];
+  for (const k of pools.slice(0, opts.length)) {
+    out.push(CLASSES[k][uniformIndex(CLASSES[k].length)]);
+  }
+  while (out.length < opts.length) {
+    out.push(all[uniformIndex(all.length)]);
+  }
+  // Fisher–Yates with the same unbiased draws.
+  for (let i = out.length - 1; i > 0; i--) {
+    const j = uniformIndex(i + 1);
+    [out[i], out[j]] = [out[j], out[i]];
+  }
+  return out.join("");
 }
 
 function calcStrength(pw: string): { label: string; color: string; pct: number } {
@@ -77,93 +121,97 @@ export function PasswordGeneratorUI() {
   const strength = passwords.length > 0 ? calcStrength(passwords[0]) : null;
 
   return (
-    <div className="space-y-4">
-      {/* Options */}
-      <div className="flex flex-wrap items-center justify-center gap-4">
-        <label className="flex items-center gap-2 text-sm text-text-secondary">
-          Length:
-          <input
-            type="range"
+    <>
+      {/* ── Canvas: the doc's numbered value list ──────────── */}
+      <div className="min-w-0 space-y-[13px]">
+        {error && <ErrorMessage message={error} />}
+
+        {strength && (
+          <div className="space-y-1">
+            <div className="flex justify-between text-xs text-text-muted">
+              <span>Strength</span>
+              <span>{strength.label}</span>
+            </div>
+            <div className="h-1.5 overflow-hidden rounded-full bg-bg-elevated">
+              <div
+                className={`h-full rounded-full transition-all ${strength.color}`}
+                style={{ width: `${strength.pct}%` }}
+              />
+            </div>
+          </div>
+        )}
+
+        {passwords.length > 0 ? (
+          <>
+            <GenList
+              rows={passwords.map((pw) => ({ value: pw }))}
+              copiedIndex={copied}
+              onCopy={(_, i) => handleCopy(i)}
+            />
+            <CanvasFootnote>
+              GENERATED LOCALLY · CRYPTO.GETRANDOMVALUES · NOTHING LOGGED
+            </CanvasFootnote>
+          </>
+        ) : (
+          <p className="py-10 text-center font-body text-sm text-text-muted">
+            Set the length and character types, then generate.
+          </p>
+        )}
+      </div>
+
+      <ToolAside
+        footer={<ToolActions primaryLabel="Generate" onPrimary={handleGenerate} />}
+      >
+        <ToolAsideSection>
+          <ToolSlider
+            label="Length"
+            display={String(options.length)}
+            hint="16 characters or more is the usual advice."
             min={8}
             max={128}
             value={options.length}
-            onChange={(e) => setOptions((o) => ({ ...o, length: Number(e.target.value) }))}
-            className="w-24 accent-accent"
+            onChange={(length) => {
+              setOptions((o) => ({ ...o, length }));
+              setPasswords([]); // stale results would misstate the options
+            }}
           />
-          <span className="w-8 text-text-primary font-mono">{options.length}</span>
-        </label>
-      </div>
-      <div className="flex flex-wrap items-center justify-center gap-3">
-        {(["uppercase", "lowercase", "numbers", "symbols"] as const).map((key) => (
-          <label key={key} className="flex items-center gap-2 text-sm text-text-secondary">
-            <input
-              type="checkbox"
-              checked={options[key]}
-              onChange={(e) => setOptions((o) => ({ ...o, [key]: e.target.checked }))}
-              className="rounded border-border accent-accent"
-            />
-            {key.charAt(0).toUpperCase() + key.slice(1)}
-          </label>
-        ))}
-        <select
-          value={count}
-          onChange={(e) => setCount(Number(e.target.value))}
-          className="rounded-md border border-border bg-bg-elevated px-3 py-2 text-sm text-text-primary"
-        >
-          {[1, 5, 10, 20].map((n) => (
-            <option key={n} value={n}>{n}</option>
-          ))}
-        </select>
-      </div>
+        </ToolAsideSection>
 
-      <div className="flex justify-center">
-        <button
-          onClick={handleGenerate}
-          className="rounded-md bg-accent px-6 py-2.5 text-sm font-medium text-bg-primary hover:bg-accent-hover transition-colors"
-        >
-          Generate
-        </button>
-      </div>
-
-      {error && (
-        <ErrorMessage message={error} />
-      )}
-
-      {/* Strength meter */}
-      {strength && (
-        <div className="space-y-1">
-          <div className="flex justify-between text-xs text-text-muted">
-            <span>Strength</span>
-            <span>{strength.label}</span>
-          </div>
-          <div className="h-1.5 rounded-full bg-bg-elevated overflow-hidden">
-            <div
-              className={`h-full rounded-full transition-all ${strength.color}`}
-              style={{ width: `${strength.pct}%` }}
-            />
-          </div>
-        </div>
-      )}
-
-      {/* Results */}
-      {passwords.length > 0 && (
-        <div className="space-y-1 max-h-96 overflow-y-auto">
-          {passwords.map((pw, i) => (
-            <div
-              key={i}
-              className="flex items-center justify-between rounded-md border border-border bg-bg-elevated px-3 py-2"
-            >
-              <code className="text-sm text-text-primary font-mono break-all">{pw}</code>
-              <button
-                onClick={() => handleCopy(i)}
-                className="text-xs text-accent hover:text-accent-hover transition-colors ml-2 shrink-0"
+        <ToolAsideSection label="INCLUDE">
+          <div className="flex flex-col gap-2">
+            {(["uppercase", "lowercase", "numbers", "symbols"] as const).map((key) => (
+              <label
+                key={key}
+                className="flex cursor-pointer items-center gap-2.5 font-body text-[12.5px] text-neutral-300"
               >
-                {copied === i ? "Copied!" : "Copy"}
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
+                <input
+                  type="checkbox"
+                  checked={options[key]}
+                  onChange={(e) => {
+                    setOptions((o) => ({ ...o, [key]: e.target.checked }));
+                    setPasswords([]);
+                  }}
+                  className="size-4 rounded border-border accent-accent"
+                />
+                {key.charAt(0).toUpperCase() + key.slice(1)}
+              </label>
+            ))}
+          </div>
+        </ToolAsideSection>
+
+        <ToolAsideSection label="HOW MANY">
+          <ToolChoice
+            label="Number of passwords"
+            fill
+            value={count}
+            onChange={(n) => {
+              setCount(n);
+              setPasswords([]);
+            }}
+            options={[1, 5, 10, 20].map((n) => ({ value: n, label: String(n) }))}
+          />
+        </ToolAsideSection>
+      </ToolAside>
+    </>
   );
 }

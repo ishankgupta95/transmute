@@ -4,9 +4,25 @@ import { useCallback, useState } from "react";
 import { ErrorMessage } from "@/components/tools/ErrorMessage";
 import { DropZone } from "@/components/tools/DropZone";
 import { ProgressBar } from "@/components/tools/ProgressBar";
-import { Download } from "lucide-react";
 import { pdfToImages } from "@/lib/tools/pdf-engine";
 import { triggerDownload, downloadFilesAsZip } from "@/lib/utils/download";
+import {
+  ToolActions,
+  ToolAside,
+  ToolAsideSection,
+  ToolChoice,
+  ToolOutput,
+  ToolResetLink,
+  ToolSlider,
+} from "@/components/tools/ToolAside";
+import {
+  CanvasFootnote,
+  CanvasHeader,
+  PageDeck,
+  PageTile,
+  StatStrip,
+} from "@/components/tools/ToolCanvas";
+import { formatFileSize } from "@/lib/utils/file-helpers";
 
 export function PdfToJpgUI() {
   const [file, setFile] = useState<File | null>(null);
@@ -16,6 +32,7 @@ export function PdfToJpgUI() {
   const [status, setStatus] = useState<"idle" | "processing" | "done" | "error">("idle");
   const [results, setResults] = useState<{ blob: Blob; name: string; url: string }[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [progress, setProgress] = useState(0);
 
   const handleFiles = useCallback((files: File[]) => {
     const f = files[0];
@@ -30,9 +47,13 @@ export function PdfToJpgUI() {
     if (!file) return;
     setStatus("processing");
     setError(null);
+    setProgress(0);
     try {
       const buf = await file.arrayBuffer();
-      const images = await pdfToImages(buf, format, quality, scale);
+      // Pages encode in the image worker pool; progress ticks per page done.
+      const images = await pdfToImages(buf, format, quality, scale, {
+        onProgress: (value) => setProgress(Math.round(value)),
+      });
       setResults(images.map((img) => ({ ...img, url: URL.createObjectURL(img.blob) })));
       setStatus("done");
     } catch (err) {
@@ -62,97 +83,112 @@ export function PdfToJpgUI() {
   if (!file) return <DropZone accept=".pdf" onFiles={handleFiles} />;
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <p className="text-sm text-text-secondary">{file.name}</p>
-        <button onClick={handleReset} className="text-sm text-text-muted hover:text-text-secondary transition-colors">
-          Change file
-        </button>
+    <>
+      <div className="min-w-0 space-y-[13px]">
+        <CanvasHeader
+          file={file.name}
+          meta={results.length > 0 ? `${results.length} PAGES` : "PDF"}
+          trailing={format === "jpeg" ? "JPG" : "PNG"}
+        />
+
+        {status === "processing" && (
+          <ProgressBar progress={progress > 0 ? progress : null} />
+        )}
+        {error && <ErrorMessage message={error} />}
+
+        {results.length > 0 && (
+          <>
+            <PageDeck>
+              {results.map((r, idx) => (
+                <PageTile key={idx} number={idx + 1} thumb={r.url} selected onClick={() => triggerDownload(r.blob, r.name)} label={`Download page ${idx + 1}`} />
+              ))}
+            </PageDeck>
+
+            <StatStrip
+              stats={[
+                { label: "PAGES", value: String(results.length), tone: "neutral" },
+                { label: "FORMAT", value: format === "jpeg" ? "JPG" : "PNG" },
+                { label: "SCALE", value: `${scale}×`, tone: "neutral" },
+                {
+                  label: "SIZE",
+                  value: formatFileSize(results.reduce((n, r) => n + r.blob.size, 0)),
+                  tone: "ok",
+                },
+              ]}
+            />
+
+            <CanvasFootnote>CLICK A PAGE TO SAVE IT ON ITS OWN</CanvasFootnote>
+          </>
+        )}
       </div>
 
-      <div className="flex flex-wrap gap-4">
-        <div>
-          <label className="block text-xs text-text-muted mb-1">Format</label>
-          <select
+      <ToolAside
+        footer={
+          <>
+            {results.length > 0 ? (
+              <ToolActions primaryLabel="Download all (ZIP)" onPrimary={downloadAll} />
+            ) : (
+              <ToolActions
+                primaryLabel={status === "processing" ? "Converting…" : "Convert to images"}
+                onPrimary={handleConvert}
+                primaryDisabled={status === "processing"}
+              />
+            )}
+            <ToolResetLink onClick={handleReset} label="CHANGE FILE" />
+          </>
+        }
+      >
+        <ToolAsideSection label="FORMAT">
+          <ToolChoice
+            label="Output format"
+            fill
             value={format}
-            onChange={(e) => setFormat(e.target.value as "jpeg" | "png")}
-            className="rounded-md border border-border bg-bg-secondary px-3 py-2 text-sm text-text-primary focus:border-accent focus:outline-none"
-          >
-            <option value="jpeg">JPG</option>
-            <option value="png">PNG</option>
-          </select>
-        </div>
+            onChange={setFormat}
+            options={[
+              { value: "jpeg" as const, label: "JPG" },
+              { value: "png" as const, label: "PNG" },
+            ]}
+          />
+        </ToolAsideSection>
+
         {format === "jpeg" && (
-          <div>
-            <label className="block text-xs text-text-muted mb-1">Quality: {Math.round(quality * 100)}%</label>
-            <input
-              type="range"
+          <ToolAsideSection>
+            <ToolSlider
+              label="Quality"
+              display={`${Math.round(quality * 100)}%`}
               min={0.1}
               max={1}
               step={0.05}
               value={quality}
-              onChange={(e) => setQuality(Number(e.target.value))}
-              className="w-32 accent-accent"
+              onChange={setQuality}
             />
-          </div>
+          </ToolAsideSection>
         )}
-        <div>
-          <label className="block text-xs text-text-muted mb-1">Scale: {scale}x</label>
-          <input
-            type="range"
+
+        <ToolAsideSection>
+          <ToolSlider
+            label="Scale"
+            display={`${scale}×`}
+            hint="Higher scale renders more pixels per page — better for print."
             min={1}
             max={4}
             step={0.5}
             value={scale}
-            onChange={(e) => setScale(Number(e.target.value))}
-            className="w-32 accent-accent"
+            onChange={setScale}
           />
-        </div>
-      </div>
+        </ToolAsideSection>
 
-      {status !== "done" && (
-        <button
-          onClick={handleConvert}
-          disabled={status === "processing"}
-          className="inline-flex items-center gap-2 rounded-md bg-accent px-5 py-2.5 text-sm font-medium text-bg-primary hover:bg-accent-hover transition-colors disabled:opacity-50"
-        >
-          {status === "processing" ? "Converting…" : "Convert to Images"}
-        </button>
-      )}
-
-      {status === "processing" && <ProgressBar progress={null} />}
-      {error && <ErrorMessage message={error} />}
-
-      {results.length > 0 && (
-        <>
-          <div className="flex items-center justify-between">
-            <p className="text-sm text-text-secondary">{results.length} page{results.length !== 1 ? "s" : ""} converted</p>
-            <button
-              onClick={downloadAll}
-              className="inline-flex items-center gap-2 rounded-md bg-accent px-4 py-2 text-sm font-medium text-bg-primary hover:bg-accent-hover transition-colors"
-            >
-              <Download size={14} />
-              Download All
-            </button>
-          </div>
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
-            {results.map((r, idx) => (
-              <div key={idx} className="rounded-lg border border-border overflow-hidden bg-bg-secondary">
-                <img src={r.url} alt={`Page ${idx + 1}`} className="w-full" />
-                <div className="flex items-center justify-between p-2">
-                  <span className="text-xs text-text-muted">Page {idx + 1}</span>
-                  <button
-                    onClick={() => triggerDownload(r.blob, r.name)}
-                    className="text-accent hover:text-accent-hover transition-colors"
-                  >
-                    <Download size={14} />
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        </>
-      )}
-    </div>
+        {results.length > 0 && (
+          <ToolAsideSection label="OUTPUT">
+            <ToolOutput
+              rows={[
+                ["Pages", String(results.length)],
+                ["Format", format === "jpeg" ? "JPG" : "PNG"],
+              ]}
+            />
+          </ToolAsideSection>
+        )}
+      </ToolAside>
+    </>
   );
 }

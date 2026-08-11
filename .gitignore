@@ -1,7 +1,19 @@
 # See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 
-# mupdf WASM binary (copied from node_modules during build)
+# WASM engines (copied from node_modules by `npm run copy:wasm` on dev/build).
+# Kept out of git so the ~31 MB ffmpeg core never enters history — it ships in
+# the built artifact only.
 /public/mupdf-wasm.wasm
+/public/ffmpeg-core.js
+/public/ffmpeg-core.wasm
+
+# Pool workers (bundled from src/lib/workers by scripts/build-workers.mjs,
+# invoked by `npm run copy:wasm` — same build-artifact treatment as the WASM).
+/public/workers/
+
+# Markdown→PDF print fonts (copied from @fontsource-variable/* by
+# `npm run copy:wasm` — self-hosted so the export makes no third-party request).
+/public/fonts/
 
 # dependencies
 /node_modules

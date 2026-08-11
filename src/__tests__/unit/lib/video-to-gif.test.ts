@@ -14,7 +14,6 @@ const {
 const {
   mockGifWriteFrame,
   mockGifFinish,
-  mockGifBytes,
   mockQuantize,
   mockApplyPalette,
   mockGIFEncoder,
@@ -95,7 +94,7 @@ describe("videoToGif", () => {
 
     // Default: invoke frame callback 3 times with spaced-apart currentTime
     mockPlayAndExtractFrames.mockImplementation(
-      async (_video: unknown, _start: number, _end: number, frameCb: (vid: unknown, ts: number) => Promise<void>, _onProgress?: unknown) => {
+      async (_video: unknown, _start: number, _end: number, frameCb: (vid: unknown, ts: number) => Promise<void>, _ctx?: unknown) => {
         const mockVid = { currentTime: 0 };
         // Frame at t=0
         mockVid.currentTime = 0;
@@ -129,21 +128,22 @@ describe("videoToGif", () => {
       2,                 // startTime
       8,                 // endTime
       expect.any(Function), // frame callback
-      undefined,            // onProgress (not passed)
+      { signal: undefined, onProgress: undefined }, // no context passed
     );
   });
 
-  it("forwards progress callback to playAndExtractFrames", async () => {
+  it("forwards progress callback and signal to playAndExtractFrames", async () => {
     const onProgress = vi.fn();
+    const signal = new AbortController().signal;
     const file = new File(["video"], "test.mp4", { type: "video/mp4" });
-    await videoToGif(file, defaultOptions, onProgress);
+    await videoToGif(file, defaultOptions, { onProgress, signal });
 
     expect(mockPlayAndExtractFrames).toHaveBeenCalledWith(
       expect.anything(),
       0,
       5,
       expect.any(Function),
-      onProgress,
+      { signal, onProgress },
     );
   });
 

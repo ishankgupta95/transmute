@@ -11,13 +11,52 @@ interface PrintCssOpts {
  * is `about:blank` so it cannot inherit parent styles or reference Tailwind
  * tokens — every value is hard-coded.
  *
- * Web fonts are imported from Google Fonts at print time. The .woff2 data-URI
- * fallback in plan §P.3 was deferred because shipping all four faces (Newsreader
- * regular/italic, JetBrains Mono regular/bold, Outfit regular/medium) inline
- * would exceed the 200 KB budget. The trade-off: the iframe issues a one-shot
- * network request when the user clicks Export. We await `document.fonts.ready`
- * before triggering print so the layout is stable when the PDF is captured.
+ * Fonts are SELF-HOSTED (Phase 5): variable latin-subset woff2s copied from
+ * the pinned `@fontsource-variable/*` packages into `public/fonts/print/` by
+ * `npm run copy:wasm` — the Google Fonts `@import` this replaced was the
+ * app's last third-party request. URLs are absolute against the page origin
+ * because relative URLs inside an about:blank iframe have nothing to resolve
+ * against. We still await `document.fonts.ready` before triggering print so
+ * the layout is stable when the PDF is captured.
  */
+const PRINT_FONT_FACES = (origin: string) => `
+@font-face {
+  font-family: "Newsreader";
+  src: url("${origin}/fonts/print/newsreader-latin-wght-normal.woff2") format("woff2-variations");
+  font-weight: 400 700;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Newsreader";
+  src: url("${origin}/fonts/print/newsreader-latin-wght-italic.woff2") format("woff2-variations");
+  font-weight: 400 700;
+  font-style: italic;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Outfit";
+  src: url("${origin}/fonts/print/outfit-latin-wght-normal.woff2") format("woff2-variations");
+  font-weight: 400 700;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Syne";
+  src: url("${origin}/fonts/print/syne-latin-wght-normal.woff2") format("woff2-variations");
+  font-weight: 600 700;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "JetBrains Mono";
+  src: url("${origin}/fonts/print/jetbrains-mono-latin-wght-normal.woff2") format("woff2-variations");
+  font-weight: 400 700;
+  font-style: normal;
+  font-display: swap;
+}
+`;
+
 export function buildPrintCss({ theme, font, pageSize = "A4" }: PrintCssOpts): string {
   const isDark = theme === "dark";
   const isSerif = font === "serif";
@@ -54,9 +93,10 @@ export function buildPrintCss({ theme, font, pageSize = "A4" }: PrintCssOpts): s
   const headingFamily = `"Syne", "Outfit", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif`;
   const monoFamily = `"JetBrains Mono", "SF Mono", Consolas, "Liberation Mono", Menlo, monospace`;
 
-  return `
-@import url('https://fonts.googleapis.com/css2?family=Newsreader:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Outfit:wght@400;500;600;700&family=Syne:wght@600;700&family=JetBrains+Mono:wght@400;700&display=swap');
+  const origin = typeof window !== "undefined" ? window.location.origin : "";
 
+  return `
+${PRINT_FONT_FACES(origin)}
 @page {
   size: ${pageSize};
   margin: 18mm 16mm;

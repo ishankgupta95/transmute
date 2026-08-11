@@ -2,6 +2,19 @@
 
 import { useCallback, useMemo, useState } from "react";
 import { diffLines, diffWords } from "diff";
+import {
+  ToolActions,
+  ToolAside,
+  ToolAsideSection,
+  ToolChoice,
+  ToolOutput,
+} from "@/components/tools/ToolAside";
+import {
+  lineCount,
+  TEXT_PANE_BODY,
+  TextPane,
+  TextPanes,
+} from "@/components/tools/ToolCanvas";
 
 type DiffMode = "inline" | "side-by-side";
 
@@ -20,75 +33,95 @@ export function TextDiffUI() {
     setRight(left);
   }, [left, right]);
 
+  const added = diff.filter((p) => p.added).length;
+  const removed = diff.filter((p) => p.removed).length;
+
   return (
-    <div className="space-y-4">
-      {/* Mode toggle */}
-      <div className="flex items-center justify-center gap-2">
-        {(["inline", "side-by-side"] as const).map((m) => (
-          <button
-            key={m}
-            onClick={() => setMode(m)}
-            className={`rounded-md px-4 py-2 text-sm font-medium transition-colors ${
-              mode === m ? "bg-accent text-bg-primary" : "bg-bg-elevated text-text-secondary hover:bg-bg-hover"
-            }`}
-          >
-            {m === "inline" ? "Inline" : "Side-by-Side"}
-          </button>
-        ))}
-        <button
-          onClick={handleSwap}
-          className="rounded-md px-4 py-2 text-sm font-medium bg-bg-elevated text-text-secondary hover:bg-bg-hover transition-colors"
-        >
-          Swap
-        </button>
+    <>
+      {/* ── Canvas: what you look at ─────────────────────────── */}
+      <div className="min-w-0 space-y-[13px]">
+        <TextPanes>
+          <TextPane label="Original" lines={lineCount(left)}>
+            <textarea
+              value={left}
+              onChange={(e) => setLeft(e.target.value)}
+              placeholder="Paste original text..."
+              aria-label="Original text"
+              className={TEXT_PANE_BODY}
+            />
+          </TextPane>
+          <TextPane label="Modified" lines={lineCount(right)}>
+            <textarea
+              value={right}
+              onChange={(e) => setRight(e.target.value)}
+              placeholder="Paste modified text..."
+              aria-label="Modified text"
+              className={TEXT_PANE_BODY}
+            />
+          </TextPane>
+        </TextPanes>
+
+        {diff.length > 0 && (left || right) && (
+          <TextPanes columns={1}>
+            <TextPane tone="out" label="Diff" lines={added + removed}>
+              <div className={TEXT_PANE_BODY}>
+                {diff.map((part, i) => (
+                  <span
+                    key={i}
+                    className={
+                      part.added
+                        ? "bg-success/20 text-success"
+                        : part.removed
+                          ? "bg-error/20 text-error line-through"
+                          : "text-neutral-300"
+                    }
+                  >
+                    {part.value}
+                  </span>
+                ))}
+              </div>
+            </TextPane>
+          </TextPanes>
+        )}
       </div>
 
-      {/* Input areas */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div>
-          <label className="block text-sm font-medium text-text-secondary mb-1">Original</label>
-          <textarea
-            value={left}
-            onChange={(e) => setLeft(e.target.value)}
-            placeholder="Paste original text..."
-            rows={10}
-            className="w-full rounded-lg border border-border bg-bg-elevated p-3 text-sm text-text-primary font-mono resize-y placeholder:text-text-muted"
+      {/* ── Controls: the doc's right-hand rail / bottom sheet ── */}
+      <ToolAside
+        footer={
+          <ToolActions
+            primaryLabel="Swap"
+            onPrimary={handleSwap}
+            primaryDisabled={!left && !right}
           />
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-text-secondary mb-1">Modified</label>
-          <textarea
-            value={right}
-            onChange={(e) => setRight(e.target.value)}
-            placeholder="Paste modified text..."
-            rows={10}
-            className="w-full rounded-lg border border-border bg-bg-elevated p-3 text-sm text-text-primary font-mono resize-y placeholder:text-text-muted"
+        }
+      >
+        <ToolAsideSection label="GRANULARITY">
+          <ToolChoice
+            label="Diff granularity"
+            fill
+            value={mode}
+            onChange={setMode}
+            options={[
+              { value: "inline" as const, label: "Inline" },
+              { value: "side-by-side" as const, label: "Side-by-Side" },
+            ]}
           />
-        </div>
-      </div>
+          <span className="font-body text-[10.5px] leading-[1.5] text-text-muted">
+            {mode === "inline"
+              ? "Word by word — best for prose."
+              : "Line by line — best for code and config."}
+          </span>
+        </ToolAsideSection>
 
-      {/* Diff output */}
-      {diff.length > 0 && (left || right) && (
-        <div>
-          <label className="block text-sm font-medium text-text-secondary mb-1">Diff</label>
-          <div className="w-full rounded-lg border border-border bg-bg-elevated p-3 text-sm font-mono overflow-x-auto whitespace-pre-wrap max-h-96 overflow-y-auto">
-            {diff.map((part, i) => (
-              <span
-                key={i}
-                className={
-                  part.added
-                    ? "bg-success/20 text-success"
-                    : part.removed
-                      ? "bg-error/20 text-error line-through"
-                      : "text-text-primary"
-                }
-              >
-                {part.value}
-              </span>
-            ))}
-          </div>
-        </div>
-      )}
-    </div>
+        <ToolAsideSection label="OUTPUT">
+          <ToolOutput
+            rows={[
+              ["Insertions", left || right ? String(added) : "—"],
+              ["Deletions", left || right ? String(removed) : "—"],
+            ]}
+          />
+        </ToolAsideSection>
+      </ToolAside>
+    </>
   );
 }

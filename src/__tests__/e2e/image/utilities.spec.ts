@@ -10,14 +10,15 @@ test.describe("image utilities", () => {
     await uploadFile(page, [tinyPng(64), tinyJpg()]);
     await page.getByRole("button", { name: "Compress", exact: true }).click();
 
-    const downloads = downloadButton(page);
-    await expect(downloads).toHaveCount(2, { timeout: 20_000 });
+    // Multi-file output is bundled into one ZIP rather than firing N
+    // downloads in a loop (which browsers throttled down to just the first).
+    const zip = page.getByRole("button", { name: /Download all \(ZIP\)/i });
+    await expect(zip).toBeVisible({ timeout: 20_000 });
 
-    // The compressed file must actually open and start with the right magic.
-    const { suggestedFilename, download } = await waitForDownload(page, downloads.first());
-    expect(suggestedFilename).toMatch(/\.(jpe?g|png|webp)$/i);
+    const { suggestedFilename, download } = await waitForDownload(page, zip);
+    expect(suggestedFilename).toMatch(/\.zip$/i);
     const bytes = await downloadBytes(download);
-    expect(bytes.length).toBeGreaterThan(0);
+    expect(bytes.subarray(0, 2).toString("ascii")).toBe("PK");
   });
 
   for (const { slug, target } of [
@@ -136,8 +137,8 @@ test.describe("image utilities", () => {
     await expect(
       page.getByText(/No metadata found in this image/i),
     ).toBeVisible({ timeout: 10_000 });
-    // The "0 metadata fields found" pill should also appear.
-    await expect(page.getByText(/0 metadata fields found/i)).toBeVisible();
+    // The header states the field count alongside the empty state.
+    await expect(page.getByText(/0 METADATA FIELDS/i)).toBeVisible();
   });
 
   test("png-to-ico: produces a valid ICO download", async ({ page }) => {
@@ -194,9 +195,9 @@ test.describe("image utilities", () => {
     // Processing kicks off as soon as the file lands; no Convert button.
     await uploadFile(page, twoColorPng(64, 64));
 
-    // Swatches render as buttons containing an "rgb(...)" subtitle. Wait for
-    // at least one swatch to appear.
-    const swatches = page.locator("button").filter({ hasText: /rgb\(/ });
+    // Swatches are buttons labelled with the hex code plus a share
+    // percentage — the old "rgb(...)" subtitle is gone.
+    const swatches = page.locator("button").filter({ hasText: /^#[0-9a-f]{6}/i });
     await expect(swatches.first()).toBeVisible({ timeout: 15_000 });
     expect(await swatches.count()).toBeGreaterThanOrEqual(1);
   });

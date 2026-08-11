@@ -8,17 +8,28 @@ const { mockWriteFile, mockExec, mockReadFile, mockDeleteFile } = vi.hoisted(() 
 }));
 
 const mockValidateVideoFileSize = vi.hoisted(() => vi.fn());
-const mockGetFFmpeg = vi.hoisted(() => vi.fn());
 const mockFileToUint8Array = vi.hoisted(() => vi.fn());
+
+/**
+ * `runFFmpegTask` owns the queue, the scoped progress handler and the
+ * terminate-on-abort wiring; from a tool's point of view it just hands over a
+ * loaded instance, so the fake runs the task against the mock FFmpeg.
+ */
+const mockRunFFmpegTask = vi.hoisted(() =>
+  vi.fn(),
+);
 
 vi.mock("@/lib/tools/ffmpeg-loader", () => ({
   validateVideoFileSize: mockValidateVideoFileSize,
-  getFFmpeg: mockGetFFmpeg.mockResolvedValue({
-    writeFile: mockWriteFile,
-    exec: mockExec,
-    readFile: mockReadFile,
-    deleteFile: mockDeleteFile,
-  }),
+  runFFmpegTask: mockRunFFmpegTask.mockImplementation(
+    (task: (ffmpeg: unknown) => Promise<unknown>) =>
+      task({
+        writeFile: mockWriteFile,
+        exec: mockExec,
+        readFile: mockReadFile,
+        deleteFile: mockDeleteFile,
+      }),
+  ),
   fileToUint8Array: mockFileToUint8Array.mockResolvedValue(new Uint8Array([0x00])),
 }));
 
@@ -47,12 +58,25 @@ describe("trimVideo", () => {
     await expect(trimVideo(file, { startTime: 0, endTime: 5 })).rejects.toThrow("File too large");
   });
 
-  it("passes progress callback to getFFmpeg", async () => {
+  it("forwards the processing context to runFFmpegTask", async () => {
     const file = new File(["video"], "clip.mp4", { type: "video/mp4" });
     const onProgress = vi.fn();
-    await trimVideo(file, { startTime: 0, endTime: 5 }, onProgress);
+    const signal = new AbortController().signal;
+    await trimVideo(file, { startTime: 0, endTime: 5 }, { onProgress, signal });
 
-    expect(mockGetFFmpeg).toHaveBeenCalledWith(onProgress);
+    // Progress *and* signal have to reach the loader: the signal is what turns
+    // a cancel into ffmpeg.terminate().
+    expect(mockRunFFmpegTask).toHaveBeenCalledWith(expect.any(Function), {
+      onProgress,
+      signal,
+    });
+  });
+
+  it("runs even when no context is given", async () => {
+    const file = new File(["video"], "clip.mp4", { type: "video/mp4" });
+    await trimVideo(file, { startTime: 0, endTime: 5 });
+
+    expect(mockRunFFmpegTask).toHaveBeenCalledWith(expect.any(Function), {});
   });
 
   it("writes input file to FFmpeg filesystem", async () => {

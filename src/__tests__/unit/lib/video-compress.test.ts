@@ -136,7 +136,7 @@ describe("compressVideo", () => {
       Promise.resolve({ codec: "avc1.640034", hardwareAcceleration: "prefer-hardware", ...base }),
     );
     mockPlayAndExtractFrames.mockImplementation(
-      async (video: unknown, startTime: number, _endTime: unknown, onFrame: (vid: unknown, ts: number) => Promise<void>, onProgress?: (pct: number) => void) => {
+      async (video: unknown, startTime: number, _endTime: unknown, onFrame: (vid: unknown, ts: number) => Promise<void>, { onProgress }: { onProgress?: (pct: number) => void } = {}) => {
         for (let i = 0; i < 3; i++) {
           const timestampUs = (startTime + i * (1 / 30)) * 1_000_000;
           await onFrame(video, timestampUs);
@@ -325,7 +325,7 @@ describe("compressVideo", () => {
   it("calls progress callback with 100 at the end", async () => {
     const onProgress = vi.fn();
     const file = new File(["video"], "input.mp4", { type: "video/mp4" });
-    await compressVideo(file, "web", onProgress);
+    await compressVideo(file, "web", { onProgress });
 
     expect(onProgress).toHaveBeenCalledWith(100);
   });
@@ -372,7 +372,7 @@ describe("compressVideo", () => {
       0,
       45,
       expect.any(Function),
-      expect.any(Function),
+      { signal: undefined, onProgress: expect.any(Function) },
     );
   });
 
@@ -424,7 +424,7 @@ describe("compressVideo", () => {
     it("reports progress at 85 and 95 during audio encoding", async () => {
       const onProgress = vi.fn();
       const file = new File(["video"], "input.mp4", { type: "video/mp4" });
-      await compressVideo(file, "web", onProgress);
+      await compressVideo(file, "web", { onProgress });
 
       expect(onProgress).toHaveBeenCalledWith(85);
       expect(onProgress).toHaveBeenCalledWith(95);

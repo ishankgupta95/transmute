@@ -5,8 +5,17 @@ import { ErrorMessage } from "@/components/tools/ErrorMessage";
 import { DropZone } from "@/components/tools/DropZone";
 import { DownloadButton } from "@/components/tools/DownloadButton";
 import { ProgressBar } from "@/components/tools/ProgressBar";
-import { GripVertical, X } from "lucide-react";
 import { imagesToPdf, type PageSize } from "@/lib/tools/pdf-engine";
+import {
+  ToolActions,
+  ToolAside,
+  ToolAsideSection,
+  ToolChoice,
+  ToolOutput,
+  ToolResetLink,
+} from "@/components/tools/ToolAside";
+import { DocCard, DocStrip, StatStrip } from "@/components/tools/ToolCanvas";
+import { formatFileSize } from "@/lib/utils/file-helpers";
 
 interface ImageEntry {
   file: File;
@@ -85,73 +94,107 @@ export function ImagesToPdfUI() {
   }, [entries]);
 
   return (
-    <div className="space-y-6">
-      <DropZone accept=".jpg,.jpeg,.png" multiple onFiles={handleFiles} />
+    <>
+      <div className="min-w-0 space-y-6">
+        <DropZone accept=".jpg,.jpeg,.png" multiple onFiles={handleFiles} disabled={status === "processing"} />
 
-      {entries.length > 0 && (
-        <>
-          <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 gap-3">
-            {entries.map((entry, idx) => (
-              <div
-                key={`${entry.file.name}-${idx}`}
-                draggable
-                onDragStart={() => handleDragStart(idx)}
-                onDragOver={(e) => handleDragOver(e, idx)}
-                onDragEnd={() => setDragIdx(null)}
-                className="relative rounded-lg border border-border overflow-hidden bg-bg-secondary cursor-grab active:cursor-grabbing group"
-              >
-                <img src={entry.url} alt={entry.file.name} className="w-full aspect-[3/4] object-cover" />
-                <div className="absolute top-1 left-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                  <GripVertical size={14} className="text-white drop-shadow" />
-                </div>
-                <button
-                  onClick={() => removeEntry(idx)}
-                  className="absolute top-1 right-1 bg-bg-primary/70 rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity text-text-muted hover:text-error"
-                >
-                  <X size={12} />
-                </button>
-                <span className="absolute bottom-0 left-0 right-0 bg-bg-primary/80 text-center text-xs text-text-secondary py-0.5">
-                  {idx + 1}
-                </span>
-              </div>
-            ))}
-          </div>
-
-          <div>
-            <label className="block text-xs text-text-muted mb-1">Page size</label>
-            <select
-              value={pageSize}
-              onChange={(e) => setPageSize(e.target.value as PageSize)}
-              className="rounded-md border border-border bg-bg-secondary px-3 py-2 text-sm text-text-primary focus:border-accent focus:outline-none"
-            >
-              <option value="a4">A4</option>
-              <option value="letter">US Letter</option>
-              <option value="fit">Fit to Image</option>
-            </select>
-          </div>
-        </>
-      )}
-
-      {status === "processing" && <ProgressBar progress={null} />}
-      {error && <ErrorMessage message={error} />}
-
-      <div className="flex items-center gap-3">
-        {entries.length > 0 && status !== "done" && (
-          <button
-            onClick={handleConvert}
-            disabled={status === "processing"}
-            className="inline-flex items-center gap-2 rounded-md bg-accent px-5 py-2.5 text-sm font-medium text-bg-primary hover:bg-accent-hover transition-colors disabled:opacity-50"
-          >
-            {status === "processing" ? "Creating PDF…" : `Create PDF (${entries.length} image${entries.length !== 1 ? "s" : ""})`}
-          </button>
-        )}
-        {result && <DownloadButton blob={result} fileName="images.pdf" />}
         {entries.length > 0 && (
-          <button onClick={handleReset} className="text-sm text-text-muted hover:text-text-secondary transition-colors">
-            Reset
-          </button>
+          <>
+            {/* Same assembly language as Merge PDF — both tools order source
+                files into one document, so they share the doc's card strip. */}
+            <div className="flex items-baseline gap-3">
+              <span className="font-display text-[13px] leading-none font-medium text-text-primary">
+                Assembly order
+              </span>
+              <span className="font-mono text-[10.5px] leading-none text-text-muted">
+                DRAG TO REORDER · {entries.length}{" "}
+                {entries.length === 1 ? "IMAGE" : "IMAGES"} · {entries.length}{" "}
+                {entries.length === 1 ? "PAGE" : "PAGES"}
+              </span>
+            </div>
+
+            <DocStrip>
+              {entries.map((entry, idx) => (
+                <DocCard
+                  key={`${entry.file.name}-${idx}`}
+                  index={idx + 1}
+                  name={entry.file.name}
+                  meta={formatFileSize(entry.file.size)}
+                  thumb={entry.url}
+                  onRemove={() => removeEntry(idx)}
+                  draggableProps={{
+                    draggable: true,
+                    onDragStart: () => handleDragStart(idx),
+                    onDragOver: (e: React.DragEvent) => handleDragOver(e, idx),
+                    onDragEnd: () => setDragIdx(null),
+                  }}
+                />
+              ))}
+            </DocStrip>
+          </>
         )}
+
+        <StatStrip
+          stats={[
+            { label: "IMAGES", value: String(entries.length), tone: "neutral" },
+            { label: "PAGE SIZE", value: pageSize.toUpperCase(), tone: "neutral" },
+            { label: "PAGES", value: String(entries.length) },
+            { label: "OUTPUT", value: result ? "images.pdf" : "—", tone: "ok" },
+          ]}
+        />
+
+        {status === "processing" && <ProgressBar progress={null} />}
+        {error && <ErrorMessage message={error} />}
       </div>
-    </div>
+
+      <ToolAside
+        footer={
+          <>
+            {result ? (
+              <DownloadButton
+                blob={result}
+                fileName="images.pdf"
+                className="w-full justify-center"
+              />
+            ) : (
+              <ToolActions
+                primaryLabel={status === "processing" ? "Creating PDF…" : "Create PDF"}
+                onPrimary={handleConvert}
+                primaryDisabled={entries.length === 0 || status === "processing"}
+              />
+            )}
+            {entries.length > 0 && <ToolResetLink onClick={handleReset} label="START OVER" />}
+          </>
+        }
+      >
+        <ToolAsideSection label="PAGE SIZE">
+          <ToolChoice
+            label="Page size"
+            fill
+            value={pageSize}
+            onChange={setPageSize}
+            options={[
+              { value: "a4" as PageSize, label: "A4" },
+              { value: "letter" as PageSize, label: "Letter" },
+              { value: "fit" as PageSize, label: "Fit" },
+            ]}
+          />
+        </ToolAsideSection>
+
+        <ToolAsideSection label="OUTPUT">
+          <ToolOutput
+            rows={[
+              ["Images", String(entries.length)],
+              ["Pages", String(entries.length)],
+            ]}
+          />
+          <span className="font-body text-[10.5px] leading-[1.5] text-text-muted">
+            {entries.length === 0
+              ? "Add images to build a PDF."
+              : "Drag the thumbnails to set page order."}
+          </span>
+        </ToolAsideSection>
+      </ToolAside>
+    </>
   );
 }

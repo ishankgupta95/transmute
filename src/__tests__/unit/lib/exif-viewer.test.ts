@@ -220,6 +220,67 @@ describe("readExifData", () => {
     expect(entries).toHaveLength(1);
     expect(entries[0].value).toBe("12345");
   });
+
+  /**
+   * Regression guard. With `expanded: true`, ExifReader's `gps` group is a
+   * *computed* block of plain numbers — not `{ description }` tag objects —
+   * and the raw GPS* tags are filed under `exif`. The mocks above use a shape
+   * the library never emits, which is why a broken GPS path passed unit tests
+   * while the real tool reported "Location: none" for every geotagged photo.
+   * These cases mirror actual `ExifReader.load` output.
+   */
+  describe("real ExifReader expanded output", () => {
+    const realShape = {
+      exif: {
+        Make: { description: "Transmute" },
+        GPSLatitude: { description: 37.825361111111114 },
+        GPSLatitudeRef: { description: "North latitude" },
+        GPSLongitude: { description: 122.47500000000001 },
+        GPSLongitudeRef: { description: "West longitude" },
+      },
+      gps: { Latitude: 37.825361111111114, Longitude: -122.47500000000001, Altitude: 67 },
+      iptc: {}, xmp: {}, icc: {},
+    } as unknown as ReturnType<typeof ExifReader.load>;
+
+    it("reads the computed numeric gps block", async () => {
+      vi.mocked(ExifReader.load).mockReturnValue(realShape);
+      const entries = await readExifData(makeFile("geotagged.jpg"));
+
+      expect(entries).toContainEqual({ tag: "Latitude", value: "37.825361", group: "gps" });
+      // The computed block is signed, unlike the raw magnitude-plus-ref tags.
+      expect(entries).toContainEqual({ tag: "Longitude", value: "-122.475", group: "gps" });
+      expect(entries).toContainEqual({ tag: "Altitude", value: "67", group: "gps" });
+    });
+
+    it("groups raw GPS* tags under gps so the location warning fires", async () => {
+      vi.mocked(ExifReader.load).mockReturnValue(realShape);
+      const entries = await readExifData(makeFile("geotagged.jpg"));
+
+      // `hasGps` in ExifViewerUI keys off group === "gps"; without this the
+      // "strip before sharing" warning never renders.
+      expect(entries.some((e) => e.group === "gps")).toBe(true);
+      for (const tag of ["GPSLatitude", "GPSLatitudeRef", "GPSLongitude", "GPSLongitudeRef"]) {
+        expect(entries.find((e) => e.tag === tag)?.group).toBe("gps");
+      }
+      // Non-GPS exif tags stay put.
+      expect(entries.find((e) => e.tag === "Make")?.group).toBe("exif");
+    });
+
+    it("trims float noise from coordinates", async () => {
+      vi.mocked(ExifReader.load).mockReturnValue(realShape);
+      const entries = await readExifData(makeFile("geotagged.jpg"));
+      expect(entries.find((e) => e.tag === "GPSLatitude")?.value).toBe("37.825361");
+    });
+
+    it("reports no gps group for an image without location", async () => {
+      vi.mocked(ExifReader.load).mockReturnValue({
+        exif: { Make: { description: "Transmute" } },
+        gps: {}, iptc: {}, xmp: {}, icc: {},
+      } as unknown as ReturnType<typeof ExifReader.load>);
+      const entries = await readExifData(makeFile("clean.jpg"));
+      expect(entries.some((e) => e.group === "gps")).toBe(false);
+    });
+  });
 });
 
 describe("stripExifData", () => {
@@ -296,5 +357,55 @@ describe("stripExifData", () => {
     );
     const file = makeFile("photo.jpg");
     await expect(stripExifData(file)).rejects.toThrow("Canvas export failed");
+  });
+});
+
+/*
+  The APP1 sweep exists because Safari's canvas encoder writes its OWN Exif
+  into fresh JPEGs — re-encoding alone doesn't guarantee a metadata-free file.
+*/
+import { removeApp1Segments } from "@/lib/tools/exif-viewer";
+
+function seg(marker: number, payload: number[]): number[] {
+  const len = payload.length + 2;
+  return [0xff, marker, len >> 8, len & 0xff, ...payload];
+}
+
+describe("removeApp1Segments", () => {
+  it("drops APP1 but keeps APP0, APP2 and the scan data", () => {
+    const jpeg = new Uint8Array([
+      0xff, 0xd8, // SOI
+      ...seg(0xe0, [0x4a, 0x46, 0x49, 0x46]), // APP0 JFIF
+      ...seg(0xe1, [0x45, 0x78, 0x69, 0x66, 0, 0, 1, 2]), // APP1 Exif
+      ...seg(0xe2, [0x49, 0x43, 0x43]), // APP2 ICC
+      0xff, 0xda, 0x00, 0x04, 0x01, 0x02, // SOS + entropy bytes
+      0xff, 0xd9, // EOI
+    ]);
+    const out = removeApp1Segments(jpeg);
+    const hex = Buffer.from(out).toString("hex");
+    expect(hex).not.toContain("ffe1");
+    expect(hex).toContain("ffe0");
+    expect(hex).toContain("ffe2");
+    expect(hex).toContain("ffda");
+    expect(hex.endsWith("ffd9")).toBe(true);
+  });
+
+  it("drops multiple APP1s (Exif + XMP)", () => {
+    const jpeg = new Uint8Array([
+      0xff, 0xd8,
+      ...seg(0xe1, [1, 2, 3]),
+      ...seg(0xe1, [4, 5, 6, 7]),
+      0xff, 0xda, 0x00, 0x02, 0xaa,
+    ]);
+    const out = removeApp1Segments(jpeg);
+    expect(Buffer.from(out).toString("hex")).not.toContain("ffe1");
+    expect(out.length).toBe(jpeg.length - 7 - 8);
+  });
+
+  it("returns non-JPEG and APP1-less input unchanged", () => {
+    const notJpeg = new Uint8Array([1, 2, 3, 4]);
+    expect(removeApp1Segments(notJpeg)).toBe(notJpeg);
+    const clean = new Uint8Array([0xff, 0xd8, ...seg(0xe0, [1]), 0xff, 0xda, 0x00, 0x02, 0xbb]);
+    expect(Array.from(removeApp1Segments(clean))).toEqual(Array.from(clean));
   });
 });

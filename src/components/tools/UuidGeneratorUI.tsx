@@ -3,6 +3,13 @@
 import { useCallback, useState } from "react";
 
 import { copyText } from "@/lib/utils/clipboard";
+import {
+  ToolActions,
+  ToolAside,
+  ToolAsideSection,
+  ToolChoice,
+} from "@/components/tools/ToolAside";
+import { CanvasFootnote, GenList } from "@/components/tools/ToolCanvas";
 
 function generateUUIDv4(): string {
   return crypto.randomUUID();
@@ -38,6 +45,17 @@ export function UuidGeneratorUI() {
   const [uuids, setUuids] = useState<string[]>([]);
   const [copied, setCopied] = useState<number | "all" | null>(null);
 
+  // Option changes clear the list — v4 UUIDs sitting under a lit "v7" chip
+  // would be a claim the controls no longer back (same rule as presets).
+  const changeVersion = useCallback((v: "v4" | "v7") => {
+    setVersion(v);
+    setUuids([]);
+  }, []);
+  const changeCount = useCallback((n: number) => {
+    setCount(n);
+    setUuids([]);
+  }, []);
+
   const handleGenerate = useCallback(() => {
     const gen = version === "v4" ? generateUUIDv4 : generateUUIDv7;
     setUuids(Array.from({ length: count }, () => gen()));
@@ -63,77 +81,69 @@ export function UuidGeneratorUI() {
   }, [uuids]);
 
   return (
-    <div className="space-y-4">
-      {/* Options */}
-      <div className="flex flex-wrap items-center justify-center gap-3">
-        <div className="flex gap-2">
-          {(["v4", "v7"] as const).map((v) => (
-            <button
-              key={v}
-              onClick={() => setVersion(v)}
-              className={`rounded-md px-4 py-2 text-sm font-medium transition-colors ${
-                version === v ? "bg-accent text-bg-primary" : "bg-bg-elevated text-text-secondary hover:bg-bg-hover"
-              }`}
-            >
-              UUID {v}
-            </button>
-          ))}
-        </div>
-        <select
-          value={count}
-          onChange={(e) => setCount(Number(e.target.value))}
-          className="rounded-md border border-border bg-bg-elevated px-3 py-2 text-sm text-text-primary"
-        >
-          {[1, 5, 10, 25, 50, 100].map((n) => (
-            <option key={n} value={n}>{n} UUID{n > 1 ? "s" : ""}</option>
-          ))}
-        </select>
-      </div>
-
-      <div className="flex justify-center">
-        <button
-          onClick={handleGenerate}
-          className="rounded-md bg-accent px-6 py-2.5 text-sm font-medium text-bg-primary hover:bg-accent-hover transition-colors"
-        >
-          Generate
-        </button>
-      </div>
-
-      {uuids.length > 0 && (
-        <div>
-          <div className="flex items-center justify-between mb-1">
-            <label className="text-sm font-medium text-text-secondary">
-              {uuids.length} UUID{uuids.length > 1 ? "s" : ""}
-            </label>
-            {uuids.length > 1 && (
-              <button
-                onClick={handleCopyAll}
-                aria-label={copied === "all" ? "Copied all UUIDs" : "Copy all UUIDs"}
-                className="inline-flex items-center justify-center min-h-9 px-3 py-1.5 rounded-md text-xs font-medium text-accent hover:bg-accent-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-bg-primary transition-colors"
-              >
-                {copied === "all" ? "Copied!" : "Copy all"}
-              </button>
-            )}
-          </div>
-          <div className="space-y-1 max-h-96 overflow-y-auto">
-            {uuids.map((uuid, i) => (
-              <div
-                key={i}
-                className="flex items-center justify-between rounded-md border border-border bg-bg-elevated px-3 py-2"
-              >
-                <code className="text-sm text-text-primary font-mono">{uuid}</code>
+    <>
+      {/* ── Canvas: the doc's numbered value list ──────────── */}
+      <div className="min-w-0 space-y-[13px]">
+        {uuids.length === 0 ? (
+          <p className="py-10 text-center font-body text-sm text-text-muted">
+            Pick a version and a count, then generate.
+          </p>
+        ) : (
+          <>
+            <div className="flex items-baseline gap-3">
+              <span className="font-display text-[13px] leading-none font-medium text-text-primary">
+                {uuids.length} UUID{uuids.length > 1 ? "s" : ""}
+              </span>
+              {uuids.length > 1 && (
                 <button
-                  onClick={() => handleCopyOne(i)}
-                  aria-label={copied === i ? `Copied UUID ${i + 1}` : `Copy UUID ${i + 1}`}
-                  className="ml-2 shrink-0 inline-flex items-center justify-center min-h-9 px-3 py-1.5 rounded-md text-xs font-medium text-accent hover:bg-accent-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-bg-primary transition-colors"
+                  onClick={handleCopyAll}
+                  aria-label={copied === "all" ? "Copied all UUIDs" : "Copy all UUIDs"}
+                  className="ml-auto cursor-pointer font-mono text-[10.5px] leading-none text-accent transition-colors hover:text-accent-hover"
                 >
-                  {copied === i ? "Copied!" : "Copy"}
+                  {copied === "all" ? "Copied!" : "Copy all"}
                 </button>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-    </div>
+              )}
+            </div>
+
+            <GenList
+              rows={uuids.map((uuid) => ({ value: uuid }))}
+              copiedIndex={typeof copied === "number" ? copied : null}
+              onCopy={(_, i) => handleCopyOne(i)}
+            />
+
+            <CanvasFootnote>
+              GENERATED LOCALLY · CRYPTO.GETRANDOMVALUES · NOTHING LOGGED
+            </CanvasFootnote>
+          </>
+        )}
+      </div>
+
+      <ToolAside footer={<ToolActions primaryLabel="Generate" onPrimary={handleGenerate} />}>
+        <ToolAsideSection label="VERSION">
+          <ToolChoice
+            label="UUID version"
+            fill
+            value={version}
+            onChange={changeVersion}
+            options={[
+              { value: "v4" as const, label: "UUID v4" },
+              { value: "v7" as const, label: "UUID v7" },
+            ]}
+          />
+          <span className="font-body text-[10.5px] leading-[1.5] text-text-muted">
+            v4 is random. v7 embeds a timestamp, so IDs sort by creation time.
+          </span>
+        </ToolAsideSection>
+
+        <ToolAsideSection label="HOW MANY">
+          <ToolChoice
+            label="Number of UUIDs"
+            value={count}
+            onChange={changeCount}
+            options={[1, 5, 10, 25, 50, 100].map((n) => ({ value: n, label: String(n) }))}
+          />
+        </ToolAsideSection>
+      </ToolAside>
+    </>
   );
 }

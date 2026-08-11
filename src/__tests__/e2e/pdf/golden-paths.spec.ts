@@ -44,9 +44,10 @@ test.describe("PDF golden paths", () => {
     // Wait for the page count to be read off the file.
     await expect(page.getByText(/3 pages/)).toBeVisible({ timeout: 15_000 });
 
-    // Use the page-range field to select page 2.
-    await page.getByPlaceholder(/1-3, 5, 8-10/).fill("2");
-    await page.getByRole("button", { name: "Apply" }).click();
+    // Use the page-range field to select page 2. `RangeField` commits on
+    // Enter or blur — there is no longer a separate Apply button.
+    await page.getByLabel("Page range").fill("2");
+    await page.getByLabel("Page range").press("Enter");
 
     await page.getByRole("button", { name: /Extract 1 page/ }).click();
     const { suggestedFilename, download } = await waitForDownload(page, downloadButton(page));
@@ -59,7 +60,7 @@ test.describe("PDF golden paths", () => {
     await page.goto("/images-to-pdf");
     await uploadFile(page, [tinyPng(64), tinyJpg()]);
 
-    await page.getByRole("button", { name: /Create PDF \(2 images\)/ }).click();
+    await page.getByRole("button", { name: /^Create PDF$/ }).click();
 
     const { suggestedFilename, download } = await waitForDownload(page, downloadButton(page));
     expect(suggestedFilename).toBe("images.pdf");
@@ -87,7 +88,7 @@ test.describe("PDF golden paths", () => {
     await page.goto("/add-page-numbers");
     const pdf = await tinyPdf(3);
     await uploadFile(page, pdf);
-    await page.getByRole("button", { name: /Add Page Numbers/ }).click();
+    await page.getByRole("button", { name: /Add page numbers/i }).click();
     const { suggestedFilename, download } = await waitForDownload(page, downloadButton(page));
     expect(suggestedFilename).toMatch(/-numbered\.pdf$/);
     const bytes = await downloadBytes(download);
@@ -123,29 +124,25 @@ test.describe("PDF golden paths", () => {
     const pdf = await tinyPdf(2);
     await uploadFile(page, pdf);
 
-    await page
-      .getByRole("button", { name: /Convert to Images/, exact: true })
-      .click();
+    await page.getByRole("button", { name: /Convert to images/i }).click();
 
-    // The result grid renders one card per page; the "N pages converted"
-    // label only appears once rasterisation finishes. Wait for it.
-    await expect(page.getByText(/2 pages converted/i)).toBeVisible({ timeout: 30_000 });
+    // Rasterisation finished when the deck has a tile per page. (The old
+    // "N pages converted" label was replaced by the page deck + stat strip.)
+    await expect(page.locator('[aria-label^="Download page "]')).toHaveCount(2, {
+      timeout: 30_000,
+    });
 
-    // Use the per-page download icon button to capture the first image. The
-    // grid's per-card download button is an icon-only <button> next to the
-    // "Page N" label — target the closest "Download All" CTA which carries
-    // a stable accessible name instead.
+    // Multi-file output is bundled into a single ZIP — firing N downloads in
+    // one loop got them throttled, which is why only the first ever arrived.
     const { suggestedFilename, download } = await waitForDownload(
       page,
-      page.getByRole("button", { name: /Download All/i }),
+      page.getByRole("button", { name: /Download all \(ZIP\)/i }),
       30_000,
     );
-    // "Download All" iterates downloads serially via triggerDownload — the
-    // first one fired is the one Playwright captures.
-    expect(suggestedFilename).toMatch(/\.jpg$/i);
+    expect(suggestedFilename).toMatch(/\.zip$/i);
     const bytes = await downloadBytes(download);
-    // JPEG SOI marker.
-    expect(bytes.subarray(0, 2).toString("hex")).toBe("ffd8");
+    // ZIP local file header.
+    expect(bytes.subarray(0, 2).toString("ascii")).toBe("PK");
   });
 
   test("pdf-page-reorder: loads pages, allows save, and downloads a reordered PDF", async ({
@@ -156,10 +153,12 @@ test.describe("PDF golden paths", () => {
     const pdf = await tinyPdf(3);
     await uploadFile(page, pdf);
 
-    // The header line reports the page count; wait for it before clicking save.
-    await expect(page.getByText(/3 pages\. Drag thumbnails/)).toBeVisible({
-      timeout: 30_000,
-    });
+    // The header reports the page count and the drag hint as separate
+    // elements since the canvas port.
+    await expect(page.getByText(/3 pages/).first()).toBeVisible({ timeout: 30_000 });
+    // Scoped to the canvas header — the sibling-tool rail also describes
+    // Merge PDF as "Drag to reorder".
+    await expect(page.getByText("DRAG TO REORDER", { exact: true })).toBeVisible();
 
     await page
       .getByRole("button", { name: /Save Reordered PDF/, exact: true })

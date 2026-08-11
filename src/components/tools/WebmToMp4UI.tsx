@@ -3,99 +3,176 @@
 import { useCallback, useState } from "react";
 import { ErrorMessage } from "@/components/tools/ErrorMessage";
 import { DropZone } from "@/components/tools/DropZone";
-import { FilePreview } from "@/components/tools/FilePreview";
 import { DownloadButton } from "@/components/tools/DownloadButton";
 import { ProgressBar } from "@/components/tools/ProgressBar";
+import { useFileProcessor, type FileProcessorContext } from "@/hooks/useFileProcessor";
+import { formatFileSize } from "@/lib/utils/file-helpers";
+import {
+  ToolActions,
+  ToolAside,
+  ToolAsideSection,
+  ToolOutput,
+  ToolResetLink,
+} from "@/components/tools/ToolAside";
+import {
+  CanvasHeader,
+  CanvasStage,
+  Filmstrip,
+  StatStrip,
+} from "@/components/tools/ToolCanvas";
+import { extractFilmstrip } from "@/lib/tools/media-preview";
 
-type Status = "idle" | "processing" | "done" | "error";
+/** Frame count the doc's strip draws. */
+const FILMSTRIP_FRAMES = 16;
 
 export function WebmToMp4UI() {
   const [file, setFile] = useState<File | null>(null);
-  const [status, setStatus] = useState<Status>("idle");
-  const [progress, setProgress] = useState(0);
-  const [error, setError] = useState<string | null>(null);
-  const [result, setResult] = useState<{ blob: Blob; fileName: string; size: number } | null>(null);
+  const [videoUrl, setVideoUrl] = useState<string | null>(null);
+  const [frames, setFrames] = useState<string[]>([]);
 
-  const handleFiles = useCallback((files: File[]) => {
-    const f = files[0];
-    if (!f) return;
-    setFile(f);
-    setStatus("idle");
-    setResult(null);
-    setError(null);
+  const processFn = useCallback(async (f: File, _options: void, ctx: FileProcessorContext) => {
+    const { webmToMp4 } = await import("@/lib/tools/webm-to-mp4");
+    return webmToMp4(f, ctx);
   }, []);
 
-  const handleConvert = useCallback(async () => {
+  // This tool has no settings, so `void` options and the hook owns everything:
+  // progress, and the AbortSignal that makes the re-encode cancellable.
+  const { status, result, error, progress, process, cancel, reset } =
+    useFileProcessor<void>(processFn);
+
+  const handleFiles = useCallback(
+    (files: File[]) => {
+      const f = files[0];
+      if (!f) return;
+      setFile(f);
+      reset();
+      setFrames([]);
+      setVideoUrl((prev) => {
+        if (prev) URL.revokeObjectURL(prev);
+        return URL.createObjectURL(f);
+      });
+
+      // Decoration only — see VideoTrimmerUI.
+      extractFilmstrip(f, FILMSTRIP_FRAMES)
+        .then(setFrames)
+        .catch(() => setFrames([]));
+    },
+    [reset],
+  );
+
+  const handleConvert = useCallback(() => {
     if (!file) return;
-    setStatus("processing");
-    setProgress(0);
-    setError(null);
-    setResult(null);
-    try {
-      const { webmToMp4 } = await import("@/lib/tools/webm-to-mp4");
-      const output = await webmToMp4(file, setProgress);
-      setResult({ blob: output.blob, fileName: output.fileName, size: output.newSize });
-      setStatus("done");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Conversion failed");
-      setStatus("error");
-    }
-  }, [file]);
+    process(file);
+  }, [file, process]);
 
   const handleReset = useCallback(() => {
+    if (videoUrl) URL.revokeObjectURL(videoUrl);
     setFile(null);
-    setStatus("idle");
-    setResult(null);
-    setError(null);
-  }, []);
+    setVideoUrl(null);
+    setFrames([]);
+    reset();
+  }, [videoUrl, reset]);
+
+  if (!file) {
+    return <DropZone accept=".webm" onFiles={handleFiles} />;
+  }
 
   return (
-    <div className="space-y-6">
-      {!file ? (
-        <DropZone accept=".webm" onFiles={handleFiles} />
-      ) : (
-        <>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <FilePreview fileName={file.name} fileSize={file.size} label="Original" />
-            {result && (
-              <FilePreview fileName={result.fileName} fileSize={result.size} label="Converted" />
-            )}
+    <>
+      {/* ── Canvas: what you look at ─────────────────────────── */}
+      <div className="min-w-0 space-y-[13px]">
+        <CanvasHeader
+          file={file.name}
+          meta={formatFileSize(file.size)}
+          trailing="MP4"
+        />
+
+        {videoUrl && (
+          <CanvasStage className="flex items-center justify-center bg-black">
+            <video src={videoUrl} controls className="max-h-72 w-full bg-black" />
+            <span className="absolute top-3 right-3.5 rounded-sm bg-[rgba(12,14,23,.72)] px-[7px] py-1 font-mono text-[9.5px] leading-none font-medium tracking-[0.12em] text-accent-300">
+              MP4
+            </span>
+          </CanvasStage>
+        )}
+
+        <Filmstrip frames={frames} startPct={0} endPct={100} />
+
+        <StatStrip
+          stats={[
+            { label: "IN", value: formatFileSize(file.size), tone: "neutral" },
+            { label: "OUT", value: result ? formatFileSize(result.newSize) : "—" },
+            {
+              label: "SAVED",
+              value:
+                result && result.newSize < file.size
+                  ? `${Math.round(((file.size - result.newSize) / file.size) * 100)}%`
+                  : "—",
+              tone: "ok",
+            },
+            {
+              label: "PROGRESS",
+              value: status === "processing" ? `${progress}%` : status === "done" ? "100%" : "—",
+              tone: "neutral",
+            },
+          ]}
+        />
+
+        {status === "processing" && (
+          <div className="space-y-2">
+            <ProgressBar progress={progress} />
+            <p className="text-sm text-text-muted text-center">
+              Converting to MP4{progress > 0 ? ` (${progress}%)` : "..."}
+            </p>
           </div>
+        )}
 
-          {status === "processing" && (
-            <div className="space-y-2">
-              <ProgressBar progress={progress} />
-              <p className="text-sm text-text-muted text-center">
-                Converting to MP4{progress > 0 ? ` (${progress}%)` : "..."}
-              </p>
-            </div>
-          )}
+        {status === "error" && (
+          <ErrorMessage message={error} />
+        )}
+      </div>
 
-          {status === "error" && (
-            <ErrorMessage message={error} />
-          )}
-
-          <div className="flex items-center justify-center gap-3">
-            {status !== "done" && status !== "processing" && (
-              <button
-                onClick={handleConvert}
-                className="inline-flex items-center gap-2 rounded-md bg-accent px-6 py-2.5 text-sm font-medium text-bg-primary hover:bg-accent-hover transition-colors"
-              >
-                Convert to MP4
-              </button>
+      {/* ── Controls: this tool has no options, so the rail is
+             the readout plus the one action. ─────────────────── */}
+      <ToolAside
+        footer={
+          <>
+            {result ? (
+              <DownloadButton
+                blob={result.blob}
+                fileName={result.fileName}
+                className="w-full justify-center"
+              />
+            ) : status === "processing" ? (
+              // The one reachable control while a re-encode runs. It replaces
+              // the primary rather than sitting beside it so "Cancel" is never
+              // two different things at once.
+              <ToolActions primaryLabel="Cancel" onPrimary={cancel} />
+            ) : (
+              <ToolActions primaryLabel="Convert to MP4" onPrimary={handleConvert} />
             )}
-            {result && (
-              <DownloadButton blob={result.blob} fileName={result.fileName} />
+            {status !== "processing" && (
+              <ToolResetLink
+                onClick={handleReset}
+                label={result ? "CONVERT ANOTHER" : "CANCEL"}
+              />
             )}
-            <button
-              onClick={handleReset}
-              className="rounded-md border border-border px-4 py-2.5 text-sm text-text-secondary hover:bg-bg-hover transition-colors"
-            >
-              {result ? "Convert another" : "Cancel"}
-            </button>
-          </div>
-        </>
-      )}
-    </div>
+          </>
+        }
+      >
+        <ToolAsideSection label="OUTPUT">
+          <ToolOutput
+            rows={[
+              ["In", formatFileSize(file.size)],
+              ["Out", result ? formatFileSize(result.newSize) : "—"],
+              ["Progress", status === "processing" ? `${progress}%` : status === "done" ? "100%" : "—"],
+            ]}
+          />
+          <span className="font-body text-[10.5px] leading-[1.5] text-text-muted">
+            Video is re-encoded to H.264 and audio to AAC so the file plays anywhere.
+          </span>
+        </ToolAsideSection>
+      </ToolAside>
+    </>
   );
 }

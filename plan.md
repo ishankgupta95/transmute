@@ -1,214 +1,396 @@
-# Transmute — Bug-Fix, Polish & Optimization Plan
+# Transmute — Phased Plan: Design Fidelity · WASM Hardening · Multi-Core · Workspace-Real
 
-> **Rewritten 2026-06-03** after a full-codebase audit (31-agent fan-out, every subsystem read in full,
-> each high/critical bug adversarially verified). The *previous* plan assumed "all 64 tools are built and
-> working" and was an optimization/SEO/AdSense plan. That premise was **wrong**.
+> **Rewritten 2026-08-09** at the owner's direction. The previous plan was a bug-fix ledger; all its
+> P0/P1 work (and much of P2) landed and was verified, so the completed history is gone. What remains
+> below is (a) context that keeps future sessions honest and (b) the new work, broken into phases.
 >
-> The app builds clean (`next build` green, 88 routes), `tsc` is green, ESLint has 0 errors, and **1212
-> unit tests pass** — yet the owner reports "almost everything is broken." The reason: **unit tests run in
-> jsdom with NO `canvas.getContext()` and NO WASM**, so the actual image/PDF/audio/video conversion logic
-> — the core of the product — is **never exercised by the test suite**. Green tests said nothing about
-> whether conversions work in a real browser.
->
-> A real-browser-focused audit found **151 issues: 4 critical, 28 high, 48 medium, 71 low — 80 of them
-> genuine bugs.** This plan is now grounded in that audit. Items marked **[V]** were adversarially verified.
+> **Owner decisions recorded 2026-08-09** (asked and answered this session):
+> 1. **Multi-core = plain Web Worker pool only.** No SharedArrayBuffer, no `@ffmpeg/core-mt`, no
+>    hosting change, no coi-serviceworker shim. FFmpeg stays the single-threaded singleton.
+> 2. **`/workspace` becomes fully real** — every canvas processes real files, not seeded previews.
+> 3. **Fidelity bar = structural + honest.** Match the docs' layout, hierarchy and every control, but
+>    keep the documented usability/honesty deviations, and any capability claim in the UI
+>    (`THREADS`, `SIMD`, `WEBGPU`, thread counts in the queue) must report **real detected values**.
 
 ---
 
-## Snapshot — ACTUAL current state (verified 2026-06-03)
+## Context (keep — hard-won, do not re-derive)
 
-- **Stack:** Next.js 16.2.2 (App Router, `output: "export"`, Turbopack), React 19, TypeScript strict, Tailwind v4
-- **Deploy:** GitHub Pages, custom **apex domain `transmute.tools`** (`public/CNAME`). **No `basePath`** — the
-  site serves from root. The repeated `basePath: "/transmute"` note in `CLAUDE.md` and the old plan is
-  **STALE** and contradicted by `next.config.ts` (no basePath) and the live domain. All canonical/sitemap/OG
-  URLs in code use the absolute `https://transmute.tools` base, so those are correct. One harmless stale
-  `/transmute` assumption remains in `pdf-engine.ts` `locateFile`.
-- **Tools:** **68** registered in `src/data/tools.ts` (not 64). Homepage hardcodes "Browse all **66** tools" — wrong.
-- **Build:** `next build` green, 88 static routes (68 tools + 5 categories + about/privacy + blog index + 8 posts + home + sitemap).
-- **Quality gates:** `tsc` green · ESLint **0 errors / 22 warnings** (mostly `<img>` hints) · **1212 unit tests
-  pass / 67 skipped** (53 files) · E2E **17 spec files (~98 tests)**, Chromium-only.
-  - ⚠️ **Test blind spot:** jsdom has no canvas/WASM, so conversion correctness is effectively untested. This is the #1 reason real bugs shipped despite green CI.
-- **AdSense:** id `ca-pub-3308993640799405` in `layout.tsx` + `ads.txt` (the old plan's `ca-pub-8318354633894162`
-  appears nowhere in the code). `NEXT_PUBLIC_ADS_ENABLED` is **never set in the build** → ads are off in prod.
-  No `<AdSlot>` component exists.
-- **`public/_headers`** sets COOP/COEP `require-corp` globally (`/*`). **GitHub Pages ignores `_headers`**, so it's
-  dead config today — but it's misleading, and if ever honored it would block cross-origin assets (and AdSense).
-- **Beta badge** still present in `Navbar.tsx`.
-
----
-
-## Why it "feels broken everywhere" — the root causes
-
-A handful of shared defects cascade across many tools, which is why the whole app reads as broken:
-
-1. **Transparent images → BLACK background** when output is JPEG (no white fill before `drawImage`). Hits
-   png/webp/avif→jpg **and** the Image Compressor **and** the Image Resizer. Ugly black boxes on any logo/icon/screenshot. **[V]**
-2. **Resizer & Compressor always output JPEG** and rename to `.jpg` regardless of input → transparency lost, format silently changed. **[V]**
-3. **25 tools reimplement clipboard copy without `await`/`.catch`** → user sees "Copied!" while nothing was copied (silent failure on denied/insecure/unfocused contexts). A correct `CopyButton` already exists, unused. **[V]**
-4. **The "shared" processing hook is used by only 8 of 68 tools** → no shared progress/abort/loading; every other tool hand-rolls inconsistent state. No cancel anywhere; no real progress on heavy WASM jobs. **[V]**
-5. **WebCodecs video tools crash in Firefox** (no capability check) and **hang forever on "Processing"** when an encoder errors (error callbacks `throw` into async void). **[V]**
-6. **Multi-file "Download All" only downloads the first file** — the download util revokes the blob URL synchronously in a tight loop. **[V]**
-
-Fixing these six gives the largest perceived-quality jump.
-
----
-
-## Bug backlog (prioritized, deduped)
-
-> **✅ Implementation pass — 2026-06-03.** All **P0 (6)** and **~18 P1** items below are FIXED in the working tree
-> (tsc + ESLint 0-errors + **1215 unit tests** + production build all green; the diff was adversarially reviewed and
-> the one real regression it found — a WebCodecs backpressure hang — was fixed). **Deferred:** the `useFileProcessor`
-> progress/abort/batch refactor (architectural) and the **P2/P3** backlog + UI-redesign direction. **Not committed** — left for review.
-
-### P0 — Critical: security, data corruption, total-feature-failure — ✅ all fixed
-
-- [x] **Transparent images flatten to BLACK on JPEG output.** Fill an opaque white background before `drawImage`
-  whenever the output MIME lacks alpha. **[V]**
-  `image-convert.ts:33-41`, `image-compress.ts:92-109`, `image-resize.ts:55-73`, `canvas-utils.ts:16-31`
-- [x] **Resizer & Compressor hard-code JPEG output + `.jpg` rename** for PNG/WebP/AVIF/GIF inputs → transparency
-  loss + silent format change. Preserve source format (png→png, webp→webp) or add a format selector; white-fill if JPEG. **[V]**
-  `image-resize.ts:73-81`, `image-compress.ts:23,92-108`
-- [x] **XSS in Markdown→HTML preview:** `dangerouslySetInnerHTML` with unsanitized `marked.parse()`. Sanitize with
-  DOMPurify (preview sanitized; raw HTML kept for copy/HTML view). **[V]**
-  `MarkdownToHtmlUI.tsx:11,57-60` (RegexTester `dangerouslySetInnerHTML` attribute gap still open, low)
-- [x] **WebCodecs tools crash in Firefox / old Safari** (no `VideoEncoder`/`requestVideoFrameCallback`); generic
-  "Compression failed". Added `assertWebCodecsSupported()` + `pickH264Config()` (profile/HW fallback) + clear message. **[V]**
-  `video-utils.ts`, `video-compress.ts`, `webm-to-mp4.ts`
-- [x] **WebCodecs encoder error callbacks `throw e`** into async void → uncaught rejection, UI stuck forever.
-  Errors captured (not thrown), checked after flush, AND wake any parked backpressure waiter so the loop can't hang. **[V]**
-  `video-compress.ts`, `webm-to-mp4.ts`
-- [x] **Multi-file "Download All" only downloads the first file** — sync object-URL revoke. Revoke now deferred;
-  multi-file output bundles into one ZIP (`downloadFilesAsZip`). **[V]**
-  `download.ts`, `PdfToJpgUI.tsx`
-
-### P1 — High: broken features / wrong output — ✅ all fixed (except the `useFileProcessor` refactor, deferred)
-
-- [x] **Clipboard "Copied!" lies on failure across ~25 tools.** Migrated 24 tools to a shared `copyText` helper
-  (`src/lib/utils/clipboard.ts`) that awaits the write and only confirms "Copied!" on success. **[V]**
-- [x] **Color palette returns 2^N colors and `#NaNNaNNaN` swatches** instead of the N selected (count is passed as
-  recursion *depth*; empty buckets → NaN). Rewrite as count-driven iterative median-cut; filter empty buckets. **[V]**
-  `color-palette.ts:47,74-106`, `ColorPaletteUI.tsx:32`
-- [x] **EXIF "Remove & Download" fails for HEIC/HEIF/TIFF** (its flagship "strip GPS from iPhone photos" use). Route
-  `stripExifData` through `toDecodableBlob` (heic2any/utif2) or restrict accept formats. **[V]**
-  `exif-viewer.ts:44-48`, `tools.ts:339`, `ExifViewerUI.tsx:46`
-- [x] **Base64 decode fails on URL-safe input** (`-`/`_`, no padding). Normalize before `atob`; add a URL-safe encode toggle. **[V]** `Base64EncodeDecodeUI.tsx:22-31`
-- [x] **JWT decoder corrupts UTF-8 claims** (José/CJK/emoji → mojibake). Decode via `TextDecoder` over the byte array. **[V]** `JwtDecoderUI.tsx:18-21`
-- [x] **JSON→CSV doesn't flatten nested objects** → `[object Object]` columns (copy claims dot-notation flattening). Implement recursive flatten. **[V]** `JsonToCsvUI.tsx:7-27`
-- [x] **CSV→JSON breaks on Windows CRLF** (trailing `\r` in keys/values) and doesn't handle quoted multi-line fields despite copy. Single-pass quote-aware parse + line-ending normalize. **[V]** `CsvToJsonUI.tsx:7-54`
-- [x] **UUIDv7 timestamp corrupted by 32-bit bitwise AND** → loses time-ordering (the whole point of v7). Use floored division, drop the mask. **[V]** `UuidGeneratorUI.tsx:14`
-- [x] **FFmpeg trim uses `-ss/-t` after `-i` with `-c copy`** → keyframe-only cuts: wrong start, frozen/black lead, A/V desync; about-copy falsely claims "precise"/"lossless". Re-encode for accuracy or `-ss` before `-i` + label as keyframe-aligned; normalize output to mp4. **[V]** `video-trim.ts:24-32`
-- [x] **compress-video / webm-to-mp4 decode the whole file twice and silently drop the audio track** (AAC/Opus that WebAudio can't decode → `detectAudio` false → no audio). Decode once; use a real demuxer/`AudioDecoder`. **[V]** `video-utils.ts:32-42`, `video-compress.ts:35,112`, `webm-to-mp4.ts:21`
-- [x] **WebCodecs muxer hardcodes stereo/48k** while encoder uses source channel count → corrupt/mis-pitched audio for mono sources. Compute channels+rate once, pass to both muxer and encoder. **[V]** `webm-to-mp4.ts:38,134-147`, `video-compress.ts:50,149-162`
-- [x] **`detectAudio` leaks an AudioContext on every audio-less video** (catch branch never closes it) → after ~6 runs the tool dies until reload. Close in `finally`. **[V]** `video-utils.ts:32-42`
-- [x] **Screen recorder leaks live MediaStream** (camera/screen/mic indicator stays on after navigating away) + leaks the recording URL. Add unmount cleanup that stops tracks and revokes the URL. **[V]** `ScreenRecorderUI.tsx:10-145`
-- [x] **WebCodecs tools advertise `.mov/.avi/.mkv`** the `<video>` pipeline can't decode → silent failure. Restrict accept lists to `.mp4,.webm,.mov`; validate finite duration. **[V]** `CompressVideoUI.tsx:63`, `VideoToGifUI.tsx:89`, `video-utils.ts:21-27`
-- [x] **Audio trimmer rejects a valid full-range trim** (media-element duration > decoded duration on VBR MP3/M4A). Clamp `endTime`/`endSample` instead of throwing. **[V]** `AudioTrimmerUI.tsx:51`, `audio-trim.ts:23`
-- [x] **`addPageNumbers` shadows inherited PDF `/Resources`** with an empty dict → corrupts pages that rely on tree-inherited fonts/XObjects. Resolve/merge inherited resources first. **[V]** `pdf-engine.ts:173-183`
-- [ ] **`useFileProcessor` has no progress, no abort, no batch — and only 8/68 tools use it.** Extend (progress number, AbortSignal threaded into ffmpeg/webcodecs, `ProcessedResult[]`) and migrate tools onto it. **[V]** `useFileProcessor.ts:15-52`
-- [x] **Doubled `| Transmute | Transmute` `<title>` on all 68 tool pages** (title template + manual suffix). Return `title: tool.h1` and let the layout template add the suffix. **[V]** `tool-metadata.ts:310`, `layout.tsx:28-31`
-- [x] **DropZone never shows its `label`** — every upload zone reads the same generic "Drag & drop or browse files," so 60+ tools give zero hint of expected format/count. Render `label` + accepted-formats line. **[V]** `DropZone.tsx:72-77`
-
-### P2 — Medium (representative; full list in audit)
-
-- **Image:** rotated crop produces misaligned region (`image-crop.ts:28`); cropper preview leaks an object URL per render (`ImageCropperUI.tsx:120`); `bmp` target silently emits PNG bytes with `.bmp` name (`image-convert.ts:21-47`); SVG-to-PNG → 0×0 for dimensionless SVGs; converter/compressor advertise batch but process only the first file.
-- **PDF:** Compress PDF only deflates streams (never shrinks image-heavy PDFs) — set expectations or add rasterize mode (`pdf-engine.ts:266-274`); `pdfToImages` crashes when `toBlob` returns null at high scale (`pdf-engine.ts:300-313`); MergePdf keeps a stale download after reorder/remove (`MergePdfUI.tsx:51-61`); split/rotate/reorder thumbnails silently capped at 50 pages.
-- **Audio:** WAV/MP3 encoders drop channels beyond stereo (`audio-encode-wav.ts:7`, `audio-encode-mp3.ts:13`); all audio silently resampled to the system AudioContext rate (`audio-decode.ts:7`); m4a/AAC decode unreliable outside Chromium — fall back to FFmpeg (`audio-decode.ts:9`); trim OOB reads write NaN/0 (`audio-trim.ts:26,37`).
-- **Video:** no cancel/abort for any long job (`CompressVideoUI`/`VideoToGifUI`/`VideoTrimmerUI`, thread AbortSignal + `ffmpeg.terminate()`); FFmpeg singleton shares one mutable progress callback across ops (`ffmpeg-loader.ts:10,38,52-55`); video-to-gif start-seek mistimed (`video-to-gif.ts:39-49`); VideoTrimmer leaks a detached metadata `<video>` + URL (`VideoTrimmerUI.tsx:25-43`).
-- **Dev:** XML formatter mis-indents after comments (`XmlFormatterUI.tsx:24`); cron uses AND for day-of-month+weekday (POSIX is OR) and mis-parses steps (`CronExpressionGeneratorUI.tsx:42-68`); color picker shows NaN for partial/3-digit hex (`ColorPickerUI.tsx:5-8`); Base64 file-mode poisons text mode (`Base64EncodeDecodeUI.tsx:49-61`); `formatFileSize` returns "undefined"/"NaN" past TB / for bad input (`file-helpers.ts:1-6`).
-- **Infra/UX:** GA only counts the initial pageview — client-side navigations untracked (`layout.tsx:103-110`); DropZone never filters by `accept` (wrong-type files crash downstream) (`DropZone.tsx:25-43`); MobileNav has no backdrop-click/Escape/focus management (`MobileNav.tsx:32-95`); homepage "66 tools" + CTA links only to image tools (`page.tsx:174-179`).
-- **SEO:** `WebSite` `SearchAction` schema declares a search that doesn't exist (`page.tsx:31-35`); 45 tools have only 3 unique FAQs + shared privacy boilerplate (`faqs.ts`); video-to-gif/webm-to-mp4/compress-video copy makes **false engine claims** (FFmpeg/palettegen/lossless) vs the real WebCodecs/gifenc impl (`tools.ts:935-941`, `tool-metadata.ts:151-155`).
-- **Config:** decide AdSense intent — either set `NEXT_PUBLIC_ADS_ENABLED=true` + add real ad units, or remove the dead AdSense Script/meta/ads.txt/privacy clause (`layout.tsx:10,111-117`, `ci.yml:76`).
-
-### P3 — Low / polish (71 items; highlights)
-
-- Text-case converter lowercases acronyms / mangles all-caps; password generator has modulo bias + no guaranteed
-  character classes; regex tester can hang on catastrophic backtracking (add a guard/worker); timestamp converter
-  lacks a UTC/local toggle; gradient/box-shadow emit invalid CSS without color validation; lorem "words" mode
-  punctuation; cron `describeCron` mislabels lists/ranges/steps.
-- Generators don't reset stale results when options change; `useObjectUrl` can revoke a URL still rendered (broken-image flash); DropZone has no processing/disabled state and flickers on drag-leave; inconsistent live-on-type vs click-to-run across formatters.
-- 13 tool titles exceed ~60 chars (SERP truncation); canonical strategy inconsistent (some absolute, some relative); no all-tools index route; **no PWA manifest / viewport / themeColor / apple-touch icons**.
-- Remove unnecessary Google Fonts preconnects (`next/font` self-hosts); `globals.css` has a custom `body {}` rule (violates the no-custom-CSS rule); root layout hand-rolls `<head>` `<title>/<meta>/<Script>` instead of the Metadata API; remove dead `public/_headers`.
+- **Stack:** Next.js 16.2.2 (App Router, `output: "export"`, Turbopack), React 19, TS strict,
+  Tailwind v4. Deploy: GitHub Pages, apex `transmute.tools` (`public/CNAME`), **no basePath**
+  (CLAUDE.md's stale basePath notes were fixed 2026-08-10).
+- **Tools:** **67** registered in `src/data/tools.ts` (recounted 2026-08-09; the old plan's "68"
+  was wrong). Every UI count derives from `tools.length` — home hero/stat band/CTA, 404,
+  workspace rail and status bars. The design docs' own numbers disagree with themselves
+  (hero badge 67, workshop cards sum 66, dev count 24 vs actual 25) — the registry wins.
+- **Design source of truth:** claude.ai/design project `e91a7226-762b-407b-9c69-f9f2bc407707`,
+  six docs (`Logo`, `Theme` via `_ds/nocturne-*`, `Home Redesign`, `All Tools`, `Site Pages`,
+  `Tool Redesign`). Fetch with the DesignSync tool. Each `data-screen-label` block's 1440px
+  frame/radius/shadow is the **artboard, not UI**; the nav inside it is the site navbar.
+- **The test blind spot (the defining lesson of this project):** jsdom has no canvas and no WASM, so
+  green unit tests say nothing about conversion correctness. `npm run test:e2e:conversion`
+  (real fixtures, byte-level + decoded assertions, Chromium) is the gate that matters. Run it after
+  any change to `lib/tools/` or a tool UI.
+- **Verified baseline — 2026-08-09, this session, all green:**
+  `tsc` clean · ESLint 0 errors / 3 warnings (`no-img-element` on `blob:` URLs — unavoidable under
+  `output: "export"`, leave as warnings) · **unit 1620 pass / 67 skipped** (54 files) ·
+  **`test:e2e` 213/213** · **`test:e2e:conversion` 27/27** · `next build` green (92 routes).
+  The whole redesign + bug-fix tree is **uncommitted, awaiting owner review**.
+- **Deliberate deviations from the design docs — keep, do not "fix" back:**
+  `Copy`/`Copied!` casing (docs say lowercase `copy`); selectable `<textarea readonly>` for text
+  outputs instead of `<pre>`; `CodeBlock` renders `<pre><code>`; `GenList` values are `<code>`;
+  rail primaries say "Copied to clipboard" where an inline button already says "Copied!" (the
+  duplicate-string trap); `MarkdownToPdfUI` keeps editor+preview (not `PdfDocsPane`);
+  `AudioMergerUI` keeps the numbered join-order list (ordering is the interaction, and it decodes
+  nothing today).
+- **Gotchas / traps:**
+  - `@ffmpeg/core-mt` deadlocked in many browsers (emscripten pthreads) — and is now also out of
+    scope by owner decision. Revisit only if hosting ever moves off GitHub Pages (COOP/COEP).
+  - Running `static-pages.spec.ts` alone against a *cold* `.next` 500s on the 404 test
+    (`next dev` + `output: "export"` + unknown `/[slug]`). Passes warm / in the full suite.
+  - `ToolPageLayout` renders the mobile sibling rail as a `<details>` at every width — a bare
+    `page.locator("details")` count is always FAQs + 1.
+  - `ImageCropperUI` e2e: the SE cropper handle sits below a 720px viewport at the default 80% crop —
+    scroll it into view before dragging.
+  - Don't run `next build` while `next dev` is up — they share `.next`.
+  - `public/**` is in ESLint `globalIgnores` (the copied ffmpeg core would otherwise fail CI).
+  - FFmpeg core is self-hosted (`npm run copy:wasm` → `public/`, gitignored). `forbidCdnCore` in the
+    conversion suite **fails the run** if the loader ever regresses to a CDN.
+  - Setting state in an effect is an **error** in this repo; use `useIsClient()` /
+    `useSyncExternalStore` patterns (see `CronExpressionGeneratorUI`, `?q=` palette).
+  - **Turbopack's `next build` does NOT bundle `new Worker(new URL(...))`** — it emits the raw
+    `.ts` as a static asset (dev hides this behind an on-demand loader), so pool workers are
+    pre-bundled by esbuild into `public/workers/` via `copy:wasm` (`scripts/build-workers.mjs`).
+    Worker entrypoints must import **leaf modules only** — an import chain that reaches back to a
+    module naming the worker's own URL hangs the production build forever at ~0 % CPU
+    (`lib/tools/audio-pcm.ts` and `regex-eval.ts` exist for this reason).
+  - After editing worker code (or its imports: `audio-pcm.ts`, `regex-eval.ts`,
+    `pdf-engine-core.ts`, `pool.ts` protocol), re-run `npm run copy:wasm` — `next dev` does not
+    watch the esbuild bundles.
+- **Known product notes (not bugs):** `crop-image` always re-encodes to PNG (pinned by test; a JPEG
+  in → bigger PNG out — product decision pending, Phase 5). `ExifViewerUI`'s primary reads
+  "Remove EXIF & Download" but stripping and downloading are two clicks.
+- ~~Markdown→PDF print CSS `@import`s Google Fonts~~ — **fixed 2026-08-10 (Phase 5):** print
+  fonts are self-hosted from `@fontsource-variable/*` via `copy:wasm`; the app now makes zero
+  third-party requests beyond analytics, and the privacy page says exactly that.
 
 ---
 
-## UI/UX redesign direction ("the UI can be a lot better")
+## Phase 1 — Full design-fidelity audit + fixes (every tool, every control)
 
-- [ ] **Show the DropZone label + accepted formats** (P1 above) — the single highest-leverage clarity fix; touches every file tool.
-- [ ] **Global search + ⌘K command palette** for the 68-tool catalog (fuzzy-match name/keywords, deep-link to `/[slug]`).
-  Also makes the `SearchAction` schema honest and is a strong distinctive feature.
-- [ ] **Consistent result / loading / empty / done states** across all tools — fold into the `useFileProcessor` extension so
-  progress/error/reset look identical everywhere (today every tool differs).
-- [ ] **Distinctive visual identity** instead of the generic dark card grid: transmutation-themed hero, per-category accent
-  colors via new CSS vars, a bento layout that elevates featured tools, depth via subtle gradient borders/inner highlights
-  rather than flat 1px borders. (`page.tsx`, `CategoryHubPage.tsx`, `ToolPageLayout.tsx`, `globals.css`)
-- [ ] **Consistent content widths and spacing rhythm** across home/category/tool/blog pages.
+*Goal: "the whole app as per the design" is demonstrated, not assumed. Prior sessions implemented
+all six docs and spot checks pass (2026-08-09: `/workspace` and `/compress-image` at 1440 match
+structurally), but no systematic screen-by-screen diff has ever been recorded.*
+
+- [x] **Build the audit matrix** (2026-08-09). All six docs fetched via DesignSync, inventories
+  extracted, `design-audit.md` created — one row per element per surface with statuses
+  (✅ fixed · ✓ match · ⚠ open · ◇ deviation-kept · ◆ deferred-to-phase).
+- [ ] **Sweep every surface against the matrix** at 1440 / 768 / 375: home, 5 hubs, all 67–68 tool
+  routes, `/workspace`, blog index + posts, about, privacy, 404, navbar/footer/⌘K palette.
+  (Playwright sweep + screenshots for the record; judgement diffs by eye.)
+- [x] **Known suspects — all resolved 2026-08-09** (detail in `design-audit.md`):
+  - Tool status bar now carries `TOOL n OF 67`, the capability segment and `67 TOOLS INSTALLED`;
+    the blanket `NO SIZE CAP · MAX SIZE — YOUR RAM` claim is **gone** (it was false for the two
+    FFmpeg tools — `Tool.maxSizeMB` now drives the spec tile and DropZone line: `MAX 100 MB` on
+    video-trimmer/mp4-to-mp3, `NONE`/`NO SIZE CAP` elsewhere).
+  - DropZone reworked to the doc's empty state ("Drop a file to begin", "Nothing uploads…",
+    **Choose file**, `{formats} · BATCH OK · {cap}`), with a real **⌘O** binding.
+  - **⌘↵ TO RUN** is now bound in `ToolActions` (meta/ctrl+Enter fires the primary); hint at `lg`,
+    sheet keeps `RUNS ON THIS DEVICE`.
+  - `+ step` chip: deviation-kept on real pages (implies an editable pipeline that doesn't exist).
+  - "saved to Recent": the fake string was **removed** from the workspace sidebar; the Recent
+    feature itself is Phase 4.
+- [x] **Honest capabilities** (2026-08-09) — new `CapabilityReadout` (real wasm-SIMD probe,
+  `hardwareConcurrency`, WebGPU check; renders post-mount so the export can't bake build-machine
+  values) now feeds both status bars; `BatchPane` shows the machine's real thread count. The
+  homepage engines table was also de-fictionalised (FFmpeg ≠ GIF encoding — that's gifenc;
+  25 MB → 31 MB actual; WebCodecs/Web Audio rows now name WebM→MP4 and lamejs).
+- [x] **Reconcile 67 vs 68** (2026-08-09) — registry has 67; the old plan's 68 was the error;
+  all UI counts already derive from the registry.
+- [x] Fix every `diff-fix` row; record every `deviation-kept` with its reason — **matrix has zero
+  ⚠ rows as of 2026-08-09.** Second batch: **SPLIT / SIDE BY SIDE / DIFF compare modes**
+  (in `CompareStage`, inherited by compressor/converter/resizer; DIFF is a real ×4
+  pixel-difference render) and **real SSIM** (`lib/tools/image-metrics.ts`, 6 unit tests,
+  verified 0.989 live at Q80). Third batch: **START FROM presets** (`ToolPresets` — hand edits
+  flip the chip back to Custom) on the four tools whose controls can express them
+  (compress-image, image-converter, video-to-gif, audio-trimmer) and **honest ADVANCED
+  sections** (`ToolAdvanced`) on the same four, every row verified against the lib. The five
+  doc tools whose presets imply unbuilt features are ◇-flagged in `design-audit.md`, not faked
+  (merge-pdf/split-pdf/favicon → Phase 5 product decisions; screen-rec/json → presets would
+  duplicate their single existing control).
+- **Gate: ✅ MET 2026-08-09.** `design-audit.md` has zero unresolved ⚠ rows (every row is ✅ fixed,
+  ✓ verified, ◇ deviation-kept-with-reason, or ◆ deferred-to-phase). Final gates:
+  tsc ✓ · lint 0 err/3 warn · **unit 1626** ✓ · e2e 213/213 ✓ · conversion 27/27 ✓ ·
+  build 92 routes ✓. Phase 1 is done pending owner review; the ◆ rows land with their phases
+  (Recent + workspace-real → Phase 4; real batch thread counts → Phase 3; preset-implied
+  features → Phase 5).
+
+## Phase 2 — WASM/FFmpeg deep hardening (find the bugs before the refactor)
+
+*Goal: the conversion suite today (27 tests) proves the happy path on one clean fixture per format.
+Widen it until the engines' real failure modes are pinned — then fix what it catches. This lands
+**before** Phase 3 so the worker-pool refactor happens under a safety net.*
+
+- [x] **Fixture matrix expansion — first tranche** (2026-08-10): `sample-audio-96k-mono.wav`
+  (96 kHz **and** mono), `sample-doc-60p.pdf` (past the thumbnail cap), `sample-vector.svg`
+  (viewBox-only), plus a deterministic `corruptFixture()` helper for garbage-bytes inputs; all
+  wired into `scripts/generate-test-fixtures.mjs` so a full regen reproduces them.
+  *Still wanted later:* 5.1 audio, VBR MP3, video-without-audio, rotation-metadata video,
+  encrypted PDF, CMYK/EXIF-orientation JPEG, 16-bit PNG, animated GIF/WebP inputs.
+- [x] **Error-path tests** (2026-08-10): corrupt MP3 (decode), PNG (image), PDF (MuPDF/pdf-lib) and
+  MP4 (FFmpeg exec) each surface the tool's `role="alert"` error — no hang, no download — and the
+  MP3 case also proves the tool recovers with a good file afterwards.
+- [x] **Lifecycle tests — first tranche** (2026-08-10): four consecutive audio conversions on one
+  page (the AudioContext-leak class); merge→reorder invalidates the stale download.
+  *Still wanted:* cancel-mid-exec for video-trimmer; navigate-away-mid-job.
+- [x] **Cross-browser — WebKit landed 2026-08-10.** `conversion-webkit` project (Desktop Safari)
+  runs the audio/pdf/image specs + the non-Chromium-flag hardening cases: **30 tests green in
+  WebKit** alongside 42 in Chromium (72 runs total). Excluded there: WebCodecs video specs, the
+  screen recorder (both need Chromium launch flags) and the GIF/FFmpeg-tagged cases pending a
+  WebKit-tuned pass. **Its first run caught two real Safari-only bugs, both fixed with tests:**
+  - Safari's canvas encoder writes its **own Exif APP1** into fresh JPEGs — "Remove EXIF" output
+    still carried an Exif segment there. `removeApp1Segments` now sweeps APP1 (Exif/XMP) from the
+    encoded bytes (JFIF/ICC kept); 3 unit tests + the WebKit e2e pin it.
+  - Safari's encoder at Q80 **grew** the already-optimised fixture (54.6 → 60.5 KB) and the
+    compressor offered it as a result. `compressImage` now has a never-grow guard: if the encode
+    isn't smaller, the untouched original comes back. Unit test + the e2e invariant is now
+    "never bigger", cross-browser.
+  - Firefox project: still open, low priority (needs its own install + triage pass).
+- [x] **m4a/AAC (and Ogg/FLAC) FFmpeg decode fallback** (2026-08-10) — when `decodeAudioData`
+  rejects an allowlisted container (AAC in Firefox, Ogg/FLAC in Safari), `audio-decode.ts`
+  transcodes to WAV via the FFmpeg singleton and re-decodes at the exact rate. Allowlist-gated so
+  unknown extensions still fail fast instead of pulling 31 MB. 3 routing unit tests (mocked
+  engine); the WebKit corrupt-MP3 e2e exercises the fallback path live.
+- [x] **Fixture tranche 2** (2026-08-10): `sample-audio-6ch.wav` (5.1-style, distinct tone per
+  channel), `sample-audio-vbr.mp3` (two-bitrate, no Xing — the duration-mismatch class),
+  `sample-photo-portrait.jpg` (EXIF Orientation=6). Generator now exports its builders behind a
+  direct-run guard for targeted regeneration. Four new fidelity tests: 6-ch WAV survives a trim
+  with all six channels; folds to valid stereo MP3; VBR decodes full-length; rotated JPEG
+  converts at its displayed 600×800.
+- [x] **Conversion-layer bugs — fixed 2026-08-10, each with the test that would have caught it:**
+  - ✅ **Device-rate resampling** — `audio-decode.ts` now sniffs the source rate from container
+    headers (WAV fmt / MP3 frame / FLAC STREAMINFO / Ogg Vorbis+Opus / MP4 mdhd — 25 unit tests
+    against the real fixtures) and decodes through `OfflineAudioContext` at that rate; unknown
+    sniffs fall back to the old device-rate path. E2E: a 96 kHz mono WAV survives a trim at
+    96 kHz/mono.
+  - ✅ **Follow-on found by the fix:** MP3 tops out at 48 kHz and lamejs mangles higher rates —
+    previously masked by the resample bug. New `resampleForMp3` (≤48 kHz pass-through) wired into
+    convert/trim/merge; E2E proves a 96 kHz source emits a valid full-length MP3.
+  - ✅ Trim NaN/∞ times now rejected *before* the decode (unit-tested).
+  - ✅ Dimensionless SVG: Firefox reports 0×0 and **Chromium invents the 300×150 UA default** —
+    both wrong. `svgFallbackSize` (viewBox → 1024 longest edge; explicit attrs returned as-is)
+    now wins when the document declares no size. E2E: viewBox 240×120 → 1024×512 PNG.
+  - ✅ `pdfToImages` toBlob-null → a per-page error naming the size and suggesting lower scale
+    (was `b!` → downstream crash).
+  - ✅ MergePdf stale download after drag-reorder cleared (add/remove already did).
+  - ✅ video-to-gif frames are stamped with the **real capture gap** instead of a constant delay
+    (rVFC captures land at ≥0.8× the target interval, so constant-delay GIFs played ~20% long).
+    E2E asserts a 1 s trim yields ~10 frames and 600–1500 ms of GIF time — via a **real GIF block
+    walker** added to the validators (the old frame count scanned raw bytes for 0x2C and was off
+    by orders of magnitude; it only survived because callers asserted `> 1`).
+  - ✅ Thumbnail cap made honest: split/rotate/reorder announce "THUMBNAILS RENDERED FOR THE FIRST
+    50 OF N PAGES" (all pages were already selectable/reorderable — only the preview images cap).
+    E2E: the 60-page fixture shows the note and `51-60` still splits to a 10-page PDF.
+- **Gate: ✅ MET 2026-08-10.** Conversion suite: **42 unique tests, 72 green runs across
+  Chromium (42) + WebKit (30)** — against 27 Chromium-only at phase start. Every fix in this
+  phase is pinned by the test that would have caught it, and the WebKit project earned its keep
+  on day one (two Safari-only bugs found and fixed). All gates green: tsc · lint 0 err/3 warn ·
+  **unit 1647** · e2e 213/213 · build 92 routes. Deferred, recorded above: Firefox project;
+  WebKit-tuned GIF/FFmpeg-video pass; remaining exotic fixtures (encrypted PDF needs an external
+  sample — pdf-lib cannot encrypt).
+
+## Phase 3 — Multi-core: worker pool + off-main-thread processing
+
+*Goal: the design's `4 THREADS · WORKER POOL 4/8` queue and `THREADS n` status become true. Owner
+decision: plain Web Workers only — parallelism across files and off-main-thread heavy work; no
+SharedArrayBuffer anywhere.*
+
+- [x] **Pool primitive** (2026-08-10) — `src/lib/workers/pool.ts`: FIFO task queue over lazily
+  spawned module workers, `N = clamp(hardwareConcurrency - 1, 1, 4)`, memory-aware admission
+  (per-task `memoryBytes` estimate against a budget of ¼ × `navigator.deviceMemory` — 4 GB
+  assumed where the API is missing, i.e. Safari; an over-budget task runs *alone* rather than
+  never). Per-task progress + AbortSignal in the `ProcessingContext` shape; aborting a running
+  task terminates its worker (the only way to stop synchronous WASM) and replaces it lazily.
+  **20 unit tests** (`worker-pool.test.ts`): scheduling, reuse, FIFO under memory pressure,
+  abort queued/running, crash recovery, destroy. Turbopack bundles
+  `new Worker(new URL(...), {type:"module"})` fine — verified live in dev.
+- [x] **Image pipeline into workers** (2026-08-10) — `workers/image.worker.ts` mirrors
+  convert/compress/resize on `createImageBitmap` (+`imageOrientation:"from-image"`, plain-decode
+  retry for older engines) + `OffscreenCanvas.convertToBlob`; `workers/image-client.ts` exports
+  the same three signatures and routes: SVG and no-OffscreenCanvas browsers → the untouched
+  `lib/tools/` main-thread path; HEIC/TIFF → decoded on main (heic2any/utif2), pixels transferred
+  as ImageBitmap. Pica: kept `features:["js"]` but via `resizeBuffer` on raw RGBA in *our* worker
+  (same lanczos3 math as `resize()` at quality 3 — pica maps both through one mathlib), so pica's
+  own ww feature stays off. Compressor's never-grow guard crosses as a `{kind:"original"}` result.
+  Image e2e 8/8 + hardening 28/28 green in Chromium *and* WebKit through the worker path.
+- [x] **Batch tools real parallelism + queue table** (2026-08-10) — new `useBatchProcessor` hook
+  (6 unit tests): fires every file at once, pool schedules; rows stay QUEUED until their worker
+  actually reports progress, so RUNNING means running. `ImageCompressorUI` sequential for-loop
+  replaced; `ImageConverterUI` **first-file-only bug fixed** — real multi-file with queue table +
+  ZIP; both footnotes read `n OF m DONE · k THREADS` with k = the pool's real size. `PdfToJpgUI`:
+  per-page encode now runs in the image pool (render stays pdfjs-sequential — its worker
+  serialises anyway), determinate per-page progress; ZIP unchanged (JSZip STORE is memcpy).
+- [x] **Audio encode off the main thread** (2026-08-10) — pure PCM encoders extracted into
+  `lib/tools/audio-pcm.ts` (`encodePcmToMp3` with progress callback, `encodePcmToWav`), run in
+  `workers/audio-encode.worker.ts` (pool of 2); `workers/audio-client.ts` copies channel data
+  (`slice`) and transfers it, so the caller's AudioBuffer survives. Decode/resample stay on main
+  (no AudioContext in workers). Converter/trimmer/merger all routed; audio e2e 10/10 green in
+  Chromium + WebKit.
+  **Trap found the hard way — worker bundles must import only leaf modules.** The worker
+  originally imported `audio-encode-mp3.ts`, whose `convertToMp3` dynamically imports
+  `audio-client.ts`, which names the worker's own URL — a chunking cycle that made
+  `next build` (Turbopack) hang forever at ~0 % CPU (`next dev` never hit it: dev compiles the
+  dynamic chunk lazily, and nothing in the worker calls the wrappers). `audio-pcm.ts` exists to
+  break that cycle; the rule is recorded in both files' comments.
+- [x] **MuPDF / pdf-lib in a worker** (2026-08-10) — implementations moved to
+  `lib/tools/pdf-engine-core.ts`; `pdf-engine.ts` keeps every signature and routes through
+  `workers/pdf.worker.ts` on a **single-worker** pool (each worker = its own ~10 MB MuPDF heap;
+  ops serialise like the FFmpeg queue). Inputs are structured-cloned, not transferred — MergePdf's
+  re-merge-after-reorder keeps its buffers. pdfjs untouched (own worker). PDF e2e 16/16 green in
+  Chromium + WebKit. jsdom/no-Worker falls back to running the core inline.
+- [x] **FFmpeg: unchanged by decision** — still the single-threaded serialised singleton;
+  `ffmpeg-loader.ts`'s comment now records the Phase 3 owner decision (no core-mt/SAB — needs
+  COOP/COEP GitHub Pages can't send; no pool of instances — N × 31 MB heaps + shared FS names).
+- [x] **UI truthfulness** (2026-08-10) — `CapabilityReadout` now reads
+  `SIMD · THREADS {hc} · POOL {poolSize()} · WEBGPU`; batch queue footnotes carry the real thread
+  count; workspace `BatchPane` reads `WORKER POOL {poolSize()}/{hc}` (rows stay sample data until
+  Phase 4).
+- **Gate: ✅ MET 2026-08-10.** Conversion suite green with assertions unchanged — **44 unique
+  tests / 76 runs, 75 green + 1 designed skip** (was 42/72; +`batch.spec.ts`): new batch test proves 6 files complete
+  correctly AND ≥2 observed RUNNING simultaneously (Chromium + WebKit), and a
+  longtask-PerformanceObserver test pins **no main-thread task > 200 ms during the batch**
+  (Chromium-only — WebKit has no longtask API). Full gates: tsc ✓ · lint 0 err/3 warn ·
+  **unit 1673** (57 files) ✓ · default e2e 213/213 ✓ · build 92 routes ✓.
+
+## Phase 4 — `/workspace` becomes real (owner decision)
+
+*Goal: every canvas in `/workspace` processes real files. Architecture rule: **mount the real
+`*UI.tsx` components in the workspace shell — do not fork them.** The 52 UI files already return
+`(canvas, <ToolAside>)` fragments, which is exactly the two-slot shape the workspace grid needs;
+the seeded panes in `src/data/workspace.ts` + `workspace/panes/*` retire as their tools go live.*
+
+- [x] **Selected tool in the URL** (2026-08-10) — `/workspace?tool=slug` deep links. The URL is the
+  single source of truth, read via `useSyncExternalStore` (server snapshot null → default tool
+  prerendered; no setState-in-effect); picks go through `history.replaceState` + manual listener
+  notify. Unknown slugs fall back to the default. Rail + category filters keep working; ⌘K stays
+  the navbar's. `key={slug}` remounts on switch so no state leaks between tools (e2e-pinned).
+- [x] **Per-tool code-splitting** (2026-08-10) — the `toolType → component` switch moved out of
+  `[slug]/page.tsx` into `components/tools/ToolClient.tsx`; both surfaces render tools through it,
+  and every branch resolves to the existing `next/dynamic` wrappers. Verified live: `/workspace`
+  route load pulls no tool libs; picking Crop Image fetched exactly its chunks
+  (`ImageCropperUI…js`, jszip) on selection.
+- [x] **The tool's own `ToolAside` IS the workspace sidebar** (2026-08-10) — the mount area
+  reuses ToolPageLayout's `:has([data-tool-aside])` two-column grid, so the (canvas, aside)
+  fragment lands exactly like on the tool pages. Pipeline strip / ENGINE / ACCEPTS read the same
+  `data/workspace.ts` metadata the tool pages read.
+- [x] **`TrimOverlay` moved** to `components/tools/ToolCanvas.tsx` (2026-08-10) as the panes
+  retired; `AudioTrimmerUI` + the video stage import it from there. All 13 seeded panes,
+  `Canvas.tsx`, `Sidebar.tsx`, `workspace/types.ts` deleted; `data/workspace.ts` slimmed to rail
+  metadata + `pipelineByArchetype` (unit test rewritten for what remains).
+- [x] **Recent is REAL** (2026-08-10) — `lib/utils/recent-outputs.ts`: every `triggerDownload`
+  records `{name, bytes, slug, at}` to localStorage (metadata only — blobs don't fit; it's a
+  record, not a re-download cache). `RecentOutputs` renders the docs' RECENT OUTPUT rail section
+  in BOTH rails (workspace: picks the tool in place; tool pages: links to the tool), hidden until
+  the first save, synced across tabs via the storage event.
+- [x] **SEO: `noindex` kept** — real tools now, but still duplicate content against the tool
+  pages; comment updated with the revisit condition.
+- [x] **E2E workspace sweep** (2026-08-10) — `conversion/workspace.spec.ts`: deep-link + rail
+  switch + remount, and one real conversion per archetype through the workspace mount (image
+  resize→1080², batch compress→ZIP, split→2-page PDF, merge→10-page PDF, mp3→decodable WAV,
+  video→multi-frame GIF, JSON pretty-print, UUID v4, favicon ZIP, palette swatches, EXIF read,
+  screen-recorder→real WebM). **13/13 Chromium · 11+1-designed-skip WebKit, first run.**
+- **Gate: ✅ MET 2026-08-10.** All archetypes convert real files in `/workspace`; zero
+  seeded-constant canvases remain (the pane files are gone); bundle check shows tool code loading
+  on selection. Full gates: tsc ✓ · lint 0 err/3 warn · unit **1446** (57 files — the deleted
+  simulator's ~230 data tests retired with it) · default e2e 213/213 ✓ · conversion suite
+  **57 unique / 101 runs: 99 green + 2 designed skips** (WebKit longtask + WebKit recorder) ·
+  build 92 routes ✓ · **prod-export smoke ✓** — served `out/` statically and converted real
+  files through `/workers/image.worker.js` AND the mupdf `pdf.worker.js` chunk chain in the
+  browser (the exact paths Turbopack's raw-`.ts` emission would have broken).
+  **Deviation (recorded):** workers are pre-bundled to `public/workers/` by
+  `scripts/build-workers.mjs` (esbuild, invoked from `copy:wasm`) instead of Turbopack worker
+  chunks — `next build` emits `new Worker(new URL(...))` references as RAW `.ts` assets (dev's
+  on-demand worker loader masks it), which would have shipped broken workers. Dev and prod now
+  run byte-identical worker bundles.
+
+## Phase 5 — Remainder: open P2/P3 + SEO/polish
+
+*Everything still open from the old audit that earlier phases didn't absorb. Nothing here blocks the
+phases above; batch it by area.*
+
+- [x] **Dev tools — all fixed 2026-08-10, each with tests:** XML formatter comment/DOCTYPE
+  indent (extracted to `lib/tools/xml-format.ts`, only element tags open a level; 6 unit tests);
+  color picker partial/3-digit hex (extracted to `lib/tools/color-picker.ts` — `parseHex` returns
+  null, never NaN; the UI keeps a raw `hexInput` beside an always-valid `hex`; 7 tests); Base64
+  file-mode poisoning (file name now lives outside the text state — direction/source switches
+  re-run the preserved TEXT input, never the filename); `formatFileSize` TB/PB + clamp + "—" for
+  NaN/negative (4 new tests); text-case acronyms (`NASA` stays, `parseHTMLString` splits at the
+  right boundary; 2 tests); password generator rejection-sampling (no modulo bias) + every
+  selected class guaranteed present + crypto Fisher–Yates (2 property tests × 50 runs); timestamp
+  Local/UTC display toggle (weekday follows); gradient hex text input validates through
+  `parseHex` with a draft that snaps on blur (box-shadow needed nothing — its only colour input
+  is `type=color`, which can't emit garbage); lorem "words" = exactly N words, no bolted-on
+  period; `describeCron` speaks lists/ranges/steps (`*/5` → "Every 5 minutes", `1-5` →
+  "Mon through Fri"; 3 new tests).
+- [x] **Regex backtracking guard** (2026-08-10) — evaluation moved to a 1-worker pool
+  (`regex.worker.ts` + `regex-client.ts`, `lib/tools/regex-eval.ts` as the pure leaf) with a 2 s
+  timeout that aborts → terminates the worker. Verified live: `(a+)+$` over 45 chars produced
+  ZERO main-thread long tasks, surfaced the timeout message, and the next pattern worked
+  immediately (pool replaced the worker). jsdom falls back to synchronous inline eval, so the
+  12 existing component tests run unchanged.
+- [x] **UX consistency** (2026-08-10): uuid/password/lorem clear stale output on any option
+  change (results on screen always match the lit controls); `useObjectUrl` revokes on a 1 s
+  delay so a still-loading `<img>` can't flash broken; DropZone drag-highlight uses an
+  enter/leave depth counter (no more child-crossing flicker) and gained a `disabled` prop —
+  wired on the three always-mounted zones (merge-pdf, merge-audio, images-to-pdf) so drops can't
+  land mid-run; DropZone `accept` filtering was already implemented (lenient `matchesAccept` —
+  item was stale). **Live-on-type vs click-to-run: resolved as a deliberate rule, not churn** —
+  live for character-level transforms (base64/url/entity/json), click-to-run for library-backed
+  conversions (sql/xml/turndown/csv), which is the current split; normalising all-live would
+  fight the doc's ⌘↵ model and all-click would worsen the cheap tools.
+- [ ] **Compress PDF expectations:** deflate-only never shrinks image-heavy PDFs — either say so in
+  the UI or add a rasterize mode (now `pdf-engine-core.ts` `compressPdf`). **Owner product call —
+  still open.**
+- [ ] **crop-image PNG-only output** product call: keep (pinned) or offer format choice. **Owner
+  call — still open.**
+- [x] **Infra** (2026-08-10): GA now tracks client-side navigations (`AnalyticsPageviews` —
+  usePathname watcher, first render skipped so the landing view isn't double-counted;
+  deliberately not useSearchParams, which would force a Suspense boundary); stale `/transmute`
+  `locateFile` was already gone (everything reads `__NEXT_ROUTER_BASEPATH`); CLAUDE.md's two
+  stale basePath notes fixed. The root layout's hand-rolled `<head>` scripts STAY — the Metadata
+  API has no script/preconnect surface; this is the App Router escape hatch, noted in place.
+- [x] **SEO mechanical items** (2026-08-10): the 13 over-length titles got a `Tool.titleTag`
+  override (≤60 chars with the " | Transmute" suffix; on-page H1s unchanged); canonicals verified
+  absolute in the export everywhere (`metadataBase` resolves them) and source style unified to
+  relative. **Still open (owner/editorial):** genuine 4th/5th FAQs for the 45 thin-FAQ tools
+  (≈90 entries of real copy — needs editorial voice); all-tools index route (product call);
+  Lighthouse re-measure (needs the live URL, post-deploy).
+- [x] **Markdown→PDF fonts self-hosted** (2026-08-10) — the app's LAST third-party request is
+  gone: latin-subset variable woff2s from pinned `@fontsource-variable/*` packages (OFL), copied
+  to `public/fonts/print/` by `copy:wasm` (gitignored, same treatment as the WASM), injected as
+  five `@font-face` rules with origin-absolute URLs (an about:blank iframe can't resolve relative
+  ones). Verified live: print document carries the five local faces, zero googleapis/gstatic
+  requests, all files serve 200. Privacy copy updated — the Google Fonts exception paragraph is
+  now "no third-party requests beyond analytics".
+- [ ] **Beta exit:** remove the Navbar badge once the manual pass below is done. **Gated on the
+  owner's manual verification pass — still open.**
+- **Gate:** ESLint warnings stay ≤ 3; suites green; privacy page matches reality. *(Verified
+  2026-08-10 for everything above: lint 0 err/3 warn · unit 1468 (59 files) · default e2e 213/213 ·
+  conversion 57 unique/101 runs green · privacy copy matches the new no-third-party reality.
+  The open items above are owner calls, not engineering leftovers.)*
 
 ---
 
-## Performance
+## Retained: post-deploy / manual / out of scope
 
-- [ ] **Code-split the 9 image tool clients.** They're statically imported into `/[slug]`, so `pica` + `cropperjs` +
-  `jszip` + `exifreader` ship on **every** tool route (even password-generator). Add `ImageToolClients.tsx` wrapping each
-  in `next/dynamic({ ssr: false })`, mirroring `DevToolClients.tsx`. **[V]** `[slug]/page.tsx:7-15`
-- [ ] **Self-host `@ffmpeg/core`** under `public/` (like the mupdf WASM) instead of fetching ~25 MB from unpkg at runtime —
-  works offline, immune to COEP, no CORS dependency. Then **remove the dead `public/_headers`**.
-- [ ] Remove unnecessary `fonts.googleapis.com`/`fonts.gstatic.com` preconnects (`next/font` self-hosts at build).
-- [ ] Add a catastrophic-backtracking guard (timeout/worker) to the regex tester so it can't freeze the tab.
-- [ ] (Lighthouse Perf/A11y/SEO scores claimed in the old plan are **unverifiable from source** — re-measure on the live URL.)
+**Manual verification (needs real devices / live URL):** FFmpeg smoke across Chrome/Safari/Firefox;
+real iPhone Safari + Android Chrome walk-through; 320px + landscape; keyboard-only + VoiceOver +
+axe; `prefers-reduced-motion`; FOUT on Slow 3G; MP3 playback in QuickTime/WMP; PDF cross-realm
+ArrayBuffer in Safari/Firefox.
 
----
+**Post-deploy SEO:** Rich Results Test on 6 URLs; Search Console sitemap resubmit + index requests;
+OG smoke-test; `npm audit fix`; impressions/CTR tracking.
 
-## SEO correctness
-
-- [ ] Fix the doubled `<title>` (P1). · Fix 13 over-length titles. · Unify the canonical strategy (absolute everywhere).
-- [ ] Make the `SearchAction` schema honest (ship search or drop the `potentialAction`).
-- [ ] Give the 45 thin-FAQ tools a genuine 4th/5th tool-specific FAQ; reduce reliance on the shared privacy FAQ.
-- [ ] Correct the **false engine claims** in video-to-gif / webm-to-mp4 / compress-video copy.
-- [ ] Add PWA manifest + `viewport`/`themeColor`/icon metadata. · Consider an all-tools index route for crawl + UX.
-
----
-
-## Plan-vs-code corrections (keep this doc honest)
-
-| Old plan claim | Reality (code) |
-| --- | --- |
-| AdSense `ca-pub-8318354633894162` | `ca-pub-3308993640799405` (`layout.tsx:9`, `ads.txt`) |
-| 64 tools / "87 routes" | **68 tools**, 88 routes; homepage hardcodes "66" |
-| `basePath: "/transmute"` | **No basePath**; apex domain `transmute.tools` (`CNAME`) |
-| 651 unit tests / "11 specs, 85 E2E" | **1212 unit (1279 w/ skips)**; **17 E2E specs (~98 tests)** |
-| §4.5 COOP/COEP "risk to confirm" | `_headers` is global already, but **dead on GitHub Pages** — reframe |
-| Workstream P (Markdown→PDF) complete | **TRUE** — files exist and are wired |
-| AdSense placements not started | **TRUE** — no `<AdSlot>` exists |
-| Beta badge in Navbar | **TRUE** — still present |
-| §1.5a contrast bump (`--text-muted #858378`) | **TRUE** |
-| Lighthouse scores, bundle KB, FOUT, word counts | **Unverifiable from source** — re-measure live |
-
----
-
-## Suggested sequencing
-
-1. **P0 bug fixes** (6 items) — biggest perceived-quality jump, especially the transparent-JPEG + resizer/compressor format fixes.
-2. **P1 bug fixes** — restore correct output across image/dev/audio/video tools; consolidate clipboard on `CopyButton`; extend `useFileProcessor`.
-3. **UI/UX uplift** — DropZone labels, command palette/search, consistent states, visual identity.
-4. **Performance** — code-split image clients, self-host ffmpeg core, prune preconnects.
-5. **SEO correctness** — titles, canonicals, honest copy, FAQs, manifest.
-6. **P2/P3** — sweep medium/low items by area.
-7. **Then** the prior post-deploy items below (manual device/a11y passes, Rich Results, etc.).
-8. **Backfill real conversion tests** (the biggest process gap): Playwright tests that actually run conversions in Chromium with real fixtures, so this class of bug can't recur silently.
-
----
-
-## Retained from prior plan (post-deploy / manual / out of scope)
-
-**Manual verification (needs real devices / screen readers / live URL):** FFmpeg deadlock smoke across Chrome/Safari/Firefox;
-image-resize boundary cases; PDF cross-realm ArrayBuffer in Safari/Firefox; MP3 playback in QuickTime/WMP; real iPhone Safari +
-Android Chrome walk-through; 320px + landscape; keyboard-only + VoiceOver + axe; `prefers-reduced-motion`; FOUT on Slow 3G.
-
-**Post-deploy SEO:** Rich Results Test on 6 URLs; Search Console sitemap resubmit + index requests; OG smoke-test; `npm audit fix`;
-ongoing impressions/CTR tracking. **Beta exit:** remove the badge in `Navbar.tsx` once manual passes are clean.
-
-**AdSense (only if monetizing):** build `<AdSlot>` (flag-gated), placement strategy (no ads above the tool), slot map; confirm
-COOP/COEP non-issue (it's dead on Pages); flip `NEXT_PUBLIC_ADS_ENABLED=true` after approval.
-
-**Out of scope:** new tools/categories, freemium tiers, i18n, promotion, re-architecting the three-layer pattern,
-domain registrar transfer.
+**Out of scope (unchanged):** new tools/categories, freemium, i18n, promotion, re-architecting the
+three-layer pattern, domain transfer — **plus, by 2026-08-09 owner decision: SharedArrayBuffer /
+`@ffmpeg/core-mt` / hosting changes** (revisit trigger: moving off GitHub Pages for other reasons).

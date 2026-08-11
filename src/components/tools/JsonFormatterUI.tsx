@@ -3,6 +3,19 @@
 import { useCallback, useState } from "react";
 import { ErrorMessage } from "@/components/tools/ErrorMessage";
 import { copyText } from "@/lib/utils/clipboard";
+import {
+  ToolActions,
+  ToolAside,
+  ToolAsideSection,
+  ToolChoice,
+  ToolOutput,
+} from "@/components/tools/ToolAside";
+import {
+  lineCount,
+  TEXT_PANE_BODY,
+  TextPane,
+  TextPanes,
+} from "@/components/tools/ToolCanvas";
 
 export function JsonFormatterUI() {
   const [input, setInput] = useState("");
@@ -45,56 +58,78 @@ export function JsonFormatterUI() {
   }, [output]);
 
   return (
-    <div className="space-y-4">
-      {/* Mode toggle */}
-      <div className="flex items-center justify-center gap-2">
-        {(["format", "minify"] as const).map((m) => (
-          <button
-            key={m}
-            onClick={() => handleModeChange(m)}
-            className={`rounded-md px-4 py-2 text-sm font-medium transition-colors ${
-              mode === m
-                ? "bg-accent text-bg-primary"
-                : "bg-bg-elevated text-text-secondary hover:bg-bg-hover"
-            }`}
-          >
-            {m === "format" ? "Format" : "Minify"}
-          </button>
-        ))}
-      </div>
+    <>
+      {/* ── Canvas: the doc's two-up IN / OUT panes ────────── */}
+      <div className="min-w-0 space-y-[13px]">
+        <TextPanes columns={output ? 2 : 1}>
+          <TextPane label="Input JSON" lines={lineCount(input)}>
+            <textarea
+              value={input}
+              onChange={(e) => handleFormat(e.target.value, mode)}
+              placeholder='{"name": "John", "age": 30}'
+              aria-label="Input JSON"
+              className={TEXT_PANE_BODY}
+            />
+          </TextPane>
 
-      {/* Input */}
-      <div>
-        <label className="block text-sm font-medium text-text-secondary mb-1">Input JSON</label>
-        <textarea
-          value={input}
-          onChange={(e) => handleFormat(e.target.value, mode)}
-          placeholder='{"name": "John", "age": 30}'
-          rows={8}
-          className="w-full rounded-lg border border-border bg-bg-elevated p-3 text-sm text-text-primary font-mono resize-y placeholder:text-text-muted"
-        />
-      </div>
-
-      {/* Error */}
-      {error && <ErrorMessage message={error} />}
-
-      {/* Output */}
-      {output && (
-        <div>
-          <div className="flex items-center justify-between mb-1">
-            <label className="text-sm font-medium text-text-secondary">Output</label>
-            <button
-              onClick={handleCopy}
-              className="text-xs text-accent hover:text-accent-hover transition-colors"
+          {output && (
+            <TextPane
+              tone="out"
+              label="Output"
+              lines={lineCount(output)}
+              action={
+                <button
+                  onClick={handleCopy}
+                  className="cursor-pointer text-accent transition-colors hover:text-accent-hover"
+                >
+                  {copied ? "Copied!" : "Copy"}
+                </button>
+              }
             >
-              {copied ? "Copied!" : "Copy"}
-            </button>
-          </div>
-          <pre className="w-full rounded-lg border border-border bg-bg-elevated p-3 text-sm text-text-primary font-mono overflow-x-auto whitespace-pre-wrap max-h-96 overflow-y-auto">
-            {output}
-          </pre>
-        </div>
-      )}
-    </div>
+              <pre className={TEXT_PANE_BODY} aria-label="Formatted JSON">{output}</pre>
+            </TextPane>
+          )}
+        </TextPanes>
+
+        {error && <ErrorMessage message={error} />}
+      </div>
+
+      <ToolAside
+        footer={
+          output ? (
+            <ToolActions
+              primaryLabel={copied ? "Copied to clipboard" : "Copy output"}
+              onPrimary={handleCopy}
+            />
+          ) : undefined
+        }
+      >
+        <ToolAsideSection label="MODE">
+          <ToolChoice
+            label="Output mode"
+            fill
+            value={mode}
+            onChange={handleModeChange}
+            options={[
+              { value: "format" as const, label: "Format" },
+              { value: "minify" as const, label: "Minify" },
+            ]}
+          />
+          <span className="font-body text-[10.5px] leading-[1.5] text-text-muted">
+            Runs as you type. Errors report the exact line.
+          </span>
+        </ToolAsideSection>
+
+        <ToolAsideSection label="OUTPUT">
+          <ToolOutput
+            rows={[
+              ["In", `${input.length} chars`],
+              ["Out", output ? `${output.length} chars` : "—"],
+              ["Valid", input ? (error ? "No" : "Yes") : "—"],
+            ]}
+          />
+        </ToolAsideSection>
+      </ToolAside>
+    </>
   );
 }

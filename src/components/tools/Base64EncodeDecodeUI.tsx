@@ -4,6 +4,20 @@ import { useCallback, useState } from "react";
 import { ErrorMessage } from "@/components/tools/ErrorMessage";
 import { DropZone } from "@/components/tools/DropZone";
 import { copyText } from "@/lib/utils/clipboard";
+import {
+  ToolActions,
+  ToolAside,
+  ToolAsideSection,
+  ToolChoice,
+  ToolOutput,
+} from "@/components/tools/ToolAside";
+import {
+  lineCount,
+  TEXT_PANE_BODY,
+  TextPane,
+  TextPanes,
+} from "@/components/tools/ToolCanvas";
+import { cn } from "@/lib/utils/cn";
 
 export function Base64EncodeDecodeUI() {
   const [mode, setMode] = useState<"encode" | "decode">("encode");
@@ -12,6 +26,10 @@ export function Base64EncodeDecodeUI() {
   const [error, setError] = useState("");
   const [copied, setCopied] = useState(false);
   const [fileMode, setFileMode] = useState(false);
+  // The loaded file's name lives OUTSIDE the text state: it used to be
+  // written into `input`, so switching direction re-encoded "photo.jpg" as
+  // text and silently replaced the file's Base64 with garbage.
+  const [fileName, setFileName] = useState("");
 
   const handleConvert = useCallback(
     (text: string, m: "encode" | "decode") => {
@@ -45,9 +63,24 @@ export function Base64EncodeDecodeUI() {
     (m: "encode" | "decode") => {
       setMode(m);
       setFileMode(false);
-      if (input.trim()) handleConvert(input, m);
+      setFileName("");
+      // Re-run the TEXT input (preserved while file mode was active) —
+      // never the file's name.
+      handleConvert(input, m);
     },
     [input, handleConvert],
+  );
+
+  const handleSourceChange = useCallback(
+    (source: "text" | "file") => {
+      setFileMode(source === "file");
+      setFileName("");
+      setError("");
+      // Whatever the previous source produced no longer describes this one.
+      if (source === "file") setOutput("");
+      else handleConvert(input, mode);
+    },
+    [input, mode, handleConvert],
   );
 
   const handleFiles = useCallback((files: File[]) => {
@@ -58,7 +91,7 @@ export function Base64EncodeDecodeUI() {
       const result = reader.result as string;
       const base64 = result.split(",")[1] ?? "";
       setOutput(base64);
-      setInput(f.name);
+      setFileName(f.name);
       setError("");
     };
     reader.readAsDataURL(f);
@@ -74,74 +107,109 @@ export function Base64EncodeDecodeUI() {
   }, [output]);
 
   return (
-    <div className="space-y-4">
-      {/* Mode toggle */}
-      <div className="flex items-center justify-center gap-2">
-        {(["encode", "decode"] as const).map((m) => (
-          <button
-            key={m}
-            onClick={() => handleModeChange(m)}
-            className={`rounded-md px-4 py-2 text-sm font-medium transition-colors ${
-              mode === m ? "bg-accent text-bg-primary" : "bg-bg-elevated text-text-secondary hover:bg-bg-hover"
-            }`}
-          >
-            {m === "encode" ? "Encode" : "Decode"}
-          </button>
-        ))}
-        {mode === "encode" && (
-          <button
-            onClick={() => setFileMode(!fileMode)}
-            className={`rounded-md px-4 py-2 text-sm font-medium transition-colors ${
-              fileMode ? "bg-accent text-bg-primary" : "bg-bg-elevated text-text-secondary hover:bg-bg-hover"
-            }`}
-          >
-            File
-          </button>
+    <>
+      {/* ── Canvas: the doc's two-up IN / OUT panes ──────────── */}
+      <div className="min-w-0 space-y-[13px]">
+        {fileMode && <DropZone accept="*/*" onFiles={handleFiles} />}
+
+        <TextPanes columns={output ? 2 : 1}>
+          {fileMode ? (
+            <TextPane label="File" lines={undefined}>
+              <div className={cn(TEXT_PANE_BODY, "text-text-muted")}>
+                {fileName || "Drop a file above to encode it."}
+              </div>
+            </TextPane>
+          ) : (
+            <TextPane
+              label={mode === "encode" ? "Text to Encode" : "Base64 to Decode"}
+              lines={lineCount(input)}
+            >
+              <textarea
+                value={input}
+                onChange={(e) => handleConvert(e.target.value, mode)}
+                placeholder={mode === "encode" ? "Enter text to encode..." : "Paste Base64 string..."}
+                aria-label={mode === "encode" ? "Text to encode" : "Base64 to decode"}
+                className={TEXT_PANE_BODY}
+              />
+            </TextPane>
+          )}
+
+          {output && (
+            <TextPane
+              tone="out"
+              label="Output"
+              lines={lineCount(output)}
+              action={
+                <button
+                  onClick={handleCopy}
+                  aria-label={copied ? "Copied output" : "Copy output"}
+                  className="cursor-pointer text-accent transition-colors hover:text-accent-hover"
+                >
+                  {copied ? "Copied!" : "Copy"}
+                </button>
+              }
+            >
+              <textarea readOnly value={output} aria-label="Output" className={TEXT_PANE_BODY} />
+            </TextPane>
+          )}
+        </TextPanes>
+
+        {error && (
+          <ErrorMessage message={error} />
         )}
       </div>
 
-      {/* Input */}
-      {fileMode ? (
-        <DropZone accept="*/*" onFiles={handleFiles} />
-      ) : (
-        <div>
-          <label className="block text-sm font-medium text-text-secondary mb-1">
-            {mode === "encode" ? "Text to Encode" : "Base64 to Decode"}
-          </label>
-          <textarea
-            value={input}
-            onChange={(e) => handleConvert(e.target.value, mode)}
-            placeholder={mode === "encode" ? "Enter text to encode..." : "Paste Base64 string..."}
-            rows={6}
-            className="w-full rounded-lg border border-border bg-bg-elevated p-3 text-sm text-text-primary font-mono resize-y placeholder:text-text-muted"
+      {/* ── Controls: the doc's right-hand rail / bottom sheet ── */}
+      <ToolAside
+        footer={
+          output ? (
+            <ToolActions
+              primaryLabel={copied ? "Copied to clipboard" : "Copy output"}
+              onPrimary={handleCopy}
+            />
+          ) : undefined
+        }
+      >
+        <ToolAsideSection label="DIRECTION">
+          <ToolChoice
+            label="Direction"
+            fill
+            value={mode}
+            onChange={handleModeChange}
+            options={[
+              { value: "encode" as const, label: "Encode" },
+              { value: "decode" as const, label: "Decode" },
+            ]}
           />
-        </div>
-      )}
+        </ToolAsideSection>
 
-      {error && (
-        <ErrorMessage message={error} />
-      )}
+        {mode === "encode" && (
+          <ToolAsideSection label="SOURCE">
+            <ToolChoice
+              label="Input source"
+              fill
+              value={fileMode ? "file" : "text"}
+              onChange={handleSourceChange}
+              options={[
+                { value: "text" as const, label: "Text" },
+                { value: "file" as const, label: "File" },
+              ]}
+            />
+            <span className="font-body text-[10.5px] leading-[1.5] text-text-muted">
+              A file is read as bytes and encoded whole — nothing leaves this device.
+            </span>
+          </ToolAsideSection>
+        )}
 
-      {output && (
-        <div>
-          <div className="flex items-center justify-between mb-1">
-            <label className="text-sm font-medium text-text-secondary">Output</label>
-            <button
-              onClick={handleCopy}
-              aria-label={copied ? "Copied output" : "Copy output"}
-              className="inline-flex items-center justify-center min-h-9 px-3 py-1.5 rounded-md text-xs font-medium text-accent hover:bg-accent-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-bg-primary transition-colors"
-            >
-              {copied ? "Copied!" : "Copy"}
-            </button>
-          </div>
-          <textarea
-            readOnly
-            value={output}
-            rows={6}
-            className="w-full rounded-lg border border-border bg-bg-elevated p-3 text-sm text-text-primary font-mono resize-y"
+        <ToolAsideSection label="OUTPUT">
+          <ToolOutput
+            rows={[
+              ["In", fileMode ? fileName || "—" : `${input.length} chars`],
+              ["Out", output ? `${output.length} chars` : "—"],
+            ]}
           />
-        </div>
-      )}
-    </div>
+        </ToolAsideSection>
+      </ToolAside>
+    </>
   );
 }

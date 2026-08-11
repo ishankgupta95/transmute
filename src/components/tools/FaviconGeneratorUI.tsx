@@ -8,8 +8,21 @@ import { DownloadButton } from "@/components/tools/DownloadButton";
 import { ProgressBar } from "@/components/tools/ProgressBar";
 import { encodeIcoAsync } from "@/lib/tools/ico-encode";
 import { canvasToBlob, loadImage } from "@/lib/tools/canvas-utils";
+import { useObjectUrl } from "@/hooks/useObjectUrl";
 import { formatFileSize } from "@/lib/utils/file-helpers";
 import { copyText } from "@/lib/utils/clipboard";
+import {
+  ToolActions,
+  ToolAside,
+  ToolAsideSection,
+  ToolOutput,
+  ToolResetLink,
+} from "@/components/tools/ToolAside";
+import {
+  CanvasHeader,
+  CodeBlock,
+  IconSizes,
+} from "@/components/tools/ToolCanvas";
 
 const FAVICON_SIZES = [
   { size: 16, name: "favicon-16x16.png", label: "16×16 (Browser tab)" },
@@ -27,6 +40,7 @@ export function FaviconGeneratorUI({ acceptFormats }: { acceptFormats: string })
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const previewUrl = useObjectUrl(file);
 
   const handleFiles = useCallback((files: File[]) => {
     const f = files[0];
@@ -103,86 +117,94 @@ export function FaviconGeneratorUI({ acceptFormats }: { acceptFormats: string })
     setHtmlSnippet("");
   }, []);
 
+  if (!file) {
+    return <DropZone accept={acceptFormats} onFiles={handleFiles} />;
+  }
+
   return (
-    <div className="space-y-6">
-      {!file ? (
-        <DropZone accept={acceptFormats} onFiles={handleFiles} />
-      ) : (
-        <>
-          {/* File info */}
-          <div className="rounded-lg border border-border bg-bg-secondary p-4 text-center">
-            <p className="text-sm text-text-primary font-medium">{file.name}</p>
-            <p className="text-xs text-text-muted">{formatFileSize(file.size)}</p>
+    <>
+      {/* ── Canvas: the source mark and every size it becomes ── */}
+      <div className="min-w-0 space-y-[15px]">
+        <CanvasHeader file={file.name} meta={formatFileSize(file.size)} trailing="ZIP" />
+
+        <IconSizes
+          previewUrl={previewUrl}
+          sizes={[
+            [16, "Browser tab", 16],
+            [32, "Browser tab", 24],
+            [48, "Windows", 34],
+            [180, "Apple touch", 52],
+            [192, "PWA", 64],
+            [512, "PWA splash", 84],
+          ]}
+        />
+
+        {/* Progress */}
+        {isProcessing && (
+          <div className="space-y-2">
+            <ProgressBar progress={null} />
+            <p className="text-sm text-text-muted text-center">Generating favicons...</p>
           </div>
+        )}
+        {error && <ErrorMessage message={error} />}
 
-          {/* Sizes to generate */}
-          {!result && (
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-              {FAVICON_SIZES.map(({ label }) => (
-                <div
-                  key={label}
-                  className="rounded-md border border-border bg-bg-secondary px-3 py-2 text-xs text-text-muted"
-                >
-                  {label}
-                </div>
-              ))}
-              <div className="rounded-md border border-border bg-bg-secondary px-3 py-2 text-xs text-text-muted">
-                favicon.ico (multi-size)
-              </div>
-            </div>
-          )}
-
-          {/* Progress */}
-          {isProcessing && (
-            <div className="space-y-2">
-              <ProgressBar progress={null} />
-              <p className="text-sm text-text-muted text-center">Generating favicons...</p>
-            </div>
-          )}
-          {error && <ErrorMessage message={error} />}
-
-          {/* HTML snippet */}
-          {htmlSnippet && (
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-sm text-text-secondary">
-                  Add this to your {"<head>"}:
-                </span>
-                <button
-                  onClick={handleCopySnippet}
-                  className="text-xs text-accent hover:text-accent-hover transition-colors"
-                >
-                  {copied ? "Copied!" : "Copy"}
-                </button>
-              </div>
-              <pre className="rounded-lg border border-border bg-bg-elevated p-3 text-xs text-text-secondary font-mono overflow-x-auto">
-                {htmlSnippet}
-              </pre>
-            </div>
-          )}
-
-          {/* Actions */}
-          <div className="flex items-center justify-center gap-3">
-            {!result && !isProcessing && (
+        {/* HTML snippet */}
+        {htmlSnippet && (
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center justify-between">
+              <span className="font-mono text-[9.5px] leading-none font-medium tracking-[0.12em] uppercase text-text-muted">
+                HEAD SNIPPET
+              </span>
               <button
-                onClick={handleGenerate}
-                className="inline-flex items-center gap-2 rounded-md bg-accent px-6 py-2.5 text-sm font-medium text-bg-primary hover:bg-accent-hover transition-colors"
+                onClick={handleCopySnippet}
+                className="cursor-pointer font-body text-[11px] leading-none text-accent transition-colors hover:text-accent-hover"
               >
-                Generate All Favicons
+                {copied ? "Copied!" : "Copy"}
               </button>
-            )}
-            {result && (
-              <DownloadButton blob={result.blob} fileName="favicons.zip" />
-            )}
-            <button
-              onClick={handleReset}
-              className="rounded-md border border-border px-4 py-2.5 text-sm text-text-secondary hover:bg-bg-hover transition-colors"
-            >
-              {result ? "Generate for another" : "Cancel"}
-            </button>
+            </div>
+            <CodeBlock>{htmlSnippet}</CodeBlock>
           </div>
-        </>
-      )}
-    </div>
+        )}
+      </div>
+
+      {/* ── Controls: the doc's right-hand rail / bottom sheet ── */}
+      <ToolAside
+        footer={
+          <>
+            {result ? (
+              <DownloadButton
+                blob={result.blob}
+                fileName="favicons.zip"
+                className="w-full justify-center"
+              />
+            ) : (
+              <ToolActions
+                primaryLabel={isProcessing ? "Generating…" : "Generate All Favicons"}
+                onPrimary={handleGenerate}
+                primaryDisabled={isProcessing}
+              />
+            )}
+            <ToolResetLink
+              onClick={handleReset}
+              label={result ? "GENERATE FOR ANOTHER" : "CANCEL"}
+            />
+          </>
+        }
+      >
+        <ToolAsideSection label="OUTPUT">
+          <ToolOutput
+            rows={[
+              ["Source", formatFileSize(file.size)],
+              ["Files", String(FAVICON_SIZES.length + 1)],
+              ["ZIP", result ? formatFileSize(result.blob.size) : "—"],
+            ]}
+          />
+          <span className="font-body text-[10.5px] leading-[1.5] text-text-muted">
+            Every size is drawn from your original, so start from a square image at 512px or
+            larger.
+          </span>
+        </ToolAsideSection>
+      </ToolAside>
+    </>
   );
 }

@@ -6,9 +6,16 @@ import { ErrorMessage } from "@/components/tools/ErrorMessage";
 import { DropZone } from "@/components/tools/DropZone";
 import { DownloadButton } from "@/components/tools/DownloadButton";
 import { ProgressBar } from "@/components/tools/ProgressBar";
-import { GripVertical, X, FileText } from "lucide-react";
 import { mergePdfs, getPageCount } from "@/lib/tools/pdf-engine";
 import { formatFileSize } from "@/lib/utils/file-helpers";
+import {
+  ToolActions,
+  ToolAside,
+  ToolAsideSection,
+  ToolOutput,
+  ToolResetLink,
+} from "@/components/tools/ToolAside";
+import { DocCard, DocStrip, StatStrip } from "@/components/tools/ToolCanvas";
 
 interface PdfEntry {
   file: File;
@@ -59,6 +66,10 @@ export function MergePdfUI() {
       return updated;
     });
     setDragIdx(idx);
+    // Add and remove already clear the previous merge; a reorder must too,
+    // or the download button keeps offering a PDF in the old page order.
+    setResult(null);
+    setStatus("idle");
   }, [dragIdx]);
 
   const handleMerge = useCallback(async () => {
@@ -83,70 +94,106 @@ export function MergePdfUI() {
     setError(null);
   }, []);
 
+  const totalPages = entries.reduce((n, e) => n + (e.pageCount ?? 0), 0);
+
   return (
-    <div className="space-y-6">
-      <DropZone accept=".pdf" multiple onFiles={handleFiles} />
+    <>
+      <div className="min-w-0 space-y-6">
+        <DropZone accept=".pdf" multiple onFiles={handleFiles} disabled={status === "processing"} />
 
-      <p className="text-xs text-text-muted">
-        Merge combines whole files in the order below. To reorder or delete individual{" "}
-        <em>pages</em> within a PDF, use{" "}
-        <Link
-          href="/pdf-page-reorder"
-          className="text-accent underline hover:text-accent-hover"
-        >
-          Reorder PDF Pages
-        </Link>
-        .
-      </p>
-
-      {entries.length > 0 && (
-        <div className="space-y-2">
-          {entries.map((entry, idx) => (
-            <div
-              key={`${entry.file.name}-${idx}`}
-              draggable
-              onDragStart={() => handleDragStart(idx)}
-              onDragOver={(e) => handleDragOver(e, idx)}
-              onDragEnd={() => setDragIdx(null)}
-              className="flex items-center gap-3 rounded-lg border border-border bg-bg-secondary p-3 cursor-grab active:cursor-grabbing"
-            >
-              <GripVertical size={16} className="text-text-muted shrink-0" />
-              <FileText size={18} className="text-accent shrink-0" />
-              <div className="flex-1 min-w-0">
-                <p className="text-sm text-text-primary truncate">{entry.file.name}</p>
-                <p className="text-xs text-text-muted">
-                  {formatFileSize(entry.file.size)}
-                  {entry.pageCount !== null && ` · ${entry.pageCount} page${entry.pageCount !== 1 ? "s" : ""}`}
-                </p>
-              </div>
-              <button onClick={() => removeEntry(idx)} className="text-text-muted hover:text-error transition-colors">
-                <X size={16} />
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {status === "processing" && <ProgressBar progress={null} />}
-      {error && <ErrorMessage message={error} />}
-
-      <div className="flex items-center gap-3">
-        {entries.length >= 2 && status !== "done" && (
-          <button
-            onClick={handleMerge}
-            disabled={status === "processing"}
-            className="inline-flex items-center gap-2 rounded-md bg-accent px-5 py-2.5 text-sm font-medium text-bg-primary hover:bg-accent-hover transition-colors disabled:opacity-50"
+        <p className="text-xs text-text-muted">
+          Merge combines whole files in the order below. To reorder or delete individual{" "}
+          <em>pages</em> within a PDF, use{" "}
+          <Link
+            href="/pdf-page-reorder"
+            className="text-accent underline hover:text-accent-hover"
           >
-            {status === "processing" ? "Merging…" : "Merge PDFs"}
-          </button>
-        )}
-        {result && <DownloadButton blob={result} fileName="merged.pdf" />}
+            Reorder PDF Pages
+          </Link>
+          .
+        </p>
+
         {entries.length > 0 && (
-          <button onClick={handleReset} className="text-sm text-text-muted hover:text-text-secondary transition-colors">
-            Reset
-          </button>
+          <>
+            <div className="flex items-baseline gap-3">
+              <span className="font-display text-[13px] leading-none font-medium text-text-primary">
+                Assembly order
+              </span>
+              <span className="font-mono text-[10.5px] leading-none text-text-muted">
+                DRAG TO REORDER · {entries.length} DOCS
+                {totalPages ? ` · ${totalPages} PAGES` : ""}
+              </span>
+            </div>
+
+            <DocStrip>
+              {entries.map((entry, idx) => (
+                <DocCard
+                  key={`${entry.file.name}-${idx}`}
+                  index={idx + 1}
+                  name={entry.file.name}
+                  meta={formatFileSize(entry.file.size)}
+                  badge={entry.pageCount !== null ? `${entry.pageCount} p` : undefined}
+                  onRemove={() => removeEntry(idx)}
+                  draggableProps={{
+                    draggable: true,
+                    onDragStart: () => handleDragStart(idx),
+                    onDragOver: (e: React.DragEvent) => handleDragOver(e, idx),
+                    onDragEnd: () => setDragIdx(null),
+                  }}
+                />
+              ))}
+            </DocStrip>
+
+            <StatStrip
+              stats={[
+                { label: "DOCS", value: String(entries.length), tone: "neutral" },
+                { label: "PAGES", value: totalPages ? String(totalPages) : "—" },
+                {
+                  label: "SIZE",
+                  value: formatFileSize(entries.reduce((n, e) => n + e.file.size, 0)),
+                  tone: "neutral",
+                },
+                { label: "OUTPUT", value: result ? "merged.pdf" : "—", tone: "ok" },
+              ]}
+            />
+          </>
         )}
+
+        {status === "processing" && <ProgressBar progress={null} />}
+        {error && <ErrorMessage message={error} />}
       </div>
-    </div>
+
+      <ToolAside
+        footer={
+          <>
+            {result ? (
+              <DownloadButton blob={result} fileName="merged.pdf" className="w-full justify-center" />
+            ) : (
+              <ToolActions
+                primaryLabel={status === "processing" ? "Merging…" : "Merge PDFs"}
+                onPrimary={handleMerge}
+                primaryDisabled={entries.length < 2 || status === "processing"}
+              />
+            )}
+            {entries.length > 0 && <ToolResetLink onClick={handleReset} label="START OVER" />}
+          </>
+        }
+      >
+        <ToolAsideSection label="OUTPUT">
+          <ToolOutput
+            rows={[
+              ["Files", String(entries.length)],
+              ["Pages", totalPages ? String(totalPages) : "—"],
+              ["Size", formatFileSize(entries.reduce((n, e) => n + e.file.size, 0))],
+            ]}
+          />
+          <span className="font-body text-[10.5px] leading-[1.5] text-text-muted">
+            {entries.length < 2
+              ? "Add at least two PDFs to merge."
+              : "Drag the cards in the canvas to set the order."}
+          </span>
+        </ToolAsideSection>
+      </ToolAside>
+    </>
   );
 }

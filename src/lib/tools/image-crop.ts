@@ -1,73 +1,31 @@
 import type { ProcessedResult } from "@/hooks/useFileProcessor";
-import { canvasToBlob, loadImage } from "./canvas-utils";
-
-export interface CropData {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-  rotate: number;
-}
+import { canvasToBlob } from "./canvas-utils";
 
 /**
- * Crop an image using Canvas API with the given crop data.
+ * Encode a cropped region that cropperjs has already rendered.
+ *
+ * The crop *transform* deliberately lives with the cropper instead of being
+ * re-derived here. This module used to take `getData()` — x/y/width/height plus
+ * a rotation — rebuild the rotated bitmap by hand onto a bounding-box canvas,
+ * and then index into it with those coordinates. The two never lined up:
+ * `getData()` measures the selection against the rotated on-screen canvas while
+ * reporting it in unrotated natural pixels, and the hand-built canvas is larger
+ * than the source by `w·|cos| + h·|sin|` with its own origin. Any non-zero
+ * rotation therefore cut a region that was offset from the one the user had
+ * selected — silently, since the output was still a plausible-looking crop.
+ *
+ * `Cropper.getCroppedCanvas()` applies rotation, scale and selection in a single
+ * transform, and it is the same one driving the preview the user is looking at,
+ * so what they see is what they get.
  */
 export async function cropImage(
+  croppedCanvas: HTMLCanvasElement,
   file: File,
-  cropData: CropData,
 ): Promise<ProcessedResult> {
-  const img = await loadImage(file);
-
-  const canvas = document.createElement("canvas");
-  canvas.width = Math.round(cropData.width);
-  canvas.height = Math.round(cropData.height);
-  const ctx = canvas.getContext("2d");
-  if (!ctx) throw new Error("Canvas 2D context not available");
-
-  // Handle rotation
-  if (cropData.rotate !== 0) {
-    const rad = (cropData.rotate * Math.PI) / 180;
-    const centerX = img.naturalWidth / 2;
-    const centerY = img.naturalHeight / 2;
-
-    // Create a rotated source first
-    const rotCanvas = document.createElement("canvas");
-    const absCos = Math.abs(Math.cos(rad));
-    const absSin = Math.abs(Math.sin(rad));
-    rotCanvas.width = Math.round(img.naturalWidth * absCos + img.naturalHeight * absSin);
-    rotCanvas.height = Math.round(img.naturalWidth * absSin + img.naturalHeight * absCos);
-    const rotCtx = rotCanvas.getContext("2d");
-    if (!rotCtx) throw new Error("Canvas 2D context not available");
-    rotCtx.translate(rotCanvas.width / 2, rotCanvas.height / 2);
-    rotCtx.rotate(rad);
-    rotCtx.drawImage(img, -centerX, -centerY);
-
-    ctx.drawImage(
-      rotCanvas,
-      cropData.x,
-      cropData.y,
-      cropData.width,
-      cropData.height,
-      0,
-      0,
-      cropData.width,
-      cropData.height,
-    );
-  } else {
-    ctx.drawImage(
-      img,
-      cropData.x,
-      cropData.y,
-      cropData.width,
-      cropData.height,
-      0,
-      0,
-      cropData.width,
-      cropData.height,
-    );
-  }
-
-  const blob = await canvasToBlob(canvas, "image/png", 1);
+  // PNG regardless of input: a rotated crop leaves transparent corners, and
+  // re-encoding to a lossy format would also compound artefacts on an image the
+  // user may crop repeatedly. Pinned by `image-crop.test.ts`.
+  const blob = await canvasToBlob(croppedCanvas, "image/png", 1);
   const baseName = file.name.replace(/\.[^.]+$/, "");
 
   return {
@@ -77,4 +35,3 @@ export async function cropImage(
     newSize: blob.size,
   };
 }
-

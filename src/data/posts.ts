@@ -1,3 +1,6 @@
+import { getToolBySlug } from "./tools";
+import { getCategoryBySlug } from "./categories";
+
 export interface BlogPost {
   slug: string;
   title: string;
@@ -261,4 +264,15 @@ export function getPostsLinkingToTool(toolSlug: string): BlogPost[] {
     (p) => p.primaryTool !== toolSlug && p.relatedTools.includes(toolSlug),
   );
   return primary ? [primary, ...others] : others;
+}
+
+/**
+ * The short label shown beside a post's date. Derived from the tool the post is
+ * most directly about, so it stays correct as the registry moves.
+ */
+export function postTag(post: BlogPost): string {
+  const primary = post.primaryTool ?? post.relatedTools[0];
+  const category = primary ? getToolBySlug(primary)?.category : undefined;
+  if (category) return (getCategoryBySlug(category)?.shortName ?? "GUIDE").toUpperCase();
+  return post.keywords.some((k) => k.includes("privacy")) ? "PRIVACY" : "GUIDE";
 }

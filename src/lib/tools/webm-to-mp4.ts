@@ -1,5 +1,6 @@
 import { Muxer, ArrayBufferTarget } from "mp4-muxer";
-import type { ProcessedResult } from "@/hooks/useFileProcessor";
+import type { ProcessedResult, ProcessingContext } from "@/hooks/useFileProcessor";
+import { throwIfAborted } from "@/lib/utils/abort";
 import {
   createVideo,
   waitForReady,
@@ -16,11 +17,13 @@ import {
  */
 export async function webmToMp4(
   file: File,
-  onProgress?: (progress: number) => void,
+  ctx: ProcessingContext = {},
 ): Promise<ProcessedResult> {
+  const { onProgress, signal } = ctx;
   const videoUrl = URL.createObjectURL(file);
 
   try {
+    throwIfAborted(signal);
     assertWebCodecsSupported();
     const video = createVideo(videoUrl);
     await waitForReady(video);
@@ -32,6 +35,7 @@ export async function webmToMp4(
       );
     }
     const audioBuffer = await decodeAudio(file);
+    throwIfAborted(signal);
     const hasAudio = audioBuffer !== null;
 
     // Cap to 1920px on the long side; ensure even dims for H.264
@@ -76,85 +80,102 @@ export async function webmToMp4(
       },
     });
 
-    videoEncoder.configure(
-      await pickH264Config({
-        width: outWidth,
-        height: outHeight,
-        bitrate: 5_000_000,
-        framerate: 30,
-      }),
-    );
+    // A cancel has to wake a parked waiter for the same reason a fatal encoder
+    // error does: once we stop feeding frames, `ondequeue` never fires again.
+    const onAbort = () => wakeBackpressure?.();
+    signal?.addEventListener("abort", onAbort);
 
-    const needsScale = outWidth !== videoWidth || outHeight !== videoHeight;
-    let canvas: HTMLCanvasElement | null = null;
-    let ctx: CanvasRenderingContext2D | null = null;
-    if (needsScale) {
-      canvas = document.createElement("canvas");
-      canvas.width = outWidth;
-      canvas.height = outHeight;
-      ctx = canvas.getContext("2d")!;
-    }
+    try {
+      videoEncoder.configure(
+        await pickH264Config({
+          width: outWidth,
+          height: outHeight,
+          bitrate: 5_000_000,
+          framerate: 30,
+        }),
+      );
 
-    let frameCount = 0;
-    await playAndExtractFrames(
-      video,
-      0,
-      duration,
-      async (vid, timestampUs) => {
-        if (encoderError) throw encoderError;
-        let frame: VideoFrame;
-        if (needsScale && ctx && canvas) {
-          ctx.drawImage(vid, 0, 0, outWidth, outHeight);
-          frame = new VideoFrame(canvas, { timestamp: timestampUs });
-        } else {
-          frame = new VideoFrame(vid, { timestamp: timestampUs });
-        }
+      const needsScale = outWidth !== videoWidth || outHeight !== videoHeight;
+      let canvas: HTMLCanvasElement | null = null;
+      let canvasCtx: CanvasRenderingContext2D | null = null;
+      if (needsScale) {
+        canvas = document.createElement("canvas");
+        canvas.width = outWidth;
+        canvas.height = outHeight;
+        canvasCtx = canvas.getContext("2d")!;
+      }
 
-        const keyFrame = frameCount % 60 === 0;
-        videoEncoder.encode(frame, { keyFrame });
-        frame.close();
-        frameCount++;
-
-        // Backpressure: if encoder queue is deep, wait for it to drain
-        if (videoEncoder.encodeQueueSize > 5) {
-          await new Promise<void>((r) => {
-            wakeBackpressure = () => { videoEncoder.ondequeue = null; wakeBackpressure = null; r(); };
-            videoEncoder.ondequeue = wakeBackpressure;
-          });
+      let frameCount = 0;
+      await playAndExtractFrames(
+        video,
+        0,
+        duration,
+        async (vid, timestampUs) => {
+          throwIfAborted(signal);
           if (encoderError) throw encoderError;
-        }
-      },
-      (pct) => onProgress?.(Math.round(pct * (hasAudio ? 0.8 : 1))),
-    );
+          let frame: VideoFrame;
+          if (needsScale && canvasCtx && canvas) {
+            canvasCtx.drawImage(vid, 0, 0, outWidth, outHeight);
+            frame = new VideoFrame(canvas, { timestamp: timestampUs });
+          } else {
+            frame = new VideoFrame(vid, { timestamp: timestampUs });
+          }
 
-    await videoEncoder.flush();
-    videoEncoder.close();
-    if (encoderError) throw encoderError;
+          const keyFrame = frameCount % 60 === 0;
+          videoEncoder.encode(frame, { keyFrame });
+          frame.close();
+          frameCount++;
 
-    if (audioBuffer) {
-      onProgress?.(85);
-      await encodeAudio(audioBuffer, muxer);
-      onProgress?.(95);
+          // Backpressure: if encoder queue is deep, wait for it to drain
+          if (videoEncoder.encodeQueueSize > 5) {
+            await new Promise<void>((r) => {
+              wakeBackpressure = () => { videoEncoder.ondequeue = null; wakeBackpressure = null; r(); };
+              videoEncoder.ondequeue = wakeBackpressure;
+            });
+            throwIfAborted(signal);
+            if (encoderError) throw encoderError;
+          }
+        },
+        { signal, onProgress: (pct) => onProgress?.(Math.round(pct * (hasAudio ? 0.8 : 1))) },
+      );
+
+      await videoEncoder.flush();
+      if (encoderError) throw encoderError;
+
+      if (audioBuffer) {
+        onProgress?.(85);
+        await encodeAudio(audioBuffer, muxer, signal);
+        onProgress?.(95);
+      }
+
+      muxer.finalize();
+      onProgress?.(100);
+
+      const blob = new Blob([muxer.target.buffer], { type: "video/mp4" });
+      const baseName = file.name.replace(/\.[^.]+$/, "");
+
+      return {
+        blob,
+        fileName: `${baseName}.mp4`,
+        originalSize: file.size,
+        newSize: blob.size,
+      };
+    } finally {
+      signal?.removeEventListener("abort", onAbort);
+      // Cancelling or failing mid-encode used to leak the encoder (and its
+      // hardware session) until GC.
+      if (videoEncoder.state !== "closed") videoEncoder.close();
     }
-
-    muxer.finalize();
-    onProgress?.(100);
-
-    const blob = new Blob([muxer.target.buffer], { type: "video/mp4" });
-    const baseName = file.name.replace(/\.[^.]+$/, "");
-
-    return {
-      blob,
-      fileName: `${baseName}.mp4`,
-      originalSize: file.size,
-      newSize: blob.size,
-    };
   } finally {
     URL.revokeObjectURL(videoUrl);
   }
 }
 
-async function encodeAudio(audioBuffer: AudioBuffer, muxer: Muxer<ArrayBufferTarget>): Promise<void> {
+async function encodeAudio(
+  audioBuffer: AudioBuffer,
+  muxer: Muxer<ArrayBufferTarget>,
+  signal?: AbortSignal,
+): Promise<void> {
   const numberOfChannels = Math.min(audioBuffer.numberOfChannels, 2);
   const sampleRate = audioBuffer.sampleRate;
 
@@ -164,41 +185,47 @@ async function encodeAudio(audioBuffer: AudioBuffer, muxer: Muxer<ArrayBufferTar
     error: (e) => { encoderError = e instanceof Error ? e : new Error(String(e)); },
   });
 
-  audioEncoder.configure({
-    codec: "mp4a.40.2",
-    numberOfChannels,
-    sampleRate,
-    bitrate: 128_000,
-  });
-
-  const chunkSize = 1024;
-  const totalSamples = audioBuffer.length;
-
-  for (let offset = 0; offset < totalSamples; offset += chunkSize) {
-    const remaining = Math.min(chunkSize, totalSamples - offset);
-    const interleaved = new Float32Array(remaining * numberOfChannels);
-
-    for (let ch = 0; ch < numberOfChannels; ch++) {
-      const channelData = audioBuffer.getChannelData(ch);
-      for (let i = 0; i < remaining; i++) {
-        interleaved[i * numberOfChannels + ch] = channelData[offset + i];
-      }
-    }
-
-    const audioData = new AudioData({
-      format: "f32",
-      sampleRate,
-      numberOfFrames: remaining,
+  try {
+    audioEncoder.configure({
+      codec: "mp4a.40.2",
       numberOfChannels,
-      timestamp: Math.round((offset / sampleRate) * 1_000_000),
-      data: interleaved,
+      sampleRate,
+      bitrate: 128_000,
     });
 
-    audioEncoder.encode(audioData);
-    audioData.close();
-  }
+    const chunkSize = 1024;
+    const totalSamples = audioBuffer.length;
 
-  await audioEncoder.flush();
-  audioEncoder.close();
-  if (encoderError) throw encoderError;
+    for (let offset = 0; offset < totalSamples; offset += chunkSize) {
+      // A long track is thousands of iterations — check often enough that
+      // cancelling feels immediate.
+      throwIfAborted(signal);
+      const remaining = Math.min(chunkSize, totalSamples - offset);
+      const interleaved = new Float32Array(remaining * numberOfChannels);
+
+      for (let ch = 0; ch < numberOfChannels; ch++) {
+        const channelData = audioBuffer.getChannelData(ch);
+        for (let i = 0; i < remaining; i++) {
+          interleaved[i * numberOfChannels + ch] = channelData[offset + i];
+        }
+      }
+
+      const audioData = new AudioData({
+        format: "f32",
+        sampleRate,
+        numberOfFrames: remaining,
+        numberOfChannels,
+        timestamp: Math.round((offset / sampleRate) * 1_000_000),
+        data: interleaved,
+      });
+
+      audioEncoder.encode(audioData);
+      audioData.close();
+    }
+
+    await audioEncoder.flush();
+    if (encoderError) throw encoderError;
+  } finally {
+    if (audioEncoder.state !== "closed") audioEncoder.close();
+  }
 }

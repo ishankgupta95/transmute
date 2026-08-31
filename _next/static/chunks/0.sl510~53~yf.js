@@ -1,1 +1,0 @@
-(globalThis.TURBOPACK||(globalThis.TURBOPACK=[])).push(["object"==typeof document?document.currentScript:void 0,44494,t=>{"use strict";async function e(t){let e=await t.arrayBuffer(),o=new AudioContext;try{return await o.decodeAudioData(e)}finally{await o.close()}}t.s(["decodeAudioFile",0,e])}]);

@@ -1,6 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
+import type { Tool } from "@/data/tools";
 
 const MergePdfUI = dynamic(() => import("./MergePdfUI").then((m) => ({ default: m.MergePdfUI })), { ssr: false });
 const SplitPdfUI = dynamic(() => import("./SplitPdfUI").then((m) => ({ default: m.SplitPdfUI })), { ssr: false });
@@ -14,8 +15,12 @@ const PdfPageReorderUI = dynamic(() => import("./PdfPageReorderUI").then((m) => 
 export function MergePdfClient() { return <MergePdfUI />; }
 export function SplitPdfClient() { return <SplitPdfUI />; }
 export function CompressPdfClient() { return <CompressPdfUI />; }
-export function PdfToJpgClient() { return <PdfToJpgUI />; }
-export function ImagesToPdfClient() { return <ImagesToPdfUI />; }
+export function PdfToJpgClient({ tool }: { tool: Tool }) {
+  return <PdfToJpgUI defaultFormat={tool.targetFormat ?? "jpeg"} />;
+}
+export function ImagesToPdfClient({ tool }: { tool: Tool }) {
+  return <ImagesToPdfUI acceptFormats={tool.acceptFormats} />;
+}
 export function RotatePdfClient() { return <RotatePdfUI />; }
 export function AddPageNumbersClient() { return <AddPageNumbersUI />; }
 export function PdfPageReorderClient() { return <PdfPageReorderUI />; }

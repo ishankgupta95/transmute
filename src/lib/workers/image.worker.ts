@@ -1,5 +1,15 @@
 /// <reference lib="webworker" />
 import Pica from "pica";
+// LEAF imports — image-frames.ts and target-size.ts have zero runtime
+// imports, so they cannot drag a module that names this worker's URL into the
+// bundle (which hangs next build).
+import { firstFrameWarning } from "@/lib/tools/image-frames";
+import {
+  MAX_DIMENSION_STEPS,
+  nextScale,
+  scaledToTargetWarning,
+  stepDimensions,
+} from "@/lib/tools/target-size";
 import type { PoolWorkerRequest, PoolWorkerResponse } from "./pool";
 import type { ImageJob, ImageJobResult } from "./image-protocol";
 import type { ImageCompressOptions } from "@/lib/tools/image-compress";
@@ -47,17 +57,34 @@ async function runJob(
   job: ImageJob,
   progress: (value: number) => void,
 ): Promise<ImageJobResult> {
+  // Sniff the encoded bytes BEFORE decoding: createImageBitmap silently keeps
+  // only frame 0 of an animated GIF/WebP, so the honest "first frame was kept"
+  // notice can only come from the container. (Pre-decoded TIFF/HEIC arrive as
+  // an ImageBitmap; their warnings are attached on the main thread.)
+  const warning = job.bytes ? firstFrameWarning(new Uint8Array(job.bytes)) : null;
   const bitmap = await decodeBitmap(job);
   progress(10);
   try {
+    let result: ImageJobResult;
     switch (job.op) {
       case "convert":
-        return await convert(bitmap, job.options);
+        result = await convert(bitmap, job.options);
+        break;
       case "compress":
-        return await compress(bitmap, job, job.options, progress);
+        result = await compress(bitmap, job, job.options, progress);
+        break;
       case "resize":
-        return await resize(bitmap, job, job.options, progress);
+        result = await resize(bitmap, job, job.options, progress);
+        break;
     }
+    // Merge, don't overwrite — the op itself may have added its own notices
+    // (target-size compress appends "Scaled to …" when it downscaled). Loss
+    // warnings attach only to re-encoded outputs: never-grow's kind:"original"
+    // hands back the untouched file with every frame still in it, so "only
+    // its first frame was kept" would be false there.
+    return warning && result.kind === "blob"
+      ? { ...result, warnings: [warning, ...(result.warnings ?? [])] }
+      : result;
   } finally {
     bitmap.close();
   }
@@ -169,6 +196,42 @@ function chooseOutput(job: ImageJob, bitmap: ImageBitmap): { mime: string; ext: 
   return { mime: "image/jpeg", ext: "jpg" };
 }
 
+/**
+ * The quality half of the target-size engine: binary-search encode quality
+ * for the largest result at or under `targetBytes`. Returns that under-target
+ * blob (null when quality alone cannot get there) plus the smallest blob
+ * seen, which drives the dimension step and is the honest fallback when
+ * nothing fits. Mirrored in lib/tools/image-compress.ts.
+ */
+async function searchQuality(
+  encode: (quality: number) => Promise<Blob>,
+  targetBytes: number,
+  tick: () => void,
+): Promise<{ under: Blob | null; smallest: Blob }> {
+  let lo = 0.01;
+  let hi = 1.0;
+  let smallest = await encode(hi);
+  tick();
+  if (smallest.size <= targetBytes) return { under: smallest, smallest };
+
+  let under: Blob | null = null;
+  for (let i = 0; i < 10; i++) {
+    const mid = (lo + hi) / 2;
+    const candidate = await encode(mid);
+    tick();
+    if (candidate.size < smallest.size) smallest = candidate;
+    if (candidate.size <= targetBytes) {
+      under = candidate;
+      lo = mid;
+      // Close enough (within 5% of target) — stop refining.
+      if (candidate.size > targetBytes * 0.95) break;
+    } else {
+      hi = mid;
+    }
+  }
+  return { under, smallest };
+}
+
 async function compress(
   bitmap: ImageBitmap,
   job: ImageJob,
@@ -180,57 +243,82 @@ async function compress(
   const canvas = draw(bitmap, bitmap.width, bitmap.height, !mimeSupportsAlpha(mime));
   const encode = (quality: number) => canvas.convertToBlob({ type: mime, quality });
 
-  const finish = async (blob: Blob): Promise<ImageJobResult> => {
+  const finish = async (
+    blob: Blob,
+    width: number,
+    height: number,
+    scaled: boolean,
+  ): Promise<ImageJobResult> => {
     // The never-grow guard: a "compressor" must never hand back a bigger
-    // file. The client still holds the original — just say "use it".
+    // file. The client still holds the original — just say "use it". The
+    // untouched original was never scaled, so no scaled note either.
     if (blob.size >= job.fileSize) return { kind: "original" };
     return {
       kind: "blob",
       bytes: await toArrayBuffer(blob),
       mime,
       ext,
-      width: bitmap.width,
-      height: bitmap.height,
+      width,
+      height,
+      // A downscale changes the picture, not just its bytes — say so, in the
+      // one exact wording the shared policy module owns.
+      ...(scaled ? { warnings: [scaledToTargetWarning(width, height)] } : {}),
     };
   };
 
   if (options.mode === "quality") {
     const blob = await encode(options.quality);
     progress(90);
-    return finish(blob);
+    return finish(blob, bitmap.width, bitmap.height, false);
   }
 
-  // Target-size mode: binary search for optimal quality.
+  // Target-size mode: binary-search quality at the source dimensions first.
+  // Stepping (below) only engages when that search bottoms out above the
+  // target — a target reachable by quality alone must leave the dims alone.
   const targetBytes = options.targetSizeKb * 1024;
-  let lo = 0.01;
-  let hi = 1.0;
-  let bestBlob = await encode(hi);
-  if (bestBlob.size <= targetBytes) return finish(bestBlob);
+  // Degenerate target (cleared field, 0, NaN): stepping toward it would grind
+  // the image to the 64-px floor and present that as success. Encode at the
+  // requested quality instead — mirrored in lib/tools/image-compress.ts.
+  if (!Number.isFinite(targetBytes) || targetBytes <= 0) {
+    const blob = await encode(options.quality);
+    progress(90);
+    return finish(blob, bitmap.width, bitmap.height, false);
+  }
+  // One saturating tick per encode pass: the pass count varies with stepping,
+  // so progress climbs monotonically and parks at 90 instead of overshooting.
+  let passes = 0;
+  const tick = () => progress(Math.min(90, 15 + ++passes * 7));
 
-  let smallestBlob = bestBlob;
-  for (let i = 0; i < 10; i++) {
-    const mid = (lo + hi) / 2;
-    const candidate = await encode(mid);
-    progress(15 + (i + 1) * 7);
+  const first = await searchQuality(encode, targetBytes, tick);
+  if (first.under) return finish(first.under, bitmap.width, bitmap.height, false);
 
-    if (candidate.size < smallestBlob.size) smallestBlob = candidate;
-
-    if (candidate.size <= targetBytes) {
-      bestBlob = candidate;
-      lo = mid;
-    } else {
-      hi = mid;
-    }
-
-    // Close enough (within 5% of target)
-    if (candidate.size <= targetBytes && candidate.size > targetBytes * 0.95) {
-      bestBlob = candidate;
-      break;
+  // Quality alone cannot reach the target at these dimensions: step the dims
+  // down (shared policy in lib/tools/target-size.ts) and search again. The
+  // sqrt heuristic converges in 1–3 steps; the cap bounds total encode work.
+  let smallest = first.smallest;
+  let smallestDims = { width: bitmap.width, height: bitmap.height, scaled: false };
+  let width = bitmap.width;
+  let height = bitmap.height;
+  for (let step = 0; step < MAX_DIMENSION_STEPS; step++) {
+    const next = stepDimensions(width, height, nextScale(smallest.size, targetBytes));
+    if (!next) break; // at the 64-px floor — nothing smaller is worth making
+    ({ width, height } = next);
+    const stepped = draw(bitmap, width, height, !mimeSupportsAlpha(mime));
+    const result = await searchQuality(
+      (quality) => stepped.convertToBlob({ type: mime, quality }),
+      targetBytes,
+      tick,
+    );
+    if (result.under) return finish(result.under, width, height, true);
+    if (result.smallest.size < smallest.size) {
+      smallest = result.smallest;
+      smallestDims = { width, height, scaled: true };
     }
   }
 
-  if (bestBlob.size > targetBytes) bestBlob = smallestBlob;
-  return finish(bestBlob);
+  // Unreachable even at the floor: the smallest achieved is the honest,
+  // closest-possible answer — today's behaviour, now across dimensions too.
+  return finish(smallest, smallestDims.width, smallestDims.height, smallestDims.scaled);
 }
 
 // ── resize (mirrors lib/tools/image-resize.ts) ───────────────────

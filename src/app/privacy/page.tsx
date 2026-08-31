@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 
-const LAST_UPDATED = "29 AUG 2026";
+const LAST_UPDATED = "31 AUG 2026";
 
 export const metadata: Metadata = {
   title: "Privacy Policy",
@@ -16,11 +16,11 @@ const SECTIONS = [
   },
   {
     h: "Cookies and local storage",
-    b: "Google Analytics sets two first-party cookies, _ga and _ga_<id>, which hold a random identifier for two years so returning visits are not double-counted. They carry nothing about you or your files. Transmute sets no cookies of its own. One localStorage key, transmute-recent-outputs, remembers the name, size and tool of your last 8 downloads so the Recent Output list can show them. That is metadata only — never file contents, and it never leaves your browser. Clearing site data removes it.",
+    b: "This site sets no cookies. Google Analytics is configured to run without cookies or any other browser storage, and Transmute sets none of its own. One localStorage key, transmute-recent-outputs, remembers the name, size and tool of your last 8 downloads so the Recent Output list can show them. That is metadata only — never file contents, and it never leaves your browser. Clearing site data removes it.",
   },
   {
     h: "Analytics",
-    b: "Privacy-respecting analytics may record aggregate traffic — page views and popular tools. No personally identifiable information is collected, and nothing about the files you process is ever recorded.",
+    b: "Google Analytics counts aggregate traffic — page views and which tools get used. It is the one third-party script the site loads, and it stores nothing in your browser: no cookies, no identifier that survives the visit, which also means it cannot recognise you when you come back. Nothing about the files you process is ever recorded.",
   },
   {
     h: "Advertising",

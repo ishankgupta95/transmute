@@ -312,7 +312,8 @@ test.describe("pdf-page-reorder — keyboard and touch access", () => {
     await page.locator('[aria-label="Page 1, position 1 of 3"]').focus();
     await page.keyboard.press("ArrowRight");
     await expect(page.locator('[aria-label="Page 1, position 2 of 3"]')).toBeVisible();
-    await expect(page.getByText("ORDER CHANGED")).toBeVisible();
+    // Scoped to the tool surface: the page's FAQ copy repeats the phrase.
+    await expect(page.locator("[data-tool-surface]").getByText("ORDER CHANGED")).toBeVisible();
 
     // Focus follows the page it moved, so a second press keeps moving it.
     await page.keyboard.press("ArrowRight");

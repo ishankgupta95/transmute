@@ -25,6 +25,7 @@ const ImageToBase64UI = dynamic(() => import("./ImageToBase64UI").then((m) => ({
 const PngToIcoUI = dynamic(() => import("./PngToIcoUI").then((m) => ({ default: m.PngToIcoUI })), { ssr: false });
 const FaviconGeneratorUI = dynamic(() => import("./FaviconGeneratorUI").then((m) => ({ default: m.FaviconGeneratorUI })), { ssr: false });
 const ColorPaletteUI = dynamic(() => import("./ColorPaletteUI").then((m) => ({ default: m.ColorPaletteUI })), { ssr: false });
+const JfifToJpgUI = dynamic(() => import("./JfifToJpgUI").then((m) => ({ default: m.JfifToJpgUI })), { ssr: false });
 
 export function ImageToolClient({ tool }: { tool: Tool }) {
   return (
@@ -71,4 +72,8 @@ export function FaviconGeneratorClient({ tool }: { tool: Tool }) {
 
 export function ColorPaletteClient({ tool }: { tool: Tool }) {
   return <ColorPaletteUI acceptFormats={tool.acceptFormats} />;
+}
+
+export function JfifToJpgClient({ tool }: { tool: Tool }) {
+  return <JfifToJpgUI acceptFormats={tool.acceptFormats} />;
 }

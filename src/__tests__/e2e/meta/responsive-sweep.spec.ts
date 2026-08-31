@@ -26,6 +26,7 @@ const ROUTES: string[] = [
   "/",
   ...categories.map((c) => `/${c.slug}`),
   ...tools.map((t) => `/${t.slug}`),
+  "/all-tools",
   "/workspace",
   "/blog",
   ...posts.map((p) => `/blog/${p.slug}`),
@@ -80,7 +81,8 @@ test("the sweep covers the whole route table", () => {
   expect(categories.length).toBe(5);
   expect(posts.length).toBeGreaterThan(0);
   expect(ROUTES.length).toBe(
-    1 + categories.length + tools.length + 1 + 1 + posts.length + 2,
+    // home + categories + tools + /all-tools + /workspace + /blog + posts + about/privacy
+    1 + categories.length + tools.length + 1 + 1 + 1 + posts.length + 2,
   );
 });
 

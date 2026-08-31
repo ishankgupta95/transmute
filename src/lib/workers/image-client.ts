@@ -74,21 +74,26 @@ function needsMainThreadDecode(file: File): boolean {
 /**
  * Build the worker payload: raw bytes for anything the worker can decode
  * itself; HEIC/TIFF are decoded here first (their decoders need the main
- * thread) and cross as pixels.
+ * thread) and cross as pixels. Pre-decode warnings (a multi-page TIFF cut to
+ * page 1) are surfaced here — the worker only ever sees the decoded bitmap.
  */
 async function prepareSource(
   file: File,
   signal?: AbortSignal,
-): Promise<{ source: Pick<ImageJob, "bytes" | "bitmap">; transfer: Transferable[] }> {
+): Promise<{
+  source: Pick<ImageJob, "bytes" | "bitmap">;
+  transfer: Transferable[];
+  warnings: string[];
+}> {
   if (needsMainThreadDecode(file)) {
-    const { toDecodableBlob } = await import("@/lib/tools/image-convert");
-    const blob = await toDecodableBlob(file);
+    const { toDecodableSource } = await import("@/lib/tools/image-convert");
+    const { blob, warnings } = await toDecodableSource(file);
     throwIfAborted(signal);
     const bitmap = await createImageBitmap(blob);
-    return { source: { bitmap }, transfer: [bitmap] };
+    return { source: { bitmap }, transfer: [bitmap], warnings };
   }
   const bytes = await file.arrayBuffer();
-  return { source: { bytes }, transfer: [bytes] };
+  return { source: { bytes }, transfer: [bytes], warnings: [] };
 }
 
 async function runImageJob(
@@ -97,9 +102,9 @@ async function runImageJob(
   ctx: ProcessingContext,
 ): Promise<ImageJobResult> {
   throwIfAborted(ctx.signal);
-  const { source, transfer } = await prepareSource(file, ctx.signal);
+  const { source, transfer, warnings } = await prepareSource(file, ctx.signal);
   throwIfAborted(ctx.signal);
-  return getImagePool().run<ImageJobResult>(
+  const result = await getImagePool().run<ImageJobResult>(
     {
       ...job,
       ...source,
@@ -114,6 +119,10 @@ async function runImageJob(
       onProgress: ctx.onProgress,
     },
   );
+  // Merge main-thread pre-decode warnings with whatever the worker sniffed.
+  return warnings.length > 0
+    ? { ...result, warnings: [...warnings, ...(result.warnings ?? [])] }
+    : result;
 }
 
 function baseName(file: File): string {
@@ -121,11 +130,16 @@ function baseName(file: File): string {
 }
 
 function toResult(file: File, fileName: string, result: ImageJobResult): ProcessedResult {
+  // Loss warnings attach only to re-encoded outputs. kind:"original" is the
+  // untouched file — every frame and page still in it — so ALL warnings
+  // (the worker's frame sniff and the client's TIFF pre-decode notice alike)
+  // are dropped: each would claim a loss that never happened.
   if (result.kind === "original") {
     return { blob: file, fileName: file.name, originalSize: file.size, newSize: file.size };
   }
+  const warnings = result.warnings?.length ? { warnings: result.warnings } : {};
   const blob = new Blob([result.bytes], { type: result.mime });
-  return { blob, fileName, originalSize: file.size, newSize: blob.size };
+  return { blob, fileName, originalSize: file.size, newSize: blob.size, ...warnings };
 }
 
 /**

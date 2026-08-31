@@ -57,6 +57,11 @@ const HOW_TO_STEPS_BY_TOOL_TYPE: Record<ToolType, string[]> = {
     "The dominant colors are extracted automatically.",
     "Click any swatch to copy its HEX, RGB, or HSL value.",
   ],
+  "jfif-to-jpg": [
+    "Upload your JFIF file by dragging it into the drop zone or clicking to browse.",
+    "The tool verifies the bytes really are JPEG — a .jfif file already is one.",
+    "Click Download to save the same bytes under a .jpg name — nothing is re-encoded.",
+  ],
 
   // ── PDF ──────────────────────────────────────────────────────────
   "merge-pdf": [
@@ -76,8 +81,8 @@ const HOW_TO_STEPS_BY_TOOL_TYPE: Record<ToolType, string[]> = {
   ],
   "pdf-to-jpg": [
     "Upload your PDF by dragging it into the drop zone or clicking to browse.",
-    "Adjust the JPG quality and select which pages to convert (optional).",
-    "Click Download to save the resulting images.",
+    "Pick the output format and scale; a quality slider appears for the lossy formats.",
+    "Convert, then download pages individually or all at once as a ZIP.",
   ],
   "images-to-pdf": [
     "Upload one or more images by dragging them into the drop zone or clicking to browse.",

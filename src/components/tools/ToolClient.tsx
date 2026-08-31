@@ -9,6 +9,7 @@ import {
   PngToIcoClient,
   FaviconGeneratorClient,
   ColorPaletteClient,
+  JfifToJpgClient,
 } from "@/components/tools/ImageToolClients";
 import {
   MergePdfClient,
@@ -92,6 +93,8 @@ export function ToolClient({ tool }: { tool: Tool }) {
       return <FaviconGeneratorClient tool={tool} />;
     case "color-palette":
       return <ColorPaletteClient tool={tool} />;
+    case "jfif-to-jpg":
+      return <JfifToJpgClient tool={tool} />;
     case "merge-pdf":
       return <MergePdfClient />;
     case "split-pdf":
@@ -99,9 +102,9 @@ export function ToolClient({ tool }: { tool: Tool }) {
     case "compress-pdf":
       return <CompressPdfClient />;
     case "pdf-to-jpg":
-      return <PdfToJpgClient />;
+      return <PdfToJpgClient tool={tool} />;
     case "images-to-pdf":
-      return <ImagesToPdfClient />;
+      return <ImagesToPdfClient tool={tool} />;
     case "rotate-pdf":
       return <RotatePdfClient />;
     case "add-page-numbers":

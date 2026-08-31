@@ -25,8 +25,19 @@ export type ImageJob =
   | (ImageJobBase & { op: "compress"; options: ImageCompressOptions })
   | (ImageJobBase & { op: "resize"; options: ImageResizeOptions });
 
+interface ImageJobResultBase {
+  /**
+   * User-facing notices about what processing kept (e.g. an animated source
+   * flattened to frame 0). Plain strings — they clone across the boundary.
+   * Loss warnings attach only to re-encoded (kind:"blob") outputs: never-grow
+   * handing back the untouched original delivers every frame and page, so the
+   * client drops any warnings that reach a kind:"original" result.
+   */
+  warnings?: string[];
+}
+
 export type ImageJobResult =
-  | {
+  | (ImageJobResultBase & {
       kind: "blob";
       /** Encoded output. Transferred back. */
       bytes: ArrayBuffer;
@@ -35,6 +46,6 @@ export type ImageJobResult =
       ext: string;
       width: number;
       height: number;
-    }
+    })
   /** The compressor's never-grow guard: the untouched original wins. */
-  | { kind: "original" };
+  | (ImageJobResultBase & { kind: "original" });

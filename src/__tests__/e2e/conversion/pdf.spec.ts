@@ -304,7 +304,8 @@ test.describe("pdf conversions — real output", () => {
     await first.dragTo(page.locator('[aria-label="Page 4, position 4 of 5"]'));
 
     // Order changed → the header flips and the reorder becomes saveable.
-    await expect(page.getByText("ORDER CHANGED")).toBeVisible();
+    // Scoped to the tool surface: the page's FAQ copy repeats the phrase.
+    await expect(page.locator("[data-tool-surface]").getByText("ORDER CHANGED")).toBeVisible();
 
     await primaryAction(page, /Save Reordered PDF/).click();
 

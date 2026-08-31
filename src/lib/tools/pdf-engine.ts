@@ -167,7 +167,7 @@ async function getPdfjs() {
 
 export async function pdfToImages(
   data: ArrayBuffer | Uint8Array,
-  format: "jpeg" | "png" = "jpeg",
+  format: "jpeg" | "png" | "webp" = "jpeg",
   quality: number = 0.85,
   scale: number = 2,
   ctx: ProcessingContext = {},
@@ -175,7 +175,7 @@ export async function pdfToImages(
   const pdfjs = await getPdfjs();
   const doc = await pdfjs.getDocument({ data: new Uint8Array(data).slice() }).promise;
 
-  const ext = format === "jpeg" ? "jpg" : "png";
+  const ext = format === "jpeg" ? "jpg" : format;
   const mimeType = `image/${format}`;
   let encodedCount = 0;
   const reportDone = () => {
@@ -202,19 +202,47 @@ export async function pdfToImages(
       await page.render({ canvas, viewport }).promise;
       page.cleanup();
 
-      encodes.push(
-        encodePageCanvas(canvas, i, mimeType, quality)
-          .then((blob) => {
-            reportDone();
-            return { blob, name: `page-${i}.${ext}` };
-          }),
-      );
+      const encoded = encodePageCanvas(canvas, i, mimeType, quality)
+        .then(async (blob) => {
+          // Canvas encoders silently substitute PNG when they can't produce
+          // the requested type (the image-convert.ts trap) — Safari can't
+          // encode WebP, so page-N.webp would hold PNG bytes. blob.type can't
+          // catch it either: the worker path stamps the REQUESTED mime onto
+          // whatever bytes came back. Only the bytes themselves tell the
+          // truth, so sniff the container on every page.
+          if (format === "webp" && !(await isWebpBytes(blob))) {
+            throw new Error(
+              "This browser can't encode WebP images. Use PDF to PNG instead, or open this page in Chrome or Edge.",
+            );
+          }
+          reportDone();
+          return { blob, name: `page-${i}.${ext}` };
+        });
+      encodes.push(encoded);
+
+      // Fail fast: encode support won't change between pages, so if page 1's
+      // sniff rejects, a 60-page document must not render 59 more pages just
+      // to throw the same error at the end.
+      if (i === 1 && format === "webp") await encoded;
     }
 
     return await Promise.all(encodes);
   } finally {
     await doc.destroy();
   }
+}
+
+/**
+ * True when the blob's bytes really are a WebP container ("RIFF" at 0,
+ * "WEBP" at 8). Both encode paths can lie about the type — see the call site.
+ */
+async function isWebpBytes(blob: Blob): Promise<boolean> {
+  const head = new Uint8Array(await blob.slice(0, 12).arrayBuffer());
+  return (
+    head.length === 12 &&
+    head[0] === 0x52 && head[1] === 0x49 && head[2] === 0x46 && head[3] === 0x46 &&
+    head[8] === 0x57 && head[9] === 0x45 && head[10] === 0x42 && head[11] === 0x50
+  );
 }
 
 /**

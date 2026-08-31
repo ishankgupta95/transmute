@@ -99,6 +99,8 @@ const mockAudioEncoderFlush = vi.fn().mockResolvedValue(undefined);
 const mockAudioEncoderClose = vi.fn();
 const mockAudioEncoderConfigure = vi.fn();
 
+const mockAudioEncoderIsConfigSupported = vi.fn();
+
 function MockAudioEncoder() {
   return {
     encode: mockAudioEncoderEncode,
@@ -107,6 +109,8 @@ function MockAudioEncoder() {
     configure: mockAudioEncoderConfigure,
   };
 }
+// The real pre-check is the static `AudioEncoder.isConfigSupported`.
+MockAudioEncoder.isConfigSupported = mockAudioEncoderIsConfigSupported;
 vi.stubGlobal("AudioEncoder", MockAudioEncoder);
 
 const mockAudioDataClose = vi.fn();
@@ -136,6 +140,7 @@ import type { CompressionPreset } from "@/lib/tools/video-compress";
 describe("compressVideo", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockAudioEncoderIsConfigSupported.mockResolvedValue({ supported: true });
     mockResolveDuration.mockImplementation((video: { duration: number }) =>
       Promise.resolve(video.duration),
     );
@@ -469,6 +474,59 @@ describe("compressVideo", () => {
       expect(onProgress).toHaveBeenCalledWith(85);
       expect(onProgress).toHaveBeenCalledWith(95);
       expect(onProgress).toHaveBeenCalledWith(100);
+    });
+
+    /*
+      The Firefox ≥132 shape: every coarse WebCodecs probe passes but the AAC
+      config is refused. Without the pre-check, configure() closed the codec
+      and the user saw a raw InvalidStateError. The probe now runs BEFORE the
+      video encode — the answer is deterministic, so nobody should sit
+      through minutes of frame encoding to learn it.
+    */
+    it("rejects with a friendly AAC message when the encoder refuses the config", async () => {
+      mockAudioEncoderIsConfigSupported.mockResolvedValueOnce({ supported: false });
+      const file = new File(["video"], "input.mp4", { type: "video/mp4" });
+
+      await expect(compressVideo(file, "web")).rejects.toThrow(/AAC/);
+      expect(mockAudioEncoderConfigure).not.toHaveBeenCalled();
+      // Must fail BEFORE the expensive video encode, not after it.
+      expect(mockVideoEncoderConfigure).not.toHaveBeenCalled();
+      expect(mockPlayAndExtractFrames).not.toHaveBeenCalled();
+    });
+
+    it("rejects with the same friendly AAC message when the probe itself throws", async () => {
+      mockAudioEncoderIsConfigSupported.mockRejectedValueOnce(
+        new TypeError("unrecognized codec"),
+      );
+      const file = new File(["video"], "input.mp4", { type: "video/mp4" });
+
+      await expect(compressVideo(file, "web")).rejects.toThrow(/AAC/);
+      expect(mockPlayAndExtractFrames).not.toHaveBeenCalled();
+    });
+
+    it("asks isConfigSupported about the exact AAC config it would use", async () => {
+      const file = new File(["video"], "input.mp4", { type: "video/mp4" });
+      await compressVideo(file, "web");
+
+      expect(mockAudioEncoderIsConfigSupported).toHaveBeenCalledWith({
+        codec: "mp4a.40.2",
+        numberOfChannels: 2,
+        sampleRate: 48000,
+        bitrate: 128_000,
+      });
+    });
+
+    it("probes and configures the identical AAC config", async () => {
+      const file = new File(["video"], "input.mp4", { type: "video/mp4" });
+      await compressVideo(file, "web");
+
+      // The config the probe blessed must be the config the encoder gets —
+      // a divergence would let configure() fail on a path the probe passed.
+      expect(mockAudioEncoderIsConfigSupported).toHaveBeenCalledTimes(1);
+      expect(mockAudioEncoderConfigure).toHaveBeenCalledTimes(1);
+      expect(mockAudioEncoderConfigure.mock.calls[0][0]).toEqual(
+        mockAudioEncoderIsConfigSupported.mock.calls[0][0],
+      );
     });
   });
 });

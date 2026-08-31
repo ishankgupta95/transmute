@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import Link from "next/link";
 import type { FAQ } from "@/data/faqs";
 import type { Tool } from "@/data/tools";
@@ -13,6 +13,10 @@ import { CapabilityReadout } from "@/components/tools/CapabilityReadout";
 import { RecentOutputs } from "@/components/tools/RecentOutputs";
 import { cn } from "@/lib/utils/cn";
 import { TOOL_SURFACE } from "@/components/workspace/shared";
+import {
+  DEFAULT_SURFACE_HEIGHTS,
+  toolSurfaceHeights,
+} from "@/data/tool-surface-heights";
 
 interface ToolPageLayoutProps {
   tool: Tool;
@@ -62,6 +66,11 @@ export function ToolPageLayout({
   aboutText,
 }: ToolPageLayoutProps) {
   const ws = getWorkspaceTool(tool.slug);
+  // The tool UI mounts client-side (ssr:false), so below lg the surface has no
+  // height until it arrives and everything after it shifts down (live-site CLS
+  // 0.397). Reserve each page's measured initial height up front; desktop
+  // needs none — the band's flex chain sizes the region before the UI mounts.
+  const surface = toolSurfaceHeights[tool.slug] ?? DEFAULT_SURFACE_HEIGHTS;
   const category = getCategoryBySlug(tool.category);
   const siblings = getToolsByCategory(tool.category);
   const pipeline = ws ? (pipelineByArchetype[ws.kind] ?? []) : [];
@@ -290,7 +299,16 @@ export function ToolPageLayout({
                  * never stand in for "the tool actually mounted".
                  */
                 data-tool-surface=""
-                className={TOOL_SURFACE}
+                style={
+                  {
+                    "--surface-min-sm": `${surface.sm}px`,
+                    "--surface-min-md": `${surface.md}px`,
+                  } as CSSProperties
+                }
+                className={cn(
+                  TOOL_SURFACE,
+                  "min-h-[var(--surface-min-sm)] md:min-h-[var(--surface-min-md)]",
+                )}
               >
                 {children}
               </div>

@@ -9,6 +9,12 @@ export interface ProcessedResult {
   fileName: string;
   originalSize: number;
   newSize: number;
+  /**
+   * Non-fatal notices the UI should surface next to the result — the run
+   * succeeded, but something the user probably cares about was dropped (an
+   * animated source flattened to frame 0, a multi-page TIFF cut to page 1).
+   */
+  warnings?: string[];
 }
 
 export type ProcessorStatus = "idle" | "loading" | "processing" | "done" | "error";

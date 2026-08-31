@@ -30,8 +30,10 @@ vi.mock("utif2", () => ({
 }));
 
 import { convertImage, type ImageConvertOptions } from "@/lib/tools/image-convert";
+import { ANIMATED_GIF_WARNING, ANIMATED_WEBP_WARNING } from "@/lib/tools/image-frames";
 import heic2any from "heic2any";
 import * as UTIF from "utif2";
+import { animatedWebpBytes, gifBytes } from "./image-byte-fixtures";
 
 // -- Canvas & Image mocking --
 
@@ -251,6 +253,50 @@ describe("convertImage", () => {
     await convertImage(file, opts);
 
     expect(UTIF.decode).toHaveBeenCalled();
+  });
+
+  it("warns when a TIFF has more pages than the one it keeps", async () => {
+    vi.mocked(UTIF.decode).mockReturnValueOnce([
+      { t256: [100], t257: [80] },
+      { t256: [50], t257: [40] },
+      { t256: [25], t257: [20] },
+    ] as unknown as ReturnType<typeof UTIF.decode>);
+
+    // vi.restoreAllMocks leaves factory-made vi.fn history alone, so count
+    // this test's decodeImage calls as a delta from here.
+    vi.mocked(UTIF.decodeImage).mockClear();
+
+    const file = makeFile("scan.tiff", "image/tiff");
+    const opts: ImageConvertOptions = { targetFormat: "png", quality: 1 };
+    const result = await convertImage(file, opts);
+
+    expect(result.warnings).toEqual([
+      "This TIFF has 3 pages — only the first page was kept.",
+    ]);
+    // Only page 0 is decoded — eager decode of every page would OOM real scans.
+    expect(UTIF.decodeImage).toHaveBeenCalledTimes(1);
+  });
+
+  it("attaches no warnings for a single-page TIFF", async () => {
+    const file = makeFile("scan.tiff", "image/tiff");
+    const opts: ImageConvertOptions = { targetFormat: "png", quality: 1 };
+    const result = await convertImage(file, opts);
+
+    expect(result.warnings).toBeUndefined();
+  });
+
+  it("surfaces the exact animated-GIF and animated-WebP warnings — real bytes, real sniffer", async () => {
+    const opts: ImageConvertOptions = { targetFormat: "jpeg", quality: 0.8 };
+
+    const gif = new File([gifBytes(2)], "anim.gif", { type: "image/gif" });
+    expect((await convertImage(gif, opts)).warnings).toEqual([ANIMATED_GIF_WARNING]);
+
+    const webp = new File([animatedWebpBytes()], "anim.webp", { type: "image/webp" });
+    expect((await convertImage(webp, opts)).warnings).toEqual([ANIMATED_WEBP_WARNING]);
+
+    // A still, single-frame GIF converts without any notice.
+    const still = new File([gifBytes(1)], "still.gif", { type: "image/gif" });
+    expect((await convertImage(still, opts)).warnings).toBeUndefined();
   });
 
   it("throws when TIFF has no IFDs", async () => {

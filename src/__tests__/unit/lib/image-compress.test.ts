@@ -1,6 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 import { compressImage, type ImageCompressOptions } from "@/lib/tools/image-compress";
+import { ANIMATED_GIF_WARNING, ANIMATED_WEBP_WARNING } from "@/lib/tools/image-frames";
+import { MAX_DIMENSION_STEPS } from "@/lib/tools/target-size";
+import { animatedWebpBytes, gifBytes } from "./image-byte-fixtures";
+
+/** Encode passes per quality search: the q=1.0 probe + up to 10 iterations. */
+const PASSES_PER_SEARCH = 11;
 
 let mockCtx: Record<string, ReturnType<typeof vi.fn>>;
 let mockCanvas: Record<string, unknown>;
@@ -215,8 +221,8 @@ describe("compressImage", () => {
     });
 
     it("when target is unreachable, returns the smallest blob found (not the largest)", async () => {
-      // Every call returns 2048 bytes regardless of quality
-      // Target is 1 KB = 1024 bytes — unreachable
+      // Every call returns 2048 bytes regardless of quality OR dimensions
+      // Target is 1 KB = 1024 bytes — unreachable even by downscaling
       setupCanvasMock({ fixedSize: 2048 });
       const file = makeFile("photo.jpg");
       const opts: ImageCompressOptions = { mode: "target-size", quality: 0, targetSizeKb: 1 };
@@ -224,8 +230,15 @@ describe("compressImage", () => {
 
       // Must return 2048 (the only size available), NOT a larger blob
       expect(result.blob.size).toBe(2048);
-      // 1 initial + 10 search iterations
-      expect(toBlobMock).toHaveBeenCalledTimes(11);
+      // The quality search at source dims fails, so dimension stepping runs
+      // its searches too — bounded by the shared step cap.
+      expect(toBlobMock.mock.calls.length).toBeGreaterThan(PASSES_PER_SEARCH);
+      expect(toBlobMock.mock.calls.length).toBeLessThanOrEqual(
+        PASSES_PER_SEARCH * (1 + MAX_DIMENSION_STEPS),
+      );
+      // Downscaling never made the blob smaller here, so the full-size encode
+      // is what comes back — and it must NOT claim a scale-down happened.
+      expect(result.warnings ?? []).toEqual([]);
     });
 
     it("when target is unreachable, returns smallest of varying sizes", async () => {
@@ -271,21 +284,24 @@ describe("compressImage", () => {
       expect(call).toBe(2);
     });
 
-    it("runs at most 10 binary search iterations", async () => {
-      // Always over target, but decreasing
+    it("runs at most 10 binary search iterations per quality search", async () => {
+      // First call (q=1.0) is over target; every later call is under it but
+      // below the 95% early-exit band, so the search must run its full
+      // 10 iterations and then stop — and, having got under target, must
+      // NOT go on to dimension stepping.
       let call = 0;
       toBlobMock.mockImplementation((cb: (b: Blob | null) => void, type: string) => {
         call++;
-        // Starts large, shrinks each call but never under 1024
-        const size = 5000 - call * 200;
-        cb(new Blob([new Uint8Array(Math.max(size, 1500))], { type }));
+        const size = call === 1 ? 5000 : 500;
+        cb(new Blob([new Uint8Array(size)], { type }));
       });
 
       const file = makeFile("photo.jpg");
       const opts: ImageCompressOptions = { mode: "target-size", quality: 0, targetSizeKb: 1 };
-      await compressImage(file, opts);
+      const result = await compressImage(file, opts);
 
-      expect(call).toBe(11); // 1 initial + 10 iterations
+      expect(call).toBe(11); // 1 initial + 10 iterations, no stepping passes
+      expect(result.blob.size).toBe(500);
     });
 
     it("binary search lowers quality on each over-target iteration", async () => {
@@ -301,6 +317,113 @@ describe("compressImage", () => {
         expect(toBlobQualities[i]).toBeLessThan(1);
       }
     });
+  });
+
+  // ── dimension stepping (target-size mode) ─────────────────────
+
+  describe("dimension stepping", () => {
+    /**
+     * Area-aware mock: blob size scales with the CANVAS dimensions as well as
+     * quality, like a real encoder — so a target below the quality floor at
+     * source dims becomes reachable once the engine steps the dims down.
+     * (`document.createElement` hands back the one shared mockCanvas, so its
+     * width/height always reflect the most recent encode.)
+     */
+    function setupAreaAwareMock() {
+      toBlobMock.mockImplementation(
+        (cb: (b: Blob | null) => void, type: string, quality?: number) => {
+          const q = quality ?? 1;
+          const area = (mockCanvas.width as number) * (mockCanvas.height as number);
+          // ~0.25 bytes/px at the q≈0 floor, ~1.25 at q=1.
+          const size = Math.max(64, Math.round(area * (0.2 + 0.8 * q) * 1.25));
+          cb(new Blob([new Uint8Array(size)], { type }));
+        },
+      );
+    }
+
+    it("steps the dimensions down and says so when quality alone cannot reach the target", async () => {
+      setupAreaAwareMock();
+      // 200×150 source: the q≈0 floor is ~7.5 KB — a 4 KB target needs a
+      // genuine downscale, not just a lower quality.
+      const file = makeFile("photo.jpg");
+      const targetKb = 4;
+      const opts: ImageCompressOptions = { mode: "target-size", quality: 0, targetSizeKb: targetKb };
+      const result = await compressImage(file, opts);
+
+      expect(result.blob.size).toBeLessThanOrEqual(targetKb * 1024);
+      // The exact wording is owned by target-size.ts and asserted by e2e too.
+      expect(
+        result.warnings?.some((w) => /^Scaled to \d+×\d+ to reach the target size\.$/.test(w)),
+        `warnings: ${JSON.stringify(result.warnings)}`,
+      ).toBe(true);
+      // The final encode really happened at reduced dimensions.
+      expect(mockCanvas.width as number).toBeLessThan(200);
+      expect(mockCanvas.height as number).toBeLessThan(150);
+    });
+
+    it("does not step or warn when quality alone reaches the target", async () => {
+      setupAreaAwareMock();
+      // Floor ~7.5 KB, q=1.0 ~37.5 KB: 20 KB sits inside the quality range.
+      const file = makeFile("photo.jpg");
+      const opts: ImageCompressOptions = { mode: "target-size", quality: 0, targetSizeKb: 20 };
+      const result = await compressImage(file, opts);
+
+      expect(result.blob.size).toBeLessThanOrEqual(20 * 1024);
+      expect(result.warnings ?? []).toEqual([]);
+      // Every encode stayed at the source dimensions.
+      expect(mockCanvas.width).toBe(200);
+      expect(mockCanvas.height).toBe(150);
+    });
+
+    it("never-grow still wins over a scaled result, and carries no warnings at all", async () => {
+      // Area-dependent encodes: 4096 bytes at the 200×150 source dims, 2048
+      // once the dims step down — so the stepping loop genuinely engages,
+      // "improves" on a scaled encode, and produces the "Scaled to …" note.
+      // The file itself is only 100 bytes: never-grow must hand it back
+      // untouched, and the untouched original was never scaled — the note
+      // (and every other loss warning) must be dropped with the encode.
+      toBlobMock.mockImplementation((cb: (b: Blob | null) => void, type: string) => {
+        const atSourceDims = (mockCanvas.width as number) >= 200;
+        cb(new Blob([new Uint8Array(atSourceDims ? 4096 : 2048)], { type }));
+      });
+      const file = makeFile("optimised.jpg", 100);
+      const opts: ImageCompressOptions = { mode: "target-size", quality: 0, targetSizeKb: 1 };
+      const result = await compressImage(file, opts);
+
+      expect(result.blob).toBe(file);
+      expect(result.newSize).toBe(file.size);
+      expect(result.warnings ?? []).toEqual([]);
+      // Prove the scenario is the one described: dimension stepping really ran.
+      expect(mockCanvas.width as number).toBeLessThan(200);
+    });
+  });
+
+  // ── degenerate targets (target-size mode) ─────────────────────
+
+  describe("degenerate targets", () => {
+    it.each([0, -5, NaN, Infinity])(
+      "target %s never enters the stepping loop — quality-only encode instead",
+      async (badTarget) => {
+        // A cleared/zeroed KB field used to grind the photo down to the 64-px
+        // floor and present it as success. The engine must fall back to a
+        // single encode at the requested quality.
+        setupCanvasMock({ maxSize: 4096 });
+        const file = makeFile("photo.jpg");
+        const opts: ImageCompressOptions = {
+          mode: "target-size",
+          quality: 0.7,
+          targetSizeKb: badTarget,
+        };
+        const result = await compressImage(file, opts);
+
+        expect(toBlobMock).toHaveBeenCalledTimes(1);
+        expect(toBlobQualities).toEqual([0.7]); // the knob, not the q=1.0 probe
+        expect(result.blob.size).toBeGreaterThan(0);
+        // Dimensions untouched — no stepping happened.
+        expect(mockCanvas.width).toBe(200);
+        expect(mockCanvas.height).toBe(150);
+      },
+    );
   });
 
   // ── error cases ───────────────────────────────────────────────
@@ -344,5 +467,58 @@ describe("never-grow guard", () => {
     expect(result.blob).toBe(file);
     expect(result.fileName).toBe("optimised.jpg");
     expect(result.newSize).toBe(file.size);
+  });
+
+  it("drops the frame warning too when the animated original wins", async () => {
+    // The untouched original still has ALL its frames — "only its first
+    // frame was kept" would be false, so no warning may ride kind-original.
+    setupCanvasMock({ fixedSize: 5000 }); // every encode dwarfs the tiny GIF
+    const file = new File([gifBytes(2)], "anim.gif", { type: "image/gif" });
+    const result = await compressImage(file, { mode: "quality", quality: 0.8, targetSizeKb: 0 });
+
+    expect(result.blob).toBe(file);
+    expect(result.warnings ?? []).toEqual([]);
+  });
+});
+
+describe("frame warnings through the fallback wiring", () => {
+  // Real animated byte vectors through the REAL sniffer — only the canvas
+  // decode/encode is mocked. These pin that compressImage actually feeds its
+  // File's bytes to fileFirstFrameWarning and surfaces the exact constants.
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    setupCanvasMock();
+    setupImageMock();
+  });
+
+  const QUALITY: ImageCompressOptions = { mode: "quality", quality: 0.8, targetSizeKb: 200 };
+
+  it("surfaces the exact animated-GIF warning on a re-encoded output", async () => {
+    const file = new File([gifBytes(2)], "anim.gif", { type: "image/gif" });
+    const result = await compressImage(file, QUALITY);
+
+    expect(result.blob).not.toBe(file);
+    expect(result.warnings).toEqual([ANIMATED_GIF_WARNING]);
+  });
+
+  it("surfaces the exact animated-WebP warning", async () => {
+    const file = new File([animatedWebpBytes()], "anim.webp", { type: "image/webp" });
+    const result = await compressImage(file, QUALITY);
+
+    expect(result.warnings).toEqual([ANIMATED_WEBP_WARNING]);
+  });
+
+  it("warns for animated GIF bytes renamed photo.png — bytes decide, not names", async () => {
+    const file = new File([gifBytes(2)], "photo.png", { type: "image/png" });
+    const result = await compressImage(file, QUALITY);
+
+    expect(result.warnings).toEqual([ANIMATED_GIF_WARNING]);
+  });
+
+  it("stays quiet for a still, single-frame GIF", async () => {
+    const file = new File([gifBytes(1)], "still.gif", { type: "image/gif" });
+    const result = await compressImage(file, QUALITY);
+
+    expect(result.warnings).toBeUndefined();
   });
 });

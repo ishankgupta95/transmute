@@ -1,5 +1,6 @@
 import type { ProcessedResult } from "@/hooks/useFileProcessor";
 import { canvasToBlob, fillBackground, loadImage, mimeSupportsAlpha } from "./canvas-utils";
+import { fileFirstFrameWarning, tiffPageWarning } from "./image-frames";
 
 /**
  * BMP is deliberately absent as a *target*: `canvas.toBlob` is only required to
@@ -26,8 +27,10 @@ export async function convertImage(
   const { targetFormat, quality, width, height } = options;
   const mimeType = `image/${targetFormat}`;
 
-  // Get a decodable blob — special handling for HEIC and TIFF
-  const decodableBlob = await toDecodableBlob(file);
+  // Get a decodable blob — special handling for HEIC and TIFF. Warnings ride
+  // along: a multi-page TIFF or animated GIF/WebP loses everything past its
+  // first raster here, and the result must say so.
+  const { blob: decodableBlob, warnings } = await toDecodableSource(file);
 
   // Load into an HTMLImageElement
   const img = await loadImage(decodableBlob);
@@ -74,6 +77,7 @@ export async function convertImage(
     fileName: `${baseName}.${ext}`,
     originalSize: file.size,
     newSize: blob.size,
+    ...(warnings.length > 0 ? { warnings } : {}),
   };
 }
 
@@ -113,19 +117,28 @@ export function svgFallbackSize(
   return { width: Math.round(vw * scale), height: Math.round(vh * scale), explicit: false };
 }
 
+/** A pre-decoded source plus any notices generated while producing it. */
+export interface DecodableSource {
+  blob: Blob;
+  /** User-facing notices (multi-page TIFF, animated GIF/WebP flattened). */
+  warnings: string[];
+}
+
 /**
- * Return a blob the browser's <img> can decode. HEIC/HEIF and TIFF are
- * pre-decoded to PNG; SVG is re-wrapped with the right MIME; everything else
- * is returned as-is.
+ * Return a blob the browser's <img> can decode, plus warnings about what the
+ * pre-decode dropped. HEIC/HEIF and TIFF are pre-decoded to PNG; SVG is
+ * re-wrapped with the right MIME; everything else is returned as-is (with an
+ * animated GIF/WebP sniff — the eventual <img>/createImageBitmap decode keeps
+ * only frame 0 and says nothing).
  */
-export async function toDecodableBlob(file: File): Promise<Blob> {
+export async function toDecodableSource(file: File): Promise<DecodableSource> {
   const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
 
   // HEIC / HEIF
   if (ext === "heic" || ext === "heif" || file.type === "image/heic" || file.type === "image/heif") {
     const heic2any = (await import("heic2any")).default;
     const result = await heic2any({ blob: file, toType: "image/png" });
-    return Array.isArray(result) ? result[0] : result;
+    return { blob: Array.isArray(result) ? result[0] : result, warnings: [] };
   }
 
   // TIFF
@@ -135,22 +148,62 @@ export async function toDecodableBlob(file: File): Promise<Blob> {
 
   // SVG — wrap in blob with correct MIME so <img> can decode it
   if (ext === "svg" || file.type === "image/svg+xml") {
-    return new Blob([await file.arrayBuffer()], { type: "image/svg+xml" });
+    return {
+      blob: new Blob([await file.arrayBuffer()], { type: "image/svg+xml" }),
+      warnings: [],
+    };
   }
 
   // Everything else (JPEG, PNG, WebP, BMP, AVIF, GIF) — browser decodes natively
-  return file;
+  const warning = await fileFirstFrameWarning(file);
+  return { blob: file, warnings: warning ? [warning] : [] };
 }
 
-async function decodeTiff(file: File): Promise<Blob> {
+/** Back-compat wrapper for callers that only need the pixels (exif-viewer). */
+export async function toDecodableBlob(file: File): Promise<Blob> {
+  return (await toDecodableSource(file)).blob;
+}
+
+/**
+ * An opened TIFF: page count up front, pixels decoded per page on demand.
+ * Pages are decoded lazily and one at a time on purpose — scan/fax TIFFs run
+ * to hundreds of pages, and eagerly decoding them all to RGBA would OOM a
+ * mobile tab. Wave 1's tiff-to-pdf calls `page(i)` for every page; the
+ * converters below only ever ask for page 0.
+ */
+export interface TiffDocument {
+  pageCount: number;
+  page(index: number): { rgba: Uint8Array; width: number; height: number };
+}
+
+export async function openTiff(arrayBuffer: ArrayBuffer): Promise<TiffDocument> {
   const UTIF = await import("utif2");
-  const arrayBuffer = await file.arrayBuffer();
   const ifds = UTIF.decode(arrayBuffer);
   if (ifds.length === 0) throw new Error("Could not decode TIFF file");
-  UTIF.decodeImage(arrayBuffer, ifds[0]);
-  const rgba = UTIF.toRGBA8(ifds[0]);
-  const w = ifds[0].width;
-  const h = ifds[0].height;
+  return {
+    pageCount: ifds.length,
+    page(index) {
+      const ifd = ifds[index];
+      if (!ifd) throw new Error(`This TIFF has no page ${index + 1}`);
+      UTIF.decodeImage(arrayBuffer, ifd);
+      const result = {
+        rgba: new Uint8Array(UTIF.toRGBA8(ifd)),
+        width: ifd.width,
+        height: ifd.height,
+      };
+      // utif2 memoizes the decompressed native bitmap on the IFD and the
+      // closure keeps every IFD alive, so a per-page sweep (tiff-to-pdf)
+      // would otherwise retain ALL pages' bitmaps at once. Dropping it keeps
+      // "one page at a time" true; decodeImage re-decodes if asked again.
+      delete (ifd as { data?: Uint8Array }).data;
+      return result;
+    },
+  };
+}
+
+async function decodeTiff(file: File): Promise<DecodableSource> {
+  const doc = await openTiff(await file.arrayBuffer());
+  const { rgba, width: w, height: h } = doc.page(0);
 
   const canvas = document.createElement("canvas");
   canvas.width = w;
@@ -158,9 +211,10 @@ async function decodeTiff(file: File): Promise<Blob> {
   const ctx = canvas.getContext("2d");
   if (!ctx) throw new Error("Canvas 2D context not available");
   const imageData = ctx.createImageData(w, h);
-  imageData.data.set(new Uint8Array(rgba));
+  imageData.data.set(rgba);
   ctx.putImageData(imageData, 0, 0);
 
-  return await canvasToBlob(canvas, "image/png", 1);
+  const warning = tiffPageWarning(doc.pageCount);
+  return { blob: await canvasToBlob(canvas, "image/png", 1), warnings: warning ? [warning] : [] };
 }
 

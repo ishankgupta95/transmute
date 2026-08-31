@@ -37,6 +37,13 @@ export default function sitemap(): MetadataRoute.Sitemap {
       priority: 1.0,
     },
     ...categoryPages,
+    {
+      // The full crawlable index — one link per registered tool.
+      url: `${BASE_URL}/all-tools`,
+      lastModified: new Date(),
+      changeFrequency: "weekly",
+      priority: 0.7,
+    },
     ...toolPages,
     {
       url: `${BASE_URL}/blog`,

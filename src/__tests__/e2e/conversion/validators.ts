@@ -315,9 +315,37 @@ export function assertPng(buf: Buffer): { width: number; height: number } {
   return { width: buf.readUInt32BE(16), height: buf.readUInt32BE(20) };
 }
 
-export function assertWebp(buf: Buffer): void {
+export function assertWebp(buf: Buffer): {
+  /** FourCCs in file order, e.g. ["VP8X","ANIM","ANMF","ANMF"]. */
+  chunks: string[];
+  /** VP8X animation flag, or the presence of ANIM/ANMF chunks. */
+  animated: boolean;
+  anmfCount: number;
+} {
   expect(buf.toString("latin1", 0, 4)).toBe("RIFF");
   expect(buf.toString("latin1", 8, 12)).toBe("WEBP");
+
+  // Chunk walk (sizes padded to even), so callers can assert container-level
+  // facts — e.g. that an animation fixture really carries ≥2 ANMF frames.
+  const chunks: string[] = [];
+  let animated = false;
+  let anmfCount = 0;
+  let o = 12;
+  while (o + 8 <= buf.length) {
+    const fourcc = buf.toString("latin1", o, o + 4);
+    const size = buf.readUInt32LE(o + 4);
+    chunks.push(fourcc);
+    if (fourcc === "VP8X" && o + 8 < buf.length && (buf[o + 8] & 0x02) !== 0) animated = true;
+    if (fourcc === "ANIM") animated = true;
+    if (fourcc === "ANMF") {
+      animated = true;
+      anmfCount++;
+    }
+    o += 8 + size + (size % 2);
+  }
+  expect(chunks.length, "WebP must contain at least one chunk").toBeGreaterThan(0);
+  expect(o, "WebP chunk sizes must add up to the file length").toBe(buf.length);
+  return { chunks, animated, anmfCount };
 }
 
 /** True when the JPEG carries an APP1 `Exif\0\0` segment. */

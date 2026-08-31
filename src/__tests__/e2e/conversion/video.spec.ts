@@ -151,6 +151,30 @@ test.describe("video conversions — real output", () => {
     assertMp3(bytes);
   });
 
+  /*
+    The capability guard, driven end to end: strip the WebCodecs encode APIs
+    before any page script runs (the Firefox / older-Safari shape) and the
+    tool must explain itself up front — friendly banner, no upload needed,
+    and the drop zone still standing so the page keeps its shape.
+  */
+  for (const slug of ["/compress-video", "/webm-to-mp4"] as const) {
+    test(`${slug} warns pre-flight when WebCodecs is missing`, async ({ page }) => {
+      await page.addInitScript(() => {
+        delete (window as { VideoEncoder?: unknown }).VideoEncoder;
+        delete (window as { AudioEncoder?: unknown }).AudioEncoder;
+        delete (window as { VideoFrame?: unknown }).VideoFrame;
+      });
+      await page.goto(slug);
+
+      // Scoped to the alert: both tools' about copy also says "WebCodecs",
+      // so a bare page-wide text match would pass without the banner.
+      await expect(
+        page.getByRole("alert").filter({ hasText: /WebCodecs/ }).first(),
+      ).toBeVisible();
+      await expect(page.locator('input[type="file"]').first()).toBeAttached();
+    });
+  }
+
   test("webm-to-mp4 re-encodes VP8/Opus into a playable MP4", async ({ page }) => {
     await page.goto("/webm-to-mp4");
     await uploadFixture(page, await SAMPLES.webm());

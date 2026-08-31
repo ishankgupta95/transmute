@@ -2,6 +2,7 @@
 
 import { useCallback, useState } from "react";
 import { ErrorMessage } from "@/components/tools/ErrorMessage";
+import { WarningMessage } from "@/components/tools/WarningMessage";
 import { DropZone } from "@/components/tools/DropZone";
 import { DownloadButton } from "@/components/tools/DownloadButton";
 import {
@@ -120,6 +121,10 @@ export function ImageCompressorUI({
 
   const handleCompress = useCallback(async () => {
     if (files.length === 0) return;
+    // A cleared or zeroed KB field must not run: both engines would fall back
+    // to quality-only anyway, but a run under a "≤ 0 KB" header reads as a
+    // targeted success that never happened.
+    if (mode === "target-size" && (!Number.isFinite(targetSizeKb) || targetSizeKb < 1)) return;
     setSsimScore(null);
     // Every file at once — the worker pool schedules them across its threads.
     const out = await run(files, { mode, quality, targetSizeKb });
@@ -156,12 +161,20 @@ export function ImageCompressorUI({
   );
   // The doc's header reads "4032 × 3024 · 4.28 MB", not the byte size alone.
   const sourceDims = useImageDimensions(files.length === 1 ? files[0] : null);
+  // Target mode can step the dimensions down to reach the size ceiling, so
+  // the OUTPUT panel measures the result blob itself once one exists — the
+  // source dims are only a stand-in until then.
+  const resultDims = useImageDimensions(
+    files.length === 1 && results[0] ? results[0].blob : null,
+  );
 
   const totalOriginal = results.reduce((sum, r) => sum + (r?.originalSize ?? 0), 0);
   const totalNew = results.reduce((sum, r) => sum + (r?.newSize ?? 0), 0);
   const successCount = results.filter((r) => r !== null).length;
   const failedCount = items.filter((item) => item.status === "failed").length;
   const firstError = items.find((item) => item.error)?.error ?? null;
+  // Deduped across the batch: fifty animated GIFs are one fact, not fifty rows.
+  const warnings = [...new Set(items.flatMap((item) => item.result?.warnings ?? []))];
   const runningCount = items.filter((item) => item.status === "running").length;
   // Averaged over the queue, so the footer bar tracks the whole batch rather
   // than whichever file happens to be first.
@@ -176,6 +189,9 @@ export function ImageCompressorUI({
 
   const inputTotal = files.reduce((s, f) => s + f.size, 0);
   const threads = Math.min(poolSize(), files.length);
+  // What the OUTPUT panel's Dimensions row shows: the result's own measured
+  // dims when there is one, the source's until then. Single-file only.
+  const singleDims = files.length === 1 ? (resultDims ?? sourceDims) : null;
 
   return (
     <>
@@ -280,6 +296,13 @@ export function ImageCompressorUI({
             }
           />
         )}
+
+        {/* Every distinct warning renders — an animated input in target mode
+            carries both the frame notice and the "Scaled to …" disclosure,
+            and each is its own fact the user must see. */}
+        {warnings.map((warning) => (
+          <WarningMessage key={warning} message={warning} />
+        ))}
       </div>
 
       {/* ── Controls: the doc's right-hand rail / bottom sheet ── */}
@@ -400,18 +423,23 @@ export function ImageCompressorUI({
                 }))}
               />
               <span className="font-body text-[10.5px] leading-[1.5] text-text-muted">
-                Quality is binary-searched to land just under the ceiling.
+                Quality is binary-searched to land just under the ceiling. If
+                quality alone can&apos;t get there, the image is scaled down —
+                the result says so.
               </span>
             </ToolControl>
           )}
         </ToolControlGroup>
 
-        {/* Engine facts, all true of image-compress.ts as written. */}
+        {/* Engine facts, all true of the compress engine as written. Target
+            mode re-runs the quality search at each downscale step, so the
+            pass count is per step, and steps are capped by target-size.ts. */}
         <ToolAdvanced
           rows={[
             ["EXIF + GPS", "STRIPPED"],
             ["Colour space", "sRGB"],
-            ["Binary-search passes", "UP TO 10"],
+            ["Binary-search passes", "UP TO 10 PER STEP"],
+            ["Downscale steps", "UP TO 6 — TARGET MODE"],
             ["Transparency", "KEPT — WEBP PATH"],
           ]}
         />
@@ -420,9 +448,9 @@ export function ImageCompressorUI({
           {/*
             `ToolOutput` accents its SECOND row, so the measured output size
             sits there — the doc highlights what comes out, not what went in.
-            `Dimensions` is the doc's third row and a fact the tool already
-            holds: compression re-encodes at the source size, so these are the
-            output's dimensions too.
+            `Dimensions` is the doc's third row, measured off the RESULT once
+            one exists: target mode may downscale to reach the ceiling, so the
+            source dims only stand in until the output can speak for itself.
           */}
           <ToolOutput
             rows={[
@@ -430,8 +458,8 @@ export function ImageCompressorUI({
                 ? (["File", files[0].name] as [string, string])
                 : (["Files", String(files.length)] as [string, string]),
               ["Out", results.length > 0 ? formatFileSize(totalNew) : "—"],
-              ...(files.length === 1 && sourceDims
-                ? [["Dimensions", `${sourceDims.w} × ${sourceDims.h}`] as [string, string]]
+              ...(singleDims
+                ? [["Dimensions", `${singleDims.w} × ${singleDims.h}`] as [string, string]]
                 : [["In", formatFileSize(inputTotal)] as [string, string]]),
               [
                 "Saved",

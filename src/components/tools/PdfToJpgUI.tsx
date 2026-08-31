@@ -48,9 +48,25 @@ async function makeThumb(blob: Blob): Promise<string | undefined> {
   }
 }
 
-export function PdfToJpgUI() {
+type OutputFormat = "jpeg" | "png" | "webp";
+
+const FORMAT_LABELS: Record<OutputFormat, string> = {
+  jpeg: "JPG",
+  png: "PNG",
+  webp: "WEBP",
+};
+
+interface PdfToJpgUIProps {
+  /**
+   * Seeds the format toggle — the pdf-to-png and pdf-to-webp variant pages
+   * preselect their own output. Same UI, same controls, different default.
+   */
+  defaultFormat?: OutputFormat;
+}
+
+export function PdfToJpgUI({ defaultFormat = "jpeg" }: PdfToJpgUIProps) {
   const [file, setFile] = useState<File | null>(null);
-  const [format, setFormat] = useState<"jpeg" | "png">("jpeg");
+  const [format, setFormat] = useState<OutputFormat>(defaultFormat);
   const [quality, setQuality] = useState(0.85);
   const [scale, setScale] = useState(2);
   const [status, setStatus] = useState<"idle" | "processing" | "done" | "error">("idle");
@@ -62,7 +78,7 @@ export function PdfToJpgUI() {
     held another. Every readout below reads this instead.
   */
   const [renderedWith, setRenderedWith] = useState<{
-    format: "jpeg" | "png";
+    format: OutputFormat;
     quality: number;
     scale: number;
   } | null>(null);
@@ -144,12 +160,12 @@ export function PdfToJpgUI() {
       renderedWith === null ||
       renderedWith.format !== format ||
       renderedWith.scale !== scale ||
-      // Quality only applies to the JPEG encoder.
-      (format === "jpeg" && renderedWith.quality !== quality),
+      // Quality only applies to the lossy encoders — JPEG and WebP.
+      (format !== "png" && renderedWith.quality !== quality),
     [renderedWith, format, quality, scale],
   );
   const outFormat = renderedWith?.format ?? format;
-  const outFormatLabel = outFormat === "jpeg" ? "JPG" : "PNG";
+  const outFormatLabel = FORMAT_LABELS[outFormat];
 
   if (!file) return <DropZone accept=".pdf" onFiles={handleFiles} />;
 
@@ -238,11 +254,12 @@ export function PdfToJpgUI() {
               options={[
                 { value: "jpeg" as const, label: "JPG" },
                 { value: "png" as const, label: "PNG" },
+                { value: "webp" as const, label: "WEBP" },
               ]}
             />
           </ToolControl>
 
-          {format === "jpeg" && (
+          {format !== "png" && (
             <ToolSlider
               label="Quality"
               display={`${Math.round(quality * 100)}%`}

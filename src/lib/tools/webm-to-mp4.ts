@@ -11,6 +11,8 @@ import {
   pickH264Config,
 } from "./video-utils";
 
+const AUDIO_BITRATE = 128_000;
+
 /**
  * Convert WebM to MP4 using WebCodecs (HW-accelerated) + mp4-muxer.
  * Plays the video and captures each decoded frame via requestVideoFrameCallback,
@@ -43,6 +45,31 @@ export async function webmToMp4(
     throwIfAborted(signal);
     const hasAudio = audioBuffer !== null;
 
+    /*
+      Firefox ≥132 passes every coarse WebCodecs probe but ships no AAC
+      encoder: configure() closes the codec and the next encode() surfaces a
+      raw InvalidStateError to the user. The answer is deterministic, so probe
+      the exact config we will use BEFORE any frame is encoded — failing here
+      costs seconds, not the minutes of video encoding the user would
+      otherwise sit through first. The very same object is later handed to
+      audioEncoder.configure() so probe and configure can never diverge.
+      (Duplicated in video-compress.ts, mirroring the existing encodeAudio
+      duplication — a shared video-utils export would churn every vi.mock
+      factory that lists that module's names.)
+    */
+    const aacConfig: AudioEncoderConfig | null = audioBuffer
+      ? {
+          codec: "mp4a.40.2",
+          numberOfChannels: Math.min(audioBuffer.numberOfChannels, 2),
+          sampleRate: audioBuffer.sampleRate,
+          bitrate: AUDIO_BITRATE,
+        }
+      : null;
+    if (aacConfig) {
+      await assertAacEncodable(aacConfig);
+      throwIfAborted(signal);
+    }
+
     // Cap to 1920px on the long side; ensure even dims for H.264
     let outWidth = videoWidth;
     let outHeight = videoHeight;
@@ -58,12 +85,12 @@ export async function webmToMp4(
     const muxer = new Muxer({
       target: new ArrayBufferTarget(),
       video: { codec: "avc", width: outWidth, height: outHeight },
-      ...(audioBuffer
+      ...(aacConfig
         ? {
             audio: {
               codec: "aac",
-              numberOfChannels: Math.min(audioBuffer.numberOfChannels, 2),
-              sampleRate: audioBuffer.sampleRate,
+              numberOfChannels: aacConfig.numberOfChannels,
+              sampleRate: aacConfig.sampleRate,
             },
           }
         : {}),
@@ -147,9 +174,9 @@ export async function webmToMp4(
       await videoEncoder.flush();
       if (encoderError) throw encoderError;
 
-      if (audioBuffer) {
+      if (audioBuffer && aacConfig) {
         onProgress?.(85);
-        await encodeAudio(audioBuffer, muxer, signal);
+        await encodeAudio(audioBuffer, muxer, aacConfig, signal);
         onProgress?.(95);
       }
 
@@ -176,13 +203,36 @@ export async function webmToMp4(
   }
 }
 
+/**
+ * Probe `AudioEncoder.isConfigSupported` with the exact config `encodeAudio`
+ * will configure, and translate a refusal (or a probe that itself throws)
+ * into the friendly AAC message. Called BEFORE the video encode so the
+ * deterministic failure is instant.
+ */
+async function assertAacEncodable(config: AudioEncoderConfig): Promise<void> {
+  let aacSupported = false;
+  try {
+    const support = await AudioEncoder.isConfigSupported(config);
+    aacSupported = support.supported === true;
+  } catch {
+    aacSupported = false;
+  }
+  if (!aacSupported) {
+    throw new Error(
+      "This browser can't encode the audio track — its WebCodecs implementation doesn't support AAC. Please use Chrome or Edge.",
+    );
+  }
+}
+
 async function encodeAudio(
   audioBuffer: AudioBuffer,
   muxer: Muxer<ArrayBufferTarget>,
+  // The exact object that already passed assertAacEncodable — configuring
+  // with the same identity keeps probe and configure from ever diverging.
+  config: AudioEncoderConfig,
   signal?: AbortSignal,
 ): Promise<void> {
-  const numberOfChannels = Math.min(audioBuffer.numberOfChannels, 2);
-  const sampleRate = audioBuffer.sampleRate;
+  const { numberOfChannels, sampleRate } = config;
 
   let encoderError: Error | null = null;
   const audioEncoder = new AudioEncoder({
@@ -191,12 +241,7 @@ async function encodeAudio(
   });
 
   try {
-    audioEncoder.configure({
-      codec: "mp4a.40.2",
-      numberOfChannels,
-      sampleRate,
-      bitrate: 128_000,
-    });
+    audioEncoder.configure(config);
 
     const chunkSize = 1024;
     const totalSamples = audioBuffer.length;

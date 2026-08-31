@@ -15,7 +15,16 @@ import {
   resolveDuration,
   detectAudio,
   playAndExtractFrames,
+  assertWebCodecsSupported,
 } from "@/lib/tools/video-utils";
+
+describe("assertWebCodecsSupported", () => {
+  it("throws a message that names WebCodecs in an environment without the encode APIs", () => {
+    // Bare jsdom has no VideoEncoder / AudioEncoder / VideoFrame / rVFC —
+    // exactly the browser this guard exists for.
+    expect(() => assertWebCodecsSupported()).toThrow(/WebCodecs/);
+  });
+});
 
 describe("createVideo", () => {
   it("creates an HTMLVideoElement", () => {

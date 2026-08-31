@@ -19,10 +19,14 @@ export type { Dimensions as ImageDimensions } from "@/lib/utils/canvas-meta";
  * every mount). Returns `null` while the decode is in flight and for anything
  * that will not decode — an SVG with no intrinsic size, a corrupt file — so
  * callers must fall back to the size-only meta line, never a placeholder.
+ *
+ * Accepts any Blob, not just File: the compressor measures its own OUTPUT
+ * blob, whose dimensions can differ from the source once the target-size
+ * engine has stepped them down.
  */
-export function useImageDimensions(file: File | null | undefined): Dimensions | null {
+export function useImageDimensions(file: Blob | null | undefined): Dimensions | null {
   const [measured, setMeasured] = useState<{
-    file: File;
+    file: Blob;
     dims: Dimensions;
   } | null>(null);
 

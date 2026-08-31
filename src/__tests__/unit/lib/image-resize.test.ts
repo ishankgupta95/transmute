@@ -22,6 +22,8 @@ import {
   PERCENTAGE_PRESETS,
   type ImageResizeOptions,
 } from "@/lib/tools/image-resize";
+import { ANIMATED_GIF_WARNING, ANIMATED_WEBP_WARNING } from "@/lib/tools/image-frames";
+import { animatedWebpBytes, gifBytes } from "./image-byte-fixtures";
 
 let canvasInstances: Record<string, unknown>[];
 
@@ -274,6 +276,27 @@ describe("resizeImage", () => {
     expect(canvasInstances).toHaveLength(2);
     const [srcCanvas, destCanvas] = canvasInstances;
     expect(mockPicaInstance.resize).toHaveBeenCalledWith(srcCanvas, destCanvas, { quality: 3 });
+  });
+
+  it("surfaces the exact animated-GIF warning — real bytes through the real sniffer", async () => {
+    const file = new File([gifBytes(2)], "anim.gif", { type: "image/gif" });
+    const opts: ImageResizeOptions = {
+      mode: "custom", width: 100, height: 100, lockAspect: false, percentage: 100, quality: 0.9,
+    };
+    const result = await resizeImage(file, opts);
+
+    expect(result.warnings).toEqual([ANIMATED_GIF_WARNING]);
+  });
+
+  it("surfaces the exact animated-WebP warning, and none for a still GIF", async () => {
+    const opts: ImageResizeOptions = {
+      mode: "custom", width: 100, height: 100, lockAspect: false, percentage: 100, quality: 0.9,
+    };
+    const webp = new File([animatedWebpBytes()], "anim.webp", { type: "image/webp" });
+    expect((await resizeImage(webp, opts)).warnings).toEqual([ANIMATED_WEBP_WARNING]);
+
+    const still = new File([gifBytes(1)], "still.gif", { type: "image/gif" });
+    expect((await resizeImage(still, opts)).warnings).toBeUndefined();
   });
 
   it("rejects when image fails to load", async () => {

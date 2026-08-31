@@ -4,6 +4,7 @@ import { useCallback, useState } from "react";
 import { DropZone } from "@/components/tools/DropZone";
 import { DownloadButton } from "@/components/tools/DownloadButton";
 import { ErrorMessage } from "@/components/tools/ErrorMessage";
+import { WarningMessage } from "@/components/tools/WarningMessage";
 // Worker-pool path: conversion runs off the main thread, one file per worker,
 // so a batch is genuinely parallel (Phase 3). The old single-file bug — batch
 // advertised, only files[0] processed — died with this rewrite.
@@ -87,6 +88,8 @@ export function ImageConverterUI({
   const successCount = results.filter((r) => r !== null).length;
   const failedCount = items.filter((item) => item.status === "failed").length;
   const firstError = items.find((item) => item.error)?.error ?? null;
+  // Deduped across the batch: fifty animated GIFs are one fact, not fifty rows.
+  const warnings = [...new Set(items.flatMap((item) => item.result?.warnings ?? []))];
 
   // Both hooks run unconditionally so the early return below cannot change
   // the hook order.
@@ -238,6 +241,12 @@ export function ImageConverterUI({
             }
           />
         )}
+
+        {/* Every distinct warning renders — a mixed batch can drop frames in
+            one file and pages in another, and each is its own fact. */}
+        {warnings.map((warning) => (
+          <WarningMessage key={warning} message={warning} />
+        ))}
       </div>
 
       <ToolAside

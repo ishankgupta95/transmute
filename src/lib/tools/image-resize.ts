@@ -1,6 +1,7 @@
 import Pica from "pica";
 import type { ProcessedResult } from "@/hooks/useFileProcessor";
 import { loadImage } from "./canvas-utils";
+import { fileFirstFrameWarning } from "./image-frames";
 
 export interface ResizePreset {
   label: string;
@@ -32,6 +33,9 @@ export async function resizeImage(
   file: File,
   options: ImageResizeOptions,
 ): Promise<ProcessedResult> {
+  // loadImage keeps only the first frame of an animated GIF/WebP — same
+  // warning the worker pipeline emits, from the same sniffer.
+  const frameWarning = await fileFirstFrameWarning(file);
   const img = await loadImage(file);
   const srcW = img.naturalWidth;
   const srcH = img.naturalHeight;
@@ -83,6 +87,7 @@ export async function resizeImage(
     fileName: `${baseName}-${outW}x${outH}.${ext}`,
     originalSize: file.size,
     newSize: blob.size,
+    ...(frameWarning ? { warnings: [frameWarning] } : {}),
   };
 }
 

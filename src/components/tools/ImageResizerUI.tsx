@@ -5,6 +5,7 @@ import { Link2, Link2Off } from "lucide-react";
 import { DropZone } from "@/components/tools/DropZone";
 import { DownloadButton } from "@/components/tools/DownloadButton";
 import { ErrorMessage } from "@/components/tools/ErrorMessage";
+import { WarningMessage } from "@/components/tools/WarningMessage";
 import {
   RESIZE_PRESETS,
   PERCENTAGE_PRESETS,
@@ -210,6 +211,13 @@ export function ImageResizerUI({ acceptFormats }: ImageResizerUIProps) {
         />
 
         {error && <ErrorMessage message={error} />}
+
+        {/* Warnings live on the result, so they clear with it on any option
+            change — the same lifecycle the download button follows. Every
+            warning renders in full; none hides behind a count. */}
+        {(result?.warnings ?? []).map((warning) => (
+          <WarningMessage key={warning} message={warning} />
+        ))}
       </div>
 
       <ToolAside

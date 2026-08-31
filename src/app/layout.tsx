@@ -97,12 +97,18 @@ export default function RootLayout({
           src={`https://www.googletagmanager.com/gtag/js?id=${GA_ID}`}
           strategy="afterInteractive"
         />
+        {/* Cookieless by decision: client_storage 'none' keeps GA out of
+            cookies and browser storage entirely. Each page load gets an
+            in-memory client id, so returning visitors count as new — the
+            accepted cost of the privacy claim on /privacy and in the footer.
+            SPA page_views (AnalyticsPageviews) fire through the same
+            dataLayer and don't depend on a cookie-based client id. */}
         <Script id="google-analytics" strategy="afterInteractive">
           {`
             window.dataLayer = window.dataLayer || [];
             function gtag(){dataLayer.push(arguments);}
             gtag('js', new Date());
-            gtag('config', '${GA_ID}');
+            gtag('config', '${GA_ID}', { client_storage: 'none' });
           `}
         </Script>
       </head>

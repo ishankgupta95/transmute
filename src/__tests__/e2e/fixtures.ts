@@ -101,12 +101,141 @@ export function tinyJpg(): FixtureFile {
 }
 
 /**
- * 1x1 lossless WebP (VP8L). Verified-good; ~30 bytes.
+ * 1x1 still WebP (a bare "VP8 " lossy chunk). Verified-good; 42 bytes.
  */
 export function tinyWebp(): FixtureFile {
   const base64 = "UklGRiIAAABXRUJQVlA4IBYAAAAwAQCdASoBAAEADsD+JaQAA3AAAAAA";
   const buffer = Buffer.from(base64, "base64");
   return { name: "sample.webp", mimeType: "image/webp", buffer };
+}
+
+/** One RIFF chunk: FourCC + LE size + payload, padded to even length. */
+function riffChunk(fourcc: string, payload: Buffer): Buffer {
+  const head = Buffer.alloc(8);
+  head.write(fourcc, 0, "latin1");
+  head.writeUInt32LE(payload.length, 4);
+  const pad = payload.length % 2 === 1 ? Buffer.alloc(1) : Buffer.alloc(0);
+  return Buffer.concat([head, payload, pad]);
+}
+
+/** WebP's 24-bit little-endian field. */
+function u24le(value: number): Buffer {
+  return Buffer.from([value & 0xff, (value >> 8) & 0xff, (value >> 16) & 0xff]);
+}
+
+/**
+ * A genuinely animated 1x1 WebP, hand-rolled per the container spec: VP8X
+ * with the animation flag, ANIM, and two ANMF frames each embedding the same
+ * known-good "VP8 " bitstream `tinyWebp()` ships. Hand-rolled because nothing
+ * in Node encodes animated WebP — and the demuxer only reads the container,
+ * which is exactly the layer the frame-0 warning sniffs.
+ */
+export function animatedWebp(): FixtureFile {
+  const still = tinyWebp().buffer.subarray(12); // the full "VP8 " chunk
+  const w = 1;
+  const h = 1;
+
+  const vp8x = Buffer.concat([
+    Buffer.from([0x02, 0, 0, 0]), // feature flags: animation; 3 reserved bytes
+    u24le(w - 1),
+    u24le(h - 1),
+  ]);
+  const anim = Buffer.concat([
+    Buffer.from([0, 0, 0, 0]), // background colour (BGRA)
+    Buffer.from([0, 0]), // loop count: infinite
+  ]);
+  const anmf = Buffer.concat([
+    u24le(0), // frame x / 2
+    u24le(0), // frame y / 2
+    u24le(w - 1),
+    u24le(h - 1),
+    u24le(120), // duration ms
+    Buffer.from([0]), // blending/disposal flags
+    still,
+  ]);
+
+  const body = Buffer.concat([
+    Buffer.from("WEBP", "latin1"),
+    riffChunk("VP8X", vp8x),
+    riffChunk("ANIM", anim),
+    riffChunk("ANMF", anmf),
+    riffChunk("ANMF", anmf),
+  ]);
+  const riff = Buffer.alloc(8);
+  riff.write("RIFF", 0, "latin1");
+  riff.writeUInt32LE(body.length, 4);
+  return {
+    name: "sample-animated.webp",
+    mimeType: "image/webp",
+    buffer: Buffer.concat([riff, body]),
+  };
+}
+
+/**
+ * A real two-frame animated GIF, encoded with the same `gifenc` the video-to-
+ * GIF tool ships. Distinct solid colours per frame and an explicit delay, so
+ * a decoder that plays it shows an unmistakable flicker — and a converter
+ * that keeps only frame 0 owes the user a warning.
+ *
+ * `opts.noise` swaps the solid fills for seeded per-pixel noise (opaque, and
+ * deterministic via mulberry32). GIF's LZW cannot compress noise while a JPEG
+ * re-encode still can, so a noisy 256×256 build is guaranteed to SHRINK under
+ * compress-image's quality mode — exercising the re-encode warning path
+ * instead of the never-grow original-return.
+ */
+export function animatedGif(
+  width = 16,
+  height = 16,
+  opts: { noise?: boolean } = {},
+): FixtureFile {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { GIFEncoder, quantize, applyPalette } = require("gifenc") as typeof import("gifenc");
+  const gif = GIFEncoder();
+  const colors: [number, number, number][] = [
+    [220, 40, 40],
+    [40, 90, 220],
+  ];
+  colors.forEach((c, i) => {
+    const rgba = new Uint8Array(width * height * 4);
+    const rand = mulberry32(0x5eed + i);
+    for (let p = 0; p < width * height; p++) {
+      if (opts.noise) {
+        rgba[p * 4] = Math.floor(rand() * 256);
+        rgba[p * 4 + 1] = Math.floor(rand() * 256);
+        rgba[p * 4 + 2] = Math.floor(rand() * 256);
+      } else {
+        rgba[p * 4] = c[0];
+        rgba[p * 4 + 1] = c[1];
+        rgba[p * 4 + 2] = c[2];
+      }
+      rgba[p * 4 + 3] = 255;
+    }
+    const palette = quantize(rgba, 256, { format: "rgb444" });
+    const index = applyPalette(rgba, palette, "rgb444");
+    gif.writeFrame(index, width, height, {
+      palette,
+      delay: 200,
+      ...(i === 0 ? { first: true, repeat: 0 } : {}),
+    });
+  });
+  gif.finish();
+  return {
+    name: opts.noise ? "sample-animated-noise.gif" : "sample-animated.gif",
+    mimeType: "image/gif",
+    buffer: Buffer.from(gif.bytes()),
+  };
+}
+
+/** Tiny seeded PRNG — fixture builders must emit identical bytes every run. */
+function mulberry32(seed: number): () => number {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
 }
 
 /**
@@ -180,6 +309,72 @@ export function tinyTiff(width = 40, height = 30): FixtureFile {
     mimeType: "image/tiff",
     buffer: Buffer.from(encoded),
   };
+}
+
+/**
+ * A multi-page TIFF, pages in shrinking sizes and distinct colours — page 0
+ * is 40×30, so a converter that reads the right page is byte-distinguishable
+ * from one that grabbed a later IFD.
+ *
+ * `UTIF.encode` writes only the IFD directory, not pixel data, so the strips
+ * are spliced in by hand: encode once with placeholder offsets to measure the
+ * directory (strip offsets are fixed-width LONGs, so real values don't change
+ * its size), then re-encode with offsets pointing past it and append each
+ * page's raw RGBA at its offset. Round-trip through `UTIF.decode` is pinned
+ * by the sanity test in frames.spec.ts.
+ */
+export function multiPageTiff(pages = 3): FixtureFile {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const UTIF = require("utif2") as typeof import("utif2");
+
+  const dims = Array.from({ length: pages }, (_, i) => ({
+    w: Math.max(8, 40 - i * 8),
+    h: Math.max(6, 30 - i * 6),
+  }));
+
+  // Uncompressed 8-bit RGBA, one strip per page: PhotometricInterpretation 2
+  // (RGB), 4 samples of 8 bits, RowsPerStrip = full height.
+  const makeIfds = (offsets: number[]) =>
+    dims.map(({ w, h }, i) => ({
+      t256: [w],
+      t257: [h],
+      t258: [8, 8, 8, 8],
+      t259: [1],
+      t262: [2],
+      t273: [offsets[i]],
+      t277: [4],
+      t278: [h],
+      t279: [w * h * 4],
+    })) as unknown as import("utif2").IFD[];
+
+  const dirSize = UTIF.encode(makeIfds(dims.map(() => 0))).byteLength;
+  const offsets: number[] = [];
+  let cursor = dirSize;
+  for (const { w, h } of dims) {
+    offsets.push(cursor);
+    cursor += w * h * 4;
+  }
+
+  const out = Buffer.alloc(cursor);
+  out.set(new Uint8Array(UTIF.encode(makeIfds(offsets))), 0);
+  const colors: [number, number, number][] = [
+    [210, 60, 40],
+    [40, 180, 90],
+    [40, 90, 210],
+  ];
+  dims.forEach(({ w, h }, i) => {
+    const c = colors[i % colors.length];
+    const rgba = Buffer.alloc(w * h * 4);
+    for (let p = 0; p < w * h; p++) {
+      rgba[p * 4] = c[0];
+      rgba[p * 4 + 1] = c[1];
+      rgba[p * 4 + 2] = c[2];
+      rgba[p * 4 + 3] = 255;
+    }
+    out.set(rgba, offsets[i]);
+  });
+
+  return { name: `sample-${pages}page.tiff`, mimeType: "image/tiff", buffer: out };
 }
 
 export function tinySvg(): FixtureFile {

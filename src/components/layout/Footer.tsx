@@ -42,6 +42,9 @@ export function Footer() {
                   {SHORT_LABEL[c.slug] ?? c.name}
                 </Link>
               ))}
+              <Link href="/all-tools" className={linkClass}>
+                All tools
+              </Link>
             </div>
 
             <div className="flex flex-col gap-[9px]">
@@ -69,7 +72,7 @@ export function Footer() {
               ISHANK
             </a>
           </span>
-          <span>NO COOKIES BEYOND ANALYTICS · NO FILE EVER TRANSMITTED</span>
+          <span>NO COOKIES · NO FILE EVER TRANSMITTED</span>
         </div>
       </div>
     </footer>

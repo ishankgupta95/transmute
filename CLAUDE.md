@@ -42,7 +42,7 @@ Each tool follows a three-layer pattern to handle the Server/Client Component bo
 3. **`*UI.tsx`** — `"use client"` component with actual state, event handlers, and processing logic. Dynamically imports processing functions from `lib/tools/`.
 
 ### Media processing
-- **FFmpeg.wasm** — Singleton loaded via `lib/tools/ffmpeg-loader.ts`. Fetches ~25 MB from unpkg CDN on first use. Single-threaded build only (multi-threaded causes pthread deadlocks).
+- **FFmpeg.wasm** — Singleton loaded via `lib/tools/ffmpeg-loader.ts`. The core is **self-hosted, never a CDN**: `npm run copy:wasm` copies `ffmpeg-core.js`/`ffmpeg-core.wasm` (~31 MB, from the `@ffmpeg/core` devDependency) into `public/` on dev and build; the copies are gitignored, and the conversion suite's `forbidCdnCore` check fails the run on any CDN regression. Single-threaded build only (multi-threaded causes pthread deadlocks).
 - **Video compression** — Uses WebCodecs API (`VideoEncoder`) + `mp4-muxer`, not FFmpeg. See `lib/tools/video-compress.ts`.
 - **Audio** — `AudioContext.decodeAudioData()` for decoding; `lamejs` for MP3 encoding.
 - **PDF** — MuPDF WASM (~10 MB, copied to `public/` at build time), `pdf-lib` for manipulation, `pdfjs-dist` for rendering.

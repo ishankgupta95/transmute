@@ -5,6 +5,10 @@
 
 import type { ProcessingContext } from "@/hooks/useFileProcessor";
 import { abortError, throwIfAborted } from "@/lib/utils/abort";
+import {
+  isWebCodecsEncodeSupported,
+  WEBCODECS_UNSUPPORTED_MESSAGE,
+} from "@/lib/utils/webcodecs-support";
 
 /**
  * Create a muted, off-screen video element.
@@ -114,18 +118,12 @@ export async function decodeAudio(file: File): Promise<AudioBuffer | null> {
 
 /**
  * Throw a clear, user-facing error if the browser lacks the WebCodecs encode
- * APIs these tools rely on (Firefox has no VideoEncoder / requestVideoFrameCallback).
+ * APIs these tools rely on. The predicate lives in `utils/webcodecs-support`
+ * so the tool UIs can warn before the click with the exact same words.
  */
 export function assertWebCodecsSupported(): void {
-  const ok =
-    typeof VideoEncoder !== "undefined" &&
-    typeof AudioEncoder !== "undefined" &&
-    typeof VideoFrame !== "undefined" &&
-    "requestVideoFrameCallback" in HTMLVideoElement.prototype;
-  if (!ok) {
-    throw new Error(
-      "In-browser video encoding isn't supported in this browser. Please use Chrome or Edge.",
-    );
+  if (!isWebCodecsEncodeSupported()) {
+    throw new Error(WEBCODECS_UNSUPPORTED_MESSAGE);
   }
 }
 

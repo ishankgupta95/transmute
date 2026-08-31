@@ -34,7 +34,8 @@ test.describe("workspace mounts real tools", () => {
   }) => {
     await gotoWorkspaceTool(page, "resize-image");
     await expect(
-      page.getByRole("navigation", { name: "Tools" }).getByRole("button", { name: /Resize Image/ }),
+      // Anchored: the rail also holds "Resize Image to 20/50/100 KB" variants.
+      page.getByRole("navigation", { name: "Tools" }).getByRole("button", { name: /^Resize Image —/ }),
     ).toHaveAttribute("aria-current", "true");
 
     // Pick another tool in the rail: URL updates, previous tool unmounts.

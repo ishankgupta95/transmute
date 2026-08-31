@@ -6,6 +6,11 @@ import { DropZone } from "@/components/tools/DropZone";
 import { DownloadButton } from "@/components/tools/DownloadButton";
 import type { CompressionPreset } from "@/lib/tools/video-compress";
 import { useFileProcessor, type FileProcessorContext } from "@/hooks/useFileProcessor";
+import { useIsClient } from "@/hooks/useIsClient";
+import {
+  isWebCodecsEncodeSupported,
+  WEBCODECS_UNSUPPORTED_MESSAGE,
+} from "@/lib/utils/webcodecs-support";
 import { videoMeta, type Dimensions } from "@/lib/utils/canvas-meta";
 import { formatFileSize } from "@/lib/utils/file-helpers";
 import { useObjectUrl } from "@/hooks/useObjectUrl";
@@ -37,6 +42,10 @@ const PRESETS: { value: CompressionPreset; label: string; desc: string }[] = [
 ];
 
 export function CompressVideoUI() {
+  // Read only after mount so the static export can't bake the build
+  // machine's (absent) encoder support into the prerendered HTML.
+  const mounted = useIsClient();
+  const unsupported = mounted && !isWebCodecsEncodeSupported();
   const [file, setFile] = useState<File | null>(null);
   // The hook revokes on unmount and on swap; the hand-rolled version only
   // revoked on swap, so navigating away pinned the source blob for the tab.
@@ -118,7 +127,14 @@ export function CompressVideoUI() {
   );
 
   if (!file) {
-    return <DropZone accept=".mp4,.webm,.mov" onFiles={handleFiles} />;
+    return (
+      <>
+        {/* Warn before the click, not after a wasted upload; the zone stays
+            so the page keeps its shape on an unsupported browser. */}
+        {unsupported && <ErrorMessage message={WEBCODECS_UNSUPPORTED_MESSAGE} />}
+        <DropZone accept=".mp4,.webm,.mov" onFiles={handleFiles} />
+      </>
+    );
   }
 
   return (
@@ -177,6 +193,11 @@ export function CompressVideoUI() {
         {status === "error" && (
           <ErrorMessage message={error} />
         )}
+        {/* The same pre-flight banner as the drop state — it is what explains
+            the disabled primary once a file is already loaded. */}
+        {unsupported && status !== "error" && (
+          <ErrorMessage message={WEBCODECS_UNSUPPORTED_MESSAGE} />
+        )}
 
       </div>
 
@@ -207,7 +228,11 @@ export function CompressVideoUI() {
               // two different things at once.
               <ToolActions primaryLabel="Cancel" onPrimary={cancel} />
             ) : (
-              <ToolActions primaryLabel="Compress" onPrimary={handleCompress} />
+              <ToolActions
+                primaryLabel="Compress"
+                onPrimary={handleCompress}
+                primaryDisabled={unsupported}
+              />
             )}
             {status !== "processing" && (
               <ToolResetLink

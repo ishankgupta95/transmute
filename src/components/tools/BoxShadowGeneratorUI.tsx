@@ -2,14 +2,15 @@
 
 import { useCallback, useState } from "react";
 
-import { copyText } from "@/lib/utils/clipboard";
 import {
   ToolActions,
   ToolAside,
   ToolAsideSection,
   ToolSlider,
 } from "@/components/tools/ToolAside";
-import { CodeBlock, ColorStage } from "@/components/tools/ToolCanvas";
+import { CanvasHeader, CodeBlock, ColorStage } from "@/components/tools/ToolCanvas";
+import { CANVAS_COLUMN } from "@/components/workspace/shared";
+import { useCopied } from "@/hooks/useCopied";
 
 interface Shadow {
   x: number;
@@ -42,7 +43,7 @@ function shadowToCss(s: Shadow): string {
 
 export function BoxShadowGeneratorUI() {
   const [shadows, setShadows] = useState<Shadow[]>([{ ...defaultShadow }]);
-  const [copied, setCopied] = useState(false);
+  const { copied, copy } = useCopied();
 
   const cssValue = shadows.map(shadowToCss).join(", ");
   const cssCode = `box-shadow: ${cssValue};`;
@@ -62,26 +63,17 @@ export function BoxShadowGeneratorUI() {
   }, []);
 
   const handleCopy = useCallback(() => {
-    copyText(cssCode).then((ok) => {
-      if (ok) {
-        setCopied(true);
-        setTimeout(() => setCopied(false), 2000);
-      }
-    });
-  }, [cssCode]);
+    void copy(cssCode);
+  }, [copy, cssCode]);
 
   return (
     <>
       {/* ── Canvas: the doc's colour stage + code block ────── */}
-      <div className="min-w-0 space-y-[15px]">
-        <div className="flex items-baseline gap-3">
-          <span className="font-display text-[13px] leading-none font-medium text-text-primary">
-            Shadow
-          </span>
-          <span className="ml-auto font-mono text-[10.5px] leading-none text-text-muted">
-            {shadows.length} LAYER{shadows.length === 1 ? "" : "S"}
-          </span>
-        </div>
+      <div className={CANVAS_COLUMN}>
+        <CanvasHeader
+          file="Shadow"
+          trailing={`${shadows.length} LAYER${shadows.length === 1 ? "" : "S"}`}
+        />
 
         <ColorStage className="bg-[#1b1e2e]" caption="card on the page ground">
           <div
@@ -126,7 +118,7 @@ export function BoxShadowGeneratorUI() {
                   type="checkbox"
                   checked={shadow.inset}
                   onChange={(e) => updateShadow(i, "inset", e.target.checked)}
-                  className="size-3.5 rounded border-border accent-accent"
+                  className="size-3.5 rounded-sm border-border accent-accent"
                 />
                 Inset
               </label>
@@ -136,7 +128,7 @@ export function BoxShadowGeneratorUI() {
                   value={shadow.color}
                   onChange={(e) => updateShadow(i, "color", e.target.value)}
                   aria-label={`Layer ${i + 1} color`}
-                  className="size-7 cursor-pointer rounded border border-border"
+                  className="size-7 cursor-pointer rounded-sm border border-border"
                 />
                 {shadows.length > 1 && (
                   <button

@@ -57,7 +57,7 @@ export async function convertToMp3(
   ctx: ProcessingContext = {},
 ): Promise<ProcessedResult> {
   const { decodeAudioFile } = await import("./audio-decode");
-  const audioBuffer = await resampleForMp3(await decodeAudioFile(file));
+  const audioBuffer = await resampleForMp3(await decodeAudioFile(file, ctx));
   const { encodeMp3 } = await import("@/lib/workers/audio-client");
   const blob = await encodeMp3(audioBuffer, options.bitrate, ctx);
   const baseName = file.name.replace(/\.[^.]+$/, "");

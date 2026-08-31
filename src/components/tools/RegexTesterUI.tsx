@@ -2,8 +2,12 @@
 
 import { useCallback, useMemo, useRef, useState } from "react";
 import { ErrorMessage } from "@/components/tools/ErrorMessage";
-import { copyText } from "@/lib/utils/clipboard";
-import { chipClass } from "@/components/workspace/shared";
+import {
+  chipClass,
+  CANVAS_COLUMN,
+  MONO_LABEL,
+} from "@/components/workspace/shared";
+import { cn } from "@/lib/utils/cn";
 import {
   ToolActions,
   ToolAside,
@@ -11,6 +15,7 @@ import {
   ToolOutput,
 } from "@/components/tools/ToolAside";
 import {
+  GenList,
   lineCount,
   TEXT_PANE_BODY,
   TextPane,
@@ -18,6 +23,8 @@ import {
 } from "@/components/tools/ToolCanvas";
 import { evalRegexSync, type RegexMatch } from "@/lib/tools/regex-eval";
 import { evalRegexGuarded, regexRunsInline } from "@/lib/workers/regex-client";
+import { useCopied } from "@/hooks/useCopied";
+import { formatFileSize } from "@/lib/utils/file-helpers";
 
 /** What each flag letter does, for the rail's hint line. */
 const FLAGS: readonly { flag: string; hint: string }[] = [
@@ -41,7 +48,7 @@ export function RegexTesterUI() {
   const [pattern, setPattern] = useState("");
   const [flags, setFlags] = useState("g");
   const [testStr, setTestStr] = useState("");
-  const [copied, setCopied] = useState(false);
+  const { copied, copy } = useCopied();
   const [evalState, setEvalState] = useState<EvalState>(EMPTY_EVAL);
 
   /*
@@ -115,34 +122,39 @@ export function RegexTesterUI() {
   const groupCount = matches.reduce((n, m) => n + m.groups.length, 0);
 
   const handleCopy = useCallback(() => {
-    copyText(matches.map((m) => m.text).join("\n")).then((ok) => {
-      if (ok) {
-        setCopied(true);
-        setTimeout(() => setCopied(false), 2000);
-      }
-    });
-  }, [matches]);
+    void copy(matches.map((m) => m.text).join("\n"));
+  }, [copy, matches]);
 
   return (
     <>
       {/* ── Canvas: what you look at ─────────────────────────── */}
-      <div className="min-w-0 space-y-4">
-        {/* Pattern input */}
-        <div className="flex gap-2">
-          <div className="flex-1">
-            <label className="block text-sm font-medium text-text-secondary mb-1">Regex Pattern</label>
-            <input
-              type="text"
-              value={pattern}
-              onChange={(e) => handlePattern(e.target.value)}
-              placeholder="[A-Za-z]+@[A-Za-z]+\.[A-Za-z]+"
-              className="w-full rounded-md border border-border bg-bg-elevated px-3 py-2 text-sm text-text-primary font-mono placeholder:text-text-muted"
-            />
-          </div>
+      <div className={CANVAS_COLUMN}>
+        {/* Pattern input — the tool's primary control. It stays in the canvas,
+            directly above the string it filters; only its tokens change, from
+            generic Tailwind sizes to the Nocturne field scale the rest of the
+            dev family uses. The heading is a <span>, not a <label>: it never
+            pointed at the input, so the field had no accessible name at all —
+            aria-label is what supplies one now. */}
+        <div className="flex flex-col">
+          <span className={cn(MONO_LABEL, "mb-1.5 block tracking-[0.1em] text-text-muted")}>
+            PATTERN
+          </span>
+          <input
+            type="text"
+            value={pattern}
+            onChange={(e) => handlePattern(e.target.value)}
+            placeholder="[A-Za-z]+@[A-Za-z]+\.[A-Za-z]+"
+            aria-label="Regex pattern"
+            className="h-[30px] w-full rounded-[7px] border border-border bg-bg-elevated px-2.5 font-mono text-xs leading-none text-text-primary placeholder:text-text-muted focus:border-accent focus:outline-none"
+          />
         </div>
 
         <TextPanes columns={highlighted ? 2 : 1}>
-          <TextPane label="Test String" lines={lineCount(testStr)}>
+          <TextPane
+            label="Test String"
+            lines={lineCount(testStr)}
+            size={formatFileSize(new Blob([testStr]).size)}
+          >
             <textarea
               value={testStr}
               onChange={(e) => handleTestStr(e.target.value)}
@@ -153,7 +165,12 @@ export function RegexTesterUI() {
           </TextPane>
 
           {highlighted && (
-            <TextPane tone="out" label={`Matches (${matches.length})`} lines={lineCount(testStr)}>
+            <TextPane
+              tone="out"
+              label={`Matches (${matches.length})`}
+              lines={lineCount(testStr)}
+              size={formatFileSize(new Blob([testStr]).size)}
+            >
               <div
                 data-testid="regex-highlight"
                 className={TEXT_PANE_BODY}
@@ -165,23 +182,21 @@ export function RegexTesterUI() {
 
         {regexError && <ErrorMessage message={regexError} />}
 
-        {/* Capture groups */}
+        {/* Capture groups — GenList is the system's list primitive; this was
+            the only hand-rolled one left in the dev family. The heading labels
+            a list, not a control, so it is a <span>. */}
         {matches.some((m) => m.groups.length > 0) && (
-          <div>
-            <label className="block text-sm font-medium text-text-secondary mb-1">Capture Groups</label>
-            <div className="space-y-1">
-              {matches.map((m, i) => (
-                <div key={i} className="rounded-md border border-border bg-bg-elevated px-3 py-2 text-xs font-mono">
-                  <span className="text-text-muted">Match {i + 1}:</span>{" "}
-                  <span className="text-text-primary">&quot;{m.text}&quot;</span>
-                  {m.groups.map((g, j) => (
-                    <span key={j} className="ml-3 text-accent">
-                      Group {j + 1}: &quot;{g}&quot;
-                    </span>
-                  ))}
-                </div>
-              ))}
-            </div>
+          <div className="flex flex-col">
+            <span className={cn(MONO_LABEL, "mb-1.5 block tracking-[0.1em] text-text-muted")}>
+              CAPTURE GROUPS
+            </span>
+            <GenList
+              rows={matches.flatMap((m, i) =>
+                // An optional group that did not participate is `undefined` —
+                // show the em dash rather than an empty row.
+                m.groups.map((g, j) => ({ value: g ?? "—", meta: `M${i + 1} · G${j + 1}` })),
+              )}
+            />
           </div>
         )}
       </div>

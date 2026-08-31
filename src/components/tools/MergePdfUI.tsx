@@ -1,26 +1,43 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { ErrorMessage } from "@/components/tools/ErrorMessage";
 import { DropZone } from "@/components/tools/DropZone";
 import { DownloadButton } from "@/components/tools/DownloadButton";
-import { ProgressBar } from "@/components/tools/ProgressBar";
 import { mergePdfs, getPageCount } from "@/lib/tools/pdf-engine";
 import { formatFileSize } from "@/lib/utils/file-helpers";
 import {
   ToolActions,
   ToolAside,
   ToolAsideSection,
+  ToolDone,
   ToolOutput,
   ToolResetLink,
 } from "@/components/tools/ToolAside";
-import { DocCard, DocStrip, StatStrip } from "@/components/tools/ToolCanvas";
+import { CanvasHeader, DocCard, DocStrip, StatStrip } from "@/components/tools/ToolCanvas";
+import { ToolProgress } from "@/components/tools/ToolControls";
+import { CANVAS_COLUMN } from "@/components/workspace/shared";
 
 interface PdfEntry {
   file: File;
   pageCount: number | null;
 }
+
+/**
+ * The doc's `Add PDF` slot at the end of the assembly strip:
+ * `border-radius:8px;border:1px dashed var(--color-neutral-700);gap:8px;
+ * color:var(--color-neutral-600)` with a 20px `+` and an 11px label.
+ *
+ * Width matches `DocCard`'s `w-44` (the doc's 176px). Height is inherited
+ * rather than restated — `DocStrip` is a stretch row, so the slot tracks
+ * whatever height the real cards have and cannot drift away from them.
+ *
+ * Duplicated (not exported) in `ImagesToPdfUI`: importing it across two tool
+ * UIs would pull one tool's chunk into the other's route bundle.
+ */
+const ADD_SLOT_CLASS =
+  "flex w-44 flex-none cursor-pointer flex-col items-center justify-center gap-2 rounded-md border border-dashed border-neutral-700 text-text-muted transition-colors duration-200 hover:border-accent/50 hover:text-accent-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent";
 
 export function MergePdfUI() {
   const [entries, setEntries] = useState<PdfEntry[]>([]);
@@ -28,6 +45,10 @@ export function MergePdfUI() {
   const [result, setResult] = useState<Blob | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [dragIdx, setDragIdx] = useState<number | null>(null);
+  const addInputRef = useRef<HTMLInputElement>(null);
+  // The doc pins a "Done in 1.4 s" card above the primary once a run
+  // finishes. Timed for real; cleared the moment the inputs change.
+  const [elapsed, setElapsed] = useState<string | null>(null);
 
   const handleFiles = useCallback(async (files: File[]) => {
     const newEntries: PdfEntry[] = [];
@@ -43,16 +64,22 @@ export function MergePdfUI() {
     }
     setEntries((prev) => [...prev, ...newEntries]);
     setResult(null);
+    setElapsed(null);
     setStatus("idle");
   }, []);
 
   const removeEntry = useCallback((idx: number) => {
     setEntries((prev) => prev.filter((_, i) => i !== idx));
     setResult(null);
+    setElapsed(null);
     setStatus("idle");
   }, []);
 
-  const handleDragStart = useCallback((idx: number) => {
+  const handleDragStart = useCallback((e: React.DragEvent, idx: number) => {
+    // Firefox refuses to start a drag until the payload is seeded. Optional
+    // because a synthetic dragstart (tests, some a11y tooling) carries none.
+    e.dataTransfer?.setData("text/plain", String(idx));
+    if (e.dataTransfer) e.dataTransfer.effectAllowed = "move";
     setDragIdx(idx);
   }, []);
 
@@ -69,6 +96,7 @@ export function MergePdfUI() {
     // Add and remove already clear the previous merge; a reorder must too,
     // or the download button keeps offering a PDF in the old page order.
     setResult(null);
+    setElapsed(null);
     setStatus("idle");
   }, [dragIdx]);
 
@@ -76,10 +104,16 @@ export function MergePdfUI() {
     if (entries.length < 2) return;
     setStatus("processing");
     setError(null);
+    setElapsed(null);
+    const startedAt = performance.now();
     try {
       const buffers = await Promise.all(entries.map((e) => e.file.arrayBuffer()));
       const merged = await mergePdfs(buffers);
       setResult(new Blob([merged as BlobPart], { type: "application/pdf" }));
+      // A tiny PDF finishes in tens of milliseconds; "Done in 0.0 s" reads
+      // like a stopwatch that never started. Sub-second runs report ms.
+      const ms = performance.now() - startedAt;
+      setElapsed(ms < 950 ? `${Math.round(ms)} ms` : `${(ms / 1000).toFixed(1)} s`);
       setStatus("done");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to merge PDFs");
@@ -90,6 +124,7 @@ export function MergePdfUI() {
   const handleReset = useCallback(() => {
     setEntries([]);
     setResult(null);
+    setElapsed(null);
     setStatus("idle");
     setError(null);
   }, []);
@@ -98,7 +133,7 @@ export function MergePdfUI() {
 
   return (
     <>
-      <div className="min-w-0 space-y-6">
+      <div className={CANVAS_COLUMN}>
         <DropZone accept=".pdf" multiple onFiles={handleFiles} disabled={status === "processing"} />
 
         <p className="text-xs text-text-muted">
@@ -115,15 +150,15 @@ export function MergePdfUI() {
 
         {entries.length > 0 && (
           <>
-            <div className="flex items-baseline gap-3">
-              <span className="font-display text-[13px] leading-none font-medium text-text-primary">
-                Assembly order
-              </span>
-              <span className="font-mono text-[10.5px] leading-none text-text-muted">
-                DRAG TO REORDER · {entries.length} DOCS
-                {totalPages ? ` · ${totalPages} PAGES` : ""}
-              </span>
-            </div>
+            {/* A section title rather than a filename; the counts stay in the
+                muted `meta` slot they already sat in, beside the title. */}
+            <CanvasHeader
+              file="Assembly order"
+              meta={
+                `DRAG TO REORDER · ${entries.length} DOCS` +
+                (totalPages ? ` · ${totalPages} PAGES` : "")
+              }
+            />
 
             <DocStrip>
               {entries.map((entry, idx) => (
@@ -136,40 +171,90 @@ export function MergePdfUI() {
                   onRemove={() => removeEntry(idx)}
                   draggableProps={{
                     draggable: true,
-                    onDragStart: () => handleDragStart(idx),
+                    onDragStart: (e: React.DragEvent) => handleDragStart(e, idx),
                     onDragOver: (e: React.DragEvent) => handleDragOver(e, idx),
                     onDragEnd: () => setDragIdx(null),
                   }}
                 />
               ))}
+
+              {/* The doc's `Add PDF` slot, wired to a real picker. */}
+              <button
+                type="button"
+                onClick={() => addInputRef.current?.click()}
+                disabled={status === "processing"}
+                className={ADD_SLOT_CLASS}
+              >
+                <span aria-hidden="true" className="text-[20px] leading-none font-light">
+                  +
+                </span>
+                <span className="font-body text-[11px] leading-none">Add PDF</span>
+              </button>
+              <input
+                ref={addInputRef}
+                type="file"
+                accept=".pdf"
+                multiple
+                className="hidden"
+                onChange={(e) => {
+                  const picked = Array.from(e.target.files ?? []);
+                  if (picked.length) void handleFiles(picked);
+                  // Same file twice in a row must still fire a change event.
+                  e.target.value = "";
+                }}
+              />
             </DocStrip>
 
             <StatStrip
               stats={[
-                { label: "DOCS", value: String(entries.length), tone: "neutral" },
-                { label: "PAGES", value: totalPages ? String(totalPages) : "—" },
+                // The doc's labels are DOCUMENTS / PAGES OUT / SIZE (EST.) /
+                // BOOKMARKS KEPT. The first two ship verbatim. The estimate is
+                // replaced by two measured facts, and BOOKMARKS is NOT shown:
+                // `copyDocInfo` in pdf-engine-core deliberately does not graft
+                // the /Outlines tree, so "KEPT" would be false.
+                { label: "DOCUMENTS", value: String(entries.length), tone: "neutral" },
+                { label: "PAGES OUT", value: totalPages ? String(totalPages) : "—" },
                 {
-                  label: "SIZE",
+                  label: "SIZE IN",
                   value: formatFileSize(entries.reduce((n, e) => n + e.file.size, 0)),
                   tone: "neutral",
                 },
-                { label: "OUTPUT", value: result ? "merged.pdf" : "—", tone: "ok" },
+                {
+                  label: "SIZE OUT",
+                  value: result ? formatFileSize(result.size) : "—",
+                  tone: "ok",
+                },
               ]}
             />
           </>
         )}
 
-        {status === "processing" && <ProgressBar progress={null} />}
         {error && <ErrorMessage message={error} />}
       </div>
 
       <ToolAside
         footer={
           <>
+            {/* The doc pins the running readout to the rail footer, above
+                the primary — not under the canvas, far from the button that
+                started the run. */}
+            {status === "processing" && (
+              <ToolProgress phase="MERGING" percent={null} label="Merging PDFs" />
+            )}
+            {elapsed && <ToolDone elapsed={elapsed} />}
             {result ? (
               <DownloadButton blob={result} fileName="merged.pdf" className="w-full justify-center" />
             ) : (
               <ToolActions
+                /*
+                  T-168 (the doc's `Merge 4 documents`) is deliberately NOT
+                  applied here. Four E2E call-sites across three spec files —
+                  one of them `conversion/workspace.spec.ts`, outside this
+                  scope — address this button by `/Merge PDFs/`, and unlike
+                  `Extract N pages` the count adds no fact the canvas is not
+                  already showing (`DOCUMENTS n`). Raised as a copy change for
+                  the owner rather than taken unilaterally.
+                */
                 primaryLabel={status === "processing" ? "Merging…" : "Merge PDFs"}
                 onPrimary={handleMerge}
                 primaryDisabled={entries.length < 2 || status === "processing"}
@@ -182,9 +267,12 @@ export function MergePdfUI() {
         <ToolAsideSection label="OUTPUT">
           <ToolOutput
             rows={[
-              ["Files", String(entries.length)],
-              ["Pages", totalPages ? String(totalPages) : "—"],
-              ["Size", formatFileSize(entries.reduce((n, e) => n + e.file.size, 0))],
+              // `ToolOutput` accents row index 1, so the headline fact — the
+              // page count the merge produces — sits second, as the doc's
+              // OUTPUT plate puts its emphasised value there.
+              ["Documents", String(entries.length)],
+              ["Pages out", totalPages ? String(totalPages) : "—"],
+              ["Size in", formatFileSize(entries.reduce((n, e) => n + e.file.size, 0))],
             ]}
           />
           <span className="font-body text-[10.5px] leading-[1.5] text-text-muted">

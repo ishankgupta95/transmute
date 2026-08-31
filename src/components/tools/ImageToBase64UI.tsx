@@ -2,8 +2,9 @@
 
 import { useCallback, useState } from "react";
 import { DropZone } from "@/components/tools/DropZone";
+import { useImageDimensions } from "@/hooks/useImageDimensions";
+import { imageMeta } from "@/lib/utils/canvas-meta";
 import { formatFileSize } from "@/lib/utils/file-helpers";
-import { copyText } from "@/lib/utils/clipboard";
 import {
   ToolActions,
   ToolAside,
@@ -11,6 +12,7 @@ import {
   ToolChoice,
   ToolOutput,
 } from "@/components/tools/ToolAside";
+import { ToolControl, ToolControlGroup } from "@/components/tools/ToolControls";
 import {
   CanvasHeader,
   CodeBlock,
@@ -19,6 +21,8 @@ import {
   TextPane,
   TextPanes,
 } from "@/components/tools/ToolCanvas";
+import { CANVAS_COLUMN } from "@/components/workspace/shared";
+import { useCopied } from "@/hooks/useCopied";
 
 interface ImageToBase64UIProps {
   acceptFormats: string;
@@ -28,14 +32,16 @@ export function ImageToBase64UI({ acceptFormats }: ImageToBase64UIProps) {
   const [file, setFile] = useState<File | null>(null);
   const [base64, setBase64] = useState<string>("");
   const [dataUri, setDataUri] = useState<string>("");
-  const [copied, setCopied] = useState(false);
+  const { copied, copy, clear: clearCopied } = useCopied();
   const [outputMode, setOutputMode] = useState<"datauri" | "raw">("datauri");
+  // The doc's image readout is dimensions AND size, not the size alone.
+  const sourceDims = useImageDimensions(file);
 
   const handleFiles = useCallback((files: File[]) => {
     const f = files[0];
     if (!f) return;
     setFile(f);
-    setCopied(false);
+    clearCopied();
 
     const reader = new FileReader();
     reader.onload = () => {
@@ -46,24 +52,19 @@ export function ImageToBase64UI({ acceptFormats }: ImageToBase64UIProps) {
       setBase64(raw);
     };
     reader.readAsDataURL(f);
-  }, []);
+  }, [clearCopied]);
 
   const handleCopy = useCallback(() => {
     const text = outputMode === "datauri" ? dataUri : base64;
-    copyText(text).then((ok) => {
-      if (ok) {
-        setCopied(true);
-        setTimeout(() => setCopied(false), 2000);
-      }
-    });
-  }, [outputMode, dataUri, base64]);
+    void copy(text);
+  }, [copy, outputMode, dataUri, base64]);
 
   const handleReset = useCallback(() => {
     setFile(null);
     setBase64("");
     setDataUri("");
-    setCopied(false);
-  }, []);
+    clearCopied();
+  }, [clearCopied]);
 
   const output = outputMode === "datauri" ? dataUri : base64;
 
@@ -76,10 +77,10 @@ export function ImageToBase64UI({ acceptFormats }: ImageToBase64UIProps) {
   return (
     <>
       {/* ── Canvas: what you look at ─────────────────────────── */}
-      <div className="min-w-0 space-y-[13px]">
+      <div className={CANVAS_COLUMN}>
         <CanvasHeader
           file={file.name}
-          meta={formatFileSize(file.size)}
+          meta={imageMeta(sourceDims, formatFileSize(file.size))}
           trailing={outputMode === "datauri" ? "DATA URI" : "BASE64"}
         />
 
@@ -125,23 +126,25 @@ export function ImageToBase64UI({ acceptFormats }: ImageToBase64UIProps) {
           />
         }
       >
-        <ToolAsideSection label="FORMAT">
-          <ToolChoice
-            label="Output format"
-            fill
-            value={outputMode}
-            onChange={setOutputMode}
-            options={[
-              { value: "datauri" as const, label: "Data URI" },
-              { value: "raw" as const, label: "Raw Base64" },
-            ]}
-          />
-          <span className="font-body text-[10.5px] leading-[1.5] text-text-muted">
-            {outputMode === "datauri"
-              ? "Carries the MIME type, so it drops straight into src or url()."
-              : "Payload only — for JSON bodies and APIs that add their own prefix."}
-          </span>
-        </ToolAsideSection>
+        <ToolControlGroup>
+          <ToolControl label="FORMAT">
+            <ToolChoice
+              label="Output format"
+              fill
+              value={outputMode}
+              onChange={setOutputMode}
+              options={[
+                { value: "datauri" as const, label: "Data URI" },
+                { value: "raw" as const, label: "Raw Base64" },
+              ]}
+            />
+            <span className="font-body text-[10.5px] leading-[1.5] text-text-muted">
+              {outputMode === "datauri"
+                ? "Carries the MIME type, so it drops straight into src or url()."
+                : "Payload only — for JSON bodies and APIs that add their own prefix."}
+            </span>
+          </ToolControl>
+        </ToolControlGroup>
 
         <ToolAsideSection label="OUTPUT">
           <ToolOutput

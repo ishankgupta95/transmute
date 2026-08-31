@@ -84,7 +84,17 @@ export function assertMp4(
 // MP3
 // ────────────────────────────────────────────────────────────────────────────
 
-export function assertMp3(buf: Buffer): { frames: number; stereo: boolean } {
+export function assertMp3(buf: Buffer): {
+  frames: number;
+  stereo: boolean;
+  /**
+   * The rate DECLARED in the MPEG frame header — deliberately not the rate a
+   * browser reports after decoding, which is always the AudioContext's rate
+   * and therefore tells you nothing about the file. Reading the header is the
+   * only way to see what the encoder was actually configured with.
+   */
+  sampleRate: number;
+} {
   expect(buf.length, "MP3 should not be empty").toBeGreaterThan(512);
 
   let o = 0;
@@ -98,6 +108,17 @@ export function assertMp3(buf: Buffer): { frames: number; stereo: boolean } {
   const layer = (buf[o + 1] >> 1) & 0x03;
   expect(layer, "expected Layer III").toBe(1);
   const stereo = ((buf[o + 3] >> 6) & 0x03) !== 3;
+
+  // Version-aware rate table: MPEG1 / MPEG2 / MPEG2.5 each have their own.
+  const VERSION_RATES: Record<number, number[]> = {
+    3: [44100, 48000, 32000], // MPEG1
+    2: [22050, 24000, 16000], // MPEG2
+    0: [11025, 12000, 8000], // MPEG2.5
+  };
+  const version = (buf[o + 1] >> 3) & 0x03;
+  const rateIdx = (buf[o + 2] >> 2) & 0x03;
+  const sampleRate = VERSION_RATES[version]?.[rateIdx] ?? 0;
+  expect(sampleRate, "MP3 header must declare a legal sample rate").toBeGreaterThan(0);
 
   // Walk frames to prove the stream is more than one lucky header.
   const BITRATES = [0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320, 0];
@@ -115,7 +136,7 @@ export function assertMp3(buf: Buffer): { frames: number; stereo: boolean } {
     frames++;
   }
   expect(frames, "MP3 should contain a run of decodable frames").toBeGreaterThan(10);
-  return { frames, stereo };
+  return { frames, stereo, sampleRate };
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -182,6 +203,12 @@ export function assertGif(buf: Buffer): {
   height: number;
   frames: number;
   durationMs: number;
+  /**
+   * Per-frame delays in ms, in file order. Exposed because the total alone
+   * cannot tell a real capture from the constant-delay bug: at 10 fps both
+   * land near 1000 ms. Only the spread distinguishes them.
+   */
+  delaysMs: number[];
 } {
   expect(buf.length).toBeGreaterThan(64);
   const sig = buf.toString("latin1", 0, 6);
@@ -207,13 +234,18 @@ export function assertGif(buf: Buffer): {
 
   let frames = 0;
   let durationMs = 0;
+  const delaysMs: number[] = [];
   while (o < buf.length) {
     const b = buf[o];
     if (b === 0x3b) break; // trailer
     if (b === 0x21) {
       // Extension: label, then sub-blocks. GCE carries the frame delay.
       const label = buf[o + 1];
-      if (label === 0xf9 && buf[o + 2] === 4) durationMs += buf.readUInt16LE(o + 4) * 10;
+      if (label === 0xf9 && buf[o + 2] === 4) {
+        const delay = buf.readUInt16LE(o + 4) * 10;
+        durationMs += delay;
+        delaysMs.push(delay);
+      }
       o += 2;
       skipSubBlocks();
     } else if (b === 0x2c) {
@@ -230,7 +262,7 @@ export function assertGif(buf: Buffer): {
 
   expect(frames, "GIF should contain at least one frame").toBeGreaterThan(0);
   expect(buf[buf.length - 1], "GIF must end with its trailer byte").toBe(0x3b);
-  return { width, height, frames, durationMs };
+  return { width, height, frames, durationMs, delaysMs };
 }
 
 // ────────────────────────────────────────────────────────────────────────────

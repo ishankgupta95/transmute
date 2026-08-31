@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { usePrefersReducedMotion } from "@/hooks/useIsClient";
 
 /** The rotating proof panel: a real route, its real engine, and what it costs. */
 const LIVE = [
@@ -19,7 +20,9 @@ const LIVE = [
     inMeta: "00:47.2\n28.6 MB",
     outMeta: "480 px · 15 fps\n10.9 MB",
     note: "Trim on a filmstrip, pick a frame rate, watch the size before you commit.",
-    engine: "FFMPEG WASM",
+    // Not FFmpeg: video-to-gif decodes with the native <video> element and
+    // encodes with gifenc. See the ENGINES table on the homepage.
+    engine: "CANVAS 2D · GIFENC",
     time: "~9 s / 5 s clip",
   },
   {
@@ -63,13 +66,27 @@ const LIVE = [
 const ROW =
   "flex justify-between bg-bg-primary px-3.5 py-2.5 font-mono text-[11px] leading-none";
 
+/*
+  The doc swaps the two big format words on `tmSlide .45s cubic-bezier(.2,.7,.3,1)`.
+  The shared `animate-tm-rise` token runs the same curve at 0.3s and is imported by
+  five other components, so the duration is corrected here against the same keyframe
+  rather than by retuning the token. tm-rise travels 8px where tmSlide travels 6px —
+  closing that last 2px needs a keyframe in globals.css, which this pass does not own.
+*/
+const FORMAT_SWAP = "animate-tm-slide";
+
 export function LiveEngine() {
+  // Auto-rotating content above the fold is exactly what WCAG 2.2.2 is about:
+  // with the preference set the panel holds on one entry and every animation
+  // in it stops, matching the sibling HeroSearch typewriter.
+  const reduced = usePrefersReducedMotion();
   const [i, setI] = useState(0);
 
   useEffect(() => {
+    if (reduced) return;
     const id = setInterval(() => setI((n) => (n + 1) % LIVE.length), 3200);
     return () => clearInterval(id);
-  }, []);
+  }, [reduced]);
 
   const live = LIVE[i];
 
@@ -78,23 +95,29 @@ export function LiveEngine() {
       <div className="flex h-[34px] items-center justify-between border-b border-border px-3.5 font-mono text-[9.5px] leading-none font-medium tracking-[0.14em] text-text-muted">
         <span>LIVE ENGINE</span>
         <span className="flex items-center gap-1.5">
-          <span className="size-[5px] animate-tm-blink rounded-full bg-accent" />
+          <span className="size-[5px] animate-[tm-blink-deep_1.6s_ease-in-out_infinite] rounded-full bg-accent motion-reduce:animate-none" />
           RUNNING
         </span>
       </div>
 
-      <div className="relative flex justify-center overflow-hidden px-6 pt-9 pb-8">
+      <div className="relative flex justify-center overflow-hidden px-4 pt-[38px] pb-[34px] sm:px-[26px]">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_1px_1px,rgba(233,233,237,.06)_1px,transparent_0)] bg-[length:20px_20px] opacity-60" />
 
-        <div className="relative flex h-[250px] items-stretch" aria-live="polite">
+        {/*
+          Fluid, capped at the design's 331px. Fixed widths (176 + 5 + 150)
+          overran the card below ~380px and `overflow-hidden` sliced the accent
+          bracket and the arc off both ends. 53% + 45% + the 5px seam fits at
+          320 and still hits the cap on desktop.
+        */}
+        <div className="relative flex h-[250px] w-full max-w-[331px] items-stretch">
           {/* IN — the file as it arrived: square, still open. */}
-          <div className="flex w-[176px] flex-col justify-center gap-[9px] border-2 border-r-0 border-accent px-5">
+          <div className="flex w-[53%] min-w-0 flex-col justify-center gap-[9px] border-2 border-r-0 border-accent px-3 sm:px-5">
             <span className="font-mono text-[9.5px] leading-none font-medium tracking-[0.16em] text-text-muted">
               IN
             </span>
             <span
               key={`in-${i}`}
-              className="animate-tm-rise font-mono text-[40px] leading-none font-medium tracking-[-0.01em] whitespace-pre-line text-neutral-200"
+              className={`${FORMAT_SWAP} font-mono text-[40px] leading-none font-medium tracking-[-0.01em] whitespace-pre-line text-neutral-200 motion-reduce:animate-none`}
             >
               {live.from}
             </span>
@@ -105,17 +128,17 @@ export function LiveEngine() {
 
           {/* The seam — the same gap the logo carries. */}
           <div className="relative w-[5px] flex-none">
-            <span className="absolute -top-2 -bottom-2 left-0.5 w-[1.5px] animate-tm-glow bg-accent shadow-[0_0_16px_2px_color-mix(in_srgb,var(--color-accent)_70%,transparent)]" />
+            <span className="absolute -top-2 -bottom-2 left-0.5 w-[1.5px] animate-tm-seam bg-accent motion-reduce:animate-none shadow-[0_0_16px_2px_color-mix(in_srgb,var(--color-accent)_70%,transparent)]" />
           </div>
 
           {/* OUT — resolved into the arc. */}
-          <div className="flex w-[150px] flex-col justify-center gap-[9px] rounded-r-[150px] border-2 border-l-0 border-accent bg-accent/22 px-[18px]">
+          <div className="flex w-[45%] min-w-0 flex-col justify-center gap-[9px] rounded-r-full border-2 border-l-0 border-accent bg-accent/22 px-3 sm:px-[18px]">
             <span className="font-mono text-[9.5px] leading-none font-medium tracking-[0.16em] text-accent-200/70">
               OUT
             </span>
             <span
               key={`out-${i}`}
-              className="animate-tm-rise font-mono text-[40px] leading-none font-medium tracking-[-0.01em] whitespace-pre-line text-accent-200"
+              className={`${FORMAT_SWAP} font-mono text-[40px] leading-none font-medium tracking-[-0.01em] whitespace-pre-line text-accent-200 motion-reduce:animate-none`}
             >
               {live.to}
             </span>

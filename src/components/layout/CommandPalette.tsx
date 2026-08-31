@@ -7,6 +7,7 @@ import { tools } from "@/data/tools";
 import { getWorkspaceTool } from "@/data/workspace";
 import { useIsClient } from "@/hooks/useIsClient";
 import { cn } from "@/lib/utils/cn";
+import { lockScroll, unlockScroll } from "@/lib/utils/scroll-lock";
 
 /** Any control anywhere can open the palette by dispatching this. */
 export const OPEN_SEARCH_EVENT = "transmute:open-search";
@@ -23,7 +24,13 @@ interface Entry {
   haystack: string;
 }
 
-const MAX_RESULTS = 8;
+/*
+  12, not 8: broad-but-obvious queries ("pdf", "image") matched more tools than
+  the list showed and silently dropped the rest. The list already scrolls
+  (`max-h-[52vh] overflow-y-auto`), and anything still cut is announced by the
+  count row under it.
+*/
+const MAX_RESULTS = 12;
 
 /**
  * `?q=` opens the palette pre-filled. The homepage's `WebSite` schema declares
@@ -48,6 +55,7 @@ export function CommandPalette() {
   const [query, setQuery] = useState(queryFromUrl);
   const [active, setActive] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
+  const rowRefs = useRef<(HTMLLIElement | null)[]>([]);
 
   const entries = useMemo<Entry[]>(
     () =>
@@ -58,20 +66,37 @@ export function CommandPalette() {
           name: t.name,
           description: t.description,
           route,
+          // `description` is indexed too — without it "pdf smaller", a query
+          // the hero types on a loop, matched nothing.
           haystack:
-            `${t.name} ${t.slug} ${route} ${t.keywords.join(" ")}`.toLowerCase(),
+            `${t.name} ${t.slug} ${route} ${t.keywords.join(" ")} ${t.description}`.toLowerCase(),
         };
       }),
     [],
   );
 
-  // "heic jpg" and "pdf smaller" both work: every token must appear somewhere.
-  const results = useMemo(() => {
-    const tokens = query.toLowerCase().split(/\s+/).filter(Boolean);
-    if (tokens.length === 0) return entries.slice(0, MAX_RESULTS);
-    return entries
-      .filter((e) => tokens.every((tok) => e.haystack.includes(tok)))
-      .slice(0, MAX_RESULTS);
+  /*
+    "heic jpg" and "pdf smaller" both work: every token must appear somewhere.
+    The matches are then ranked — exact name, name prefix, slug hit, everything
+    else — because a wider haystack means an incidental description hit could
+    otherwise outrank the tool the user actually named. `Array#sort` is stable,
+    so registry order survives inside each tier.
+  */
+  const { results, total } = useMemo(() => {
+    const q = query.toLowerCase().trim();
+    const tokens = q.split(/\s+/).filter(Boolean);
+    const all =
+      tokens.length === 0
+        ? entries
+        : entries.filter((e) => tokens.every((tok) => e.haystack.includes(tok)));
+    const rank = (e: Entry) => {
+      const n = e.name.toLowerCase();
+      if (n === q) return 0;
+      if (n.startsWith(q)) return 1;
+      return e.slug.includes(q) ? 2 : 3;
+    };
+    const sorted = tokens.length === 0 ? all : [...all].sort((a, b) => rank(a) - rank(b));
+    return { results: sorted.slice(0, MAX_RESULTS), total: all.length };
   }, [entries, query]);
 
   const close = useCallback(() => {
@@ -109,18 +134,24 @@ export function CommandPalette() {
   // so focusing before then would find no input.
   useEffect(() => {
     if (!open || !mounted) return;
-    document.body.style.overflow = "hidden";
+    // Counted, not written directly: the phone nav drawer can be open behind
+    // this and must keep its own lock when the palette closes.
+    lockScroll();
     inputRef.current?.focus();
-    return () => {
-      document.body.style.overflow = "";
-    };
+    return () => unlockScroll();
   }, [open, mounted]);
+
+  // The list scrolls, so the arrow-key highlight has to be scrolled with it —
+  // otherwise the selection walks off the bottom invisibly.
+  useEffect(() => {
+    rowRefs.current[active]?.scrollIntoView({ block: "nearest" });
+  }, [active, results]);
 
   if (!mounted || !open) return null;
 
   return createPortal(
     <div
-      className="fixed inset-0 z-[9999] flex items-start justify-center bg-[rgba(15,17,28,.72)] px-4 pt-[12vh] backdrop-blur-sm"
+      className="fixed inset-0 z-[9999] flex items-start justify-center bg-[rgba(10,11,18,.72)] px-4 pt-[12vh] backdrop-blur-[3px]"
       onClick={close}
       role="presentation"
     >
@@ -129,7 +160,7 @@ export function CommandPalette() {
         aria-modal="true"
         aria-label="Search tools"
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-[560px] overflow-hidden rounded-lg border border-border bg-bg-primary shadow-[0_0_0_1px_var(--color-nocturne-neutral-800),0_24px_60px_rgba(0,0,0,.6)]"
+        className="w-full max-w-[600px] overflow-hidden rounded-[12px] bg-bg-elevated shadow-[0_0_0_1px_var(--color-nocturne-neutral-700),0_30px_70px_rgba(0,0,0,.6)]"
       >
         <div className="flex items-center gap-3 border-b border-border px-4">
           <svg
@@ -168,8 +199,24 @@ export function CommandPalette() {
             }}
             placeholder={`Search ${tools.length} tools…`}
             aria-label="Search tools"
-            className="h-[52px] w-full bg-transparent font-body text-[15px] text-text-primary placeholder:text-text-muted focus:outline-none"
+            /*
+              Arrow keys move a highlight while focus stays in the input, so
+              the selection only exists for assistive tech if it is published
+              as a combobox + activedescendant. `aria-controls` is dropped when
+              the list isn't rendered — it must not point at a missing id.
+            */
+            role="combobox"
+            aria-expanded={results.length > 0}
+            aria-controls={results.length > 0 ? "cmd-results" : undefined}
+            aria-autocomplete="list"
+            aria-activedescendant={
+              results[active] ? `cmd-opt-${results[active].slug}` : undefined
+            }
+            className="h-[52px] w-full bg-transparent font-body text-[15px] text-text-primary caret-accent placeholder:text-text-muted focus:outline-none"
           />
+          <span className="sr-only" aria-live="polite">
+            {total} results
+          </span>
           <kbd className="flex-none rounded-sm border border-border bg-bg-primary px-[7px] py-[5px] font-mono text-[10.5px] leading-none font-medium text-text-secondary">
             ESC
           </kbd>
@@ -180,11 +227,25 @@ export function CommandPalette() {
             Nothing converts to that. Try a format pair — “heic jpg”.
           </p>
         ) : (
-          <ul className="max-h-[52vh] overflow-y-auto py-1.5">
+          <ul
+            id="cmd-results"
+            role="listbox"
+            aria-label="Tools"
+            className="max-h-[52vh] overflow-y-auto py-1.5"
+          >
             {results.map((r, i) => (
-              <li key={r.slug}>
+              <li
+                key={r.slug}
+                role="presentation"
+                ref={(el) => {
+                  rowRefs.current[i] = el;
+                }}
+              >
                 <button
                   type="button"
+                  id={`cmd-opt-${r.slug}`}
+                  role="option"
+                  aria-selected={i === active}
                   onMouseEnter={() => setActive(i)}
                   onClick={() => go(r.slug)}
                   className={cn(
@@ -212,6 +273,13 @@ export function CommandPalette() {
               </li>
             ))}
           </ul>
+        )}
+
+        {/* Never let the list just stop: say how much was cut. */}
+        {total > results.length && (
+          <p className="m-0 border-t border-border px-4 py-2 text-center font-mono text-[10.5px] text-text-muted">
+            SHOWING {results.length} OF {total} — KEEP TYPING
+          </p>
         )}
       </div>
     </div>,

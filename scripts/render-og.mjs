@@ -21,6 +21,20 @@ const OUT = join(ROOT, "public/og-image.png");
 
 const svg = await readFile(join(ROOT, "assets/og-image.svg"), "utf8");
 
+/*
+ * The card states a tool count in type. A raster cannot interpolate, so this is
+ * the only tool count in the codebase that does not derive from `tools.length` —
+ * guard it here rather than let a stale number ship in the share preview.
+ */
+const registry = await readFile(join(ROOT, "src/data/tools.ts"), "utf8");
+const toolCount = (registry.match(/^ {4}slug: "/gm) ?? []).length;
+const stated = Number(svg.match(/>(\d+) browser-based tools/)?.[1]);
+if (!toolCount || stated !== toolCount) {
+  throw new Error(
+    `assets/og-image.svg says "${stated} browser-based tools" but the registry has ${toolCount}. Update the SVG copy before rendering.`,
+  );
+}
+
 const browser = await chromium.launch();
 const page = await browser.newPage({ viewport: { width: 1400, height: 800 } });
 

@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 
-const LAST_UPDATED = "7 APR 2026";
+const LAST_UPDATED = "29 AUG 2026";
 
 export const metadata: Metadata = {
   title: "Privacy Policy",
@@ -16,7 +16,7 @@ const SECTIONS = [
   },
   {
     h: "Cookies and local storage",
-    b: "Transmute sets no first-party cookies and stores no personal data locally.",
+    b: "Google Analytics sets two first-party cookies, _ga and _ga_<id>, which hold a random identifier for two years so returning visits are not double-counted. They carry nothing about you or your files. Transmute sets no cookies of its own. One localStorage key, transmute-recent-outputs, remembers the name, size and tool of your last 8 downloads so the Recent Output list can show them. That is metadata only — never file contents, and it never leaves your browser. Clearing site data removes it.",
   },
   {
     h: "Analytics",
@@ -28,7 +28,7 @@ const SECTIONS = [
   },
   {
     h: "External resources",
-    b: "The heavy WebAssembly engines some tools rely on — FFmpeg.wasm and MuPDF — are served from this site rather than a third-party CDN, so opening a video or PDF tool hands nobody else your IP address. Every font is self-hosted too, including the Markdown to PDF tool's print typefaces. Beyond the analytics described below, the site makes no third-party requests at all — and nothing it fetches ever carries your file data.",
+    b: "The heavy WebAssembly engines some tools rely on — FFmpeg.wasm and MuPDF — are served from this site rather than a third-party CDN, so opening a video or PDF tool hands nobody else your IP address. Every font is self-hosted too, including the Markdown to PDF tool's print typefaces. Beyond the analytics described above, the site makes no third-party requests at all — and nothing it fetches ever carries your file data.",
   },
   {
     h: "Children's privacy",
@@ -42,7 +42,7 @@ const SECTIONS = [
 
 export default function PrivacyPage() {
   return (
-    <main className="mx-auto w-full max-w-[700px] flex-1 px-4 py-11 md:px-8">
+    <main className="mx-auto w-full max-w-[700px] flex-1 px-4 pt-11 pb-10 md:px-8">
       <div className="flex flex-col gap-6.5">
         <div className="flex flex-wrap items-baseline justify-between gap-5">
           <h1 className="m-0 font-display text-[clamp(28px,5vw,36px)] leading-[1.14] font-medium tracking-[-0.028em] text-text-primary">
@@ -106,7 +106,7 @@ export default function PrivacyPage() {
             href="https://ishank.dev"
             target="_blank"
             rel="noopener noreferrer"
-            className="text-accent underline underline-offset-[3px] transition-colors duration-200 hover:text-accent-400"
+            className="rounded-sm text-accent underline underline-offset-[3px] transition-colors duration-200 hover:text-accent-400 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
           >
             ishank.dev
           </a>

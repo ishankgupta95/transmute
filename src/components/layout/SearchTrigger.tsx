@@ -32,12 +32,12 @@ export function SearchTrigger({
       aria-label="Search tools"
       aria-keyshortcuts="Meta+K Control+K"
       className={cn(
-        "flex cursor-pointer items-center rounded-lg border border-border text-text-muted transition-colors duration-200",
+        "flex cursor-pointer items-center rounded-md border border-border text-text-muted transition-colors duration-200",
         "hover:border-accent/40 hover:text-text-secondary",
         "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent",
         size === "bar" && "h-[30px] gap-2 bg-transparent px-2.5 font-body text-xs",
         size === "field" &&
-          "h-[54px] w-full max-w-[520px] gap-3 rounded-[11px] bg-bg-elevated px-4 font-body text-[15px] shadow-[0_8px_30px_rgba(0,0,0,.35)]",
+          "h-[54px] w-full max-w-[520px] gap-[11px] rounded-[11px] bg-bg-elevated px-4 font-body text-[15px] shadow-[0_8px_30px_rgba(0,0,0,.35)]",
         size === "icon" && "min-h-11 min-w-11 justify-center bg-transparent",
         className,
       )}

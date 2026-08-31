@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { FileProcessorContext, ProcessedResult } from "@/hooks/useFileProcessor";
 import { trackEvent } from "@/lib/utils/analytics";
 import { isAbortError } from "@/lib/utils/abort";
+import { fileExtensionLabel } from "@/hooks/useFileProcessor";
 
 export interface BatchItem {
   /**
@@ -88,7 +89,7 @@ export function useBatchProcessor<TOptions>(
             trackEvent({
               action: "file_processed",
               category: "conversion",
-              label: file.name.split(".").pop()?.toLowerCase() ?? "",
+              label: fileExtensionLabel(file.name),
               value: Math.round(result.newSize / 1024),
             });
           } catch (err) {
@@ -116,5 +117,32 @@ export function useBatchProcessor<TOptions>(
     setIsProcessing(false);
   }, []);
 
-  return { items, isProcessing, run, reset };
+  /**
+   * Stop the batch but keep what it already produced. A 200-file queue is the
+   * longest job on the site and used to be unstoppable — the only exit was
+   * leaving the page.
+   *
+   * Rows that finished keep their blob, so the user can still download the
+   * part that ran. Rows that were queued or mid-flight go back to "queued":
+   * they produced nothing, and marking them FAILED would put a red error the
+   * user caused deliberately next to a file that is simply not converted yet.
+   * Nothing is left "running", so the table can't sit spinning against an
+   * aborted pool.
+   */
+  const cancel = useCallback(() => {
+    if (!controllerRef.current) return;
+    runIdRef.current++;
+    controllerRef.current.abort();
+    controllerRef.current = null;
+    setIsProcessing(false);
+    setItems((prev) =>
+      prev.map((item) =>
+        item.status === "done" && item.result
+          ? item
+          : { status: "queued", progress: 0, result: null, error: null },
+      ),
+    );
+  }, []);
+
+  return { items, isProcessing, run, cancel, reset };
 }

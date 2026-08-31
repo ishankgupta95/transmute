@@ -9,6 +9,9 @@
  * fall back to the old device-rate decode rather than failing.
  */
 
+import type { ProcessingContext } from "@/hooks/useFileProcessor";
+import { isAbortError, throwIfAborted } from "@/lib/utils/abort";
+
 /** "RIFF…WAVE" → rate from the fmt chunk. */
 function sniffWav(b: Uint8Array, view: DataView): number | null {
   if (b.length < 44) return null;
@@ -102,7 +105,14 @@ function sniffOgg(b: Uint8Array, view: DataView): number | null {
 
 /**
  * ISO-BMFF (m4a/mp4): the audio track's `mdhd` timescale is the sample rate.
- * Bounded recursive box walk; returns the first mdhd found.
+ *
+ * Bounded recursive box walk. The walk runs twice: first accepting only tracks
+ * whose `mdia` carries a `soun` handler, then — for single-track files and
+ * anything with a missing/unreadable `hdlr` — falling back to the historical
+ * first-mdhd-wins behaviour. Without the handler check a container whose video
+ * or timed-metadata track is written first (chaptered audiobooks, muxed mp4)
+ * hands back that track's timescale, and a plausible-looking 90000 sails
+ * through the sanity band below and decodes the audio at the wrong rate.
  */
 function sniffMp4(b: Uint8Array, view: DataView): number | null {
   if (b.length < 12) return null;
@@ -110,7 +120,26 @@ function sniffMp4(b: Uint8Array, view: DataView): number | null {
 
   const CONTAINERS = new Set([0x6d6f6f76, 0x7472616b, 0x6d646961]); // moov trak mdia
 
-  function walk(start: number, end: number, depth: number): number | null {
+  /** Handler type from an `mdia`'s direct `hdlr` child, or null if absent. */
+  function mdiaHandler(start: number, end: number): number | null {
+    let off = start;
+    while (off + 8 <= end) {
+      const size = view.getUint32(off);
+      if (size < 8) return null;
+      const type = view.getUint32(off + 4);
+      const boxEnd = Math.min(off + size, end);
+      if (type === 0x68646c72 /* hdlr */) {
+        // FullBox: 8-byte header, 4 version/flags, 4 pre_defined, then handler.
+        const at = off + 8 + 4 + 4;
+        if (at + 4 > boxEnd) return null;
+        return view.getUint32(at);
+      }
+      off = boxEnd;
+    }
+    return null;
+  }
+
+  function walk(start: number, end: number, depth: number, audioOnly: boolean): number | null {
     if (depth > 6) return null;
     let off = start;
     while (off + 8 <= end) {
@@ -125,7 +154,16 @@ function sniffMp4(b: Uint8Array, view: DataView): number | null {
         return view.getUint32(at);
       }
       if (CONTAINERS.has(type)) {
-        const found = walk(off + 8, boxEnd, depth + 1);
+        // Step over a track that declares itself as something other than sound
+        // (vide, meta, text) so its timescale can never stand in for audio.
+        if (audioOnly && type === 0x6d646961 /* mdia */) {
+          const handler = mdiaHandler(off + 8, boxEnd);
+          if (handler !== null && handler !== 0x736f756e /* soun */) {
+            off = boxEnd;
+            continue;
+          }
+        }
+        const found = walk(off + 8, boxEnd, depth + 1, audioOnly);
         if (found !== null) return found;
       }
       off = boxEnd;
@@ -133,7 +171,7 @@ function sniffMp4(b: Uint8Array, view: DataView): number | null {
     return null;
   }
 
-  return walk(0, b.length, 0);
+  return walk(0, b.length, 0, true) ?? walk(0, b.length, 0, false);
 }
 
 /**
@@ -171,8 +209,15 @@ function canFallbackToFFmpeg(file: File): boolean {
  * then the WAV goes through the normal rate-preserving path. Reached only
  * when `decodeAudioData` rejects a container on the allowlist above — e.g.
  * M4A/AAC in Firefox, Ogg in Safari.
+ *
+ * Only `ctx.signal` is forwarded, never `ctx.onProgress`: this is the *decode*
+ * half of a job whose encode owns the progress bar, and letting it drive the
+ * same bar 0→100 would make the encode appear to restart from zero.
  */
-async function decodeViaFFmpeg(file: File): Promise<AudioBuffer> {
+async function decodeViaFFmpeg(
+  file: File,
+  ctx: ProcessingContext = {},
+): Promise<AudioBuffer> {
   const { runFFmpegTask, fileToUint8Array } = await import("./ffmpeg-loader");
   const dot = file.name.lastIndexOf(".");
   const inputName = "input" + (dot >= 0 ? file.name.slice(dot) : ".dat");
@@ -186,7 +231,7 @@ async function decodeViaFFmpeg(file: File): Promise<AudioBuffer> {
     await ffmpeg.deleteFile(inputName);
     await ffmpeg.deleteFile(outputName);
     return data as Uint8Array;
-  });
+  }, { signal: ctx.signal });
 
   const bytes =
     wavBytes instanceof Uint8Array ? wavBytes : new Uint8Array(wavBytes as ArrayBufferLike);
@@ -219,16 +264,30 @@ async function decodeBytes(arrayBuffer: ArrayBuffer): Promise<AudioBuffer> {
   }
 }
 
-export async function decodeAudioFile(file: File): Promise<AudioBuffer> {
+/**
+ * `ctx.signal` gives the caller two real checkpoints (before the read, before
+ * the FFmpeg fallback) and lets an abort tear the FFmpeg worker down mid-run.
+ * `decodeAudioData` itself is not interruptible, so a browser decode already
+ * under way still runs to completion — what changes is that the 31 MB fallback
+ * no longer keeps grinding after the user has cancelled.
+ */
+export async function decodeAudioFile(
+  file: File,
+  ctx: ProcessingContext = {},
+): Promise<AudioBuffer> {
+  throwIfAborted(ctx.signal);
   const arrayBuffer = await file.arrayBuffer();
   try {
     return await decodeBytes(arrayBuffer);
   } catch (err) {
     if (canFallbackToFFmpeg(file)) {
+      throwIfAborted(ctx.signal);
       try {
-        return await decodeViaFFmpeg(file);
-      } catch {
-        // Report the browser's own decode error, not the fallback's.
+        return await decodeViaFFmpeg(file, ctx);
+      } catch (fallbackErr) {
+        // Report the browser's own decode error, not the fallback's — except
+        // for a cancellation, which is a user decision and must stay one.
+        if (isAbortError(fallbackErr)) throw fallbackErr;
       }
     }
     throw err;

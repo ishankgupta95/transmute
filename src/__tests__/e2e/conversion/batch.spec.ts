@@ -90,10 +90,12 @@ test.describe("worker-pool batch", () => {
       expect(maxRunning, "files observed running simultaneously").toBeGreaterThanOrEqual(2);
     }
 
-    // The honest thread count from the pool, not a seeded number.
-    await expect(
-      page.getByText(new RegExp(`6 OF 6 DONE · \\d+ THREADS · RUNS ON THIS DEVICE`)),
-    ).toBeVisible();
+    // The honest thread count from the pool, not a seeded number. It sits in
+    // the queue's canvas header now; the privacy line stays under the table.
+    await expect(page.getByText(/6 FILES · .* IN · \d+ THREADS/)).toBeVisible();
+    await expect(page.getByText(/6 DONE · 0 RUNNING · 0 QUEUED/)).toBeVisible();
+    // `.first()` is the queue footnote; the rail repeats the phrase below `xl`.
+    await expect(page.getByText("RUNS ON THIS DEVICE").first()).toBeVisible();
 
     // Correctness: the ZIP carries all six outputs and each one decodes.
     const zip = await captureDownload(page, page.getByRole("button", { name: /Download all/ }));
@@ -133,7 +135,9 @@ test.describe("worker-pool batch", () => {
     });
 
     await primaryAction(page, /^Compress$/).click();
-    await expect(page.getByText(/6 OF 6 DONE/)).toBeVisible({ timeout: 120_000 });
+    await expect(page.getByText(/6 DONE · 0 RUNNING · 0 QUEUED/)).toBeVisible({
+      timeout: 120_000,
+    });
 
     const longTasks: number[] = await page.evaluate(
       () => (window as typeof window & { __longTasks?: number[] }).__longTasks ?? [],

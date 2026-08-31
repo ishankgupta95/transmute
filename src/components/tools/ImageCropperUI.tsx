@@ -6,10 +6,11 @@ import Cropper from "cropperjs";
 import "cropperjs/dist/cropper.css";
 import { DropZone } from "@/components/tools/DropZone";
 import { DownloadButton } from "@/components/tools/DownloadButton";
-import { ProgressBar } from "@/components/tools/ProgressBar";
 import { cropImage } from "@/lib/tools/image-crop";
 import type { ProcessedResult } from "@/hooks/useFileProcessor";
 import { useObjectUrl } from "@/hooks/useObjectUrl";
+import { useImageDimensions } from "@/hooks/useImageDimensions";
+import { imageMeta } from "@/lib/utils/canvas-meta";
 import { formatFileSize } from "@/lib/utils/file-helpers";
 import {
   ToolActions,
@@ -20,11 +21,14 @@ import {
   ToolResetLink,
   ToolSlider,
 } from "@/components/tools/ToolAside";
+import { ToolControl, ToolControlGroup, ToolProgress } from "@/components/tools/ToolControls";
 import {
   CanvasHeader,
   CanvasStage,
   StatStrip,
 } from "@/components/tools/ToolCanvas";
+import { CANVAS_COLUMN, STAGE_GROW, STAGE_MEDIA } from "@/components/workspace/shared";
+import { cn } from "@/lib/utils/cn";
 
 const ASPECT_RATIOS = [
   { label: "Free", value: NaN },
@@ -40,7 +44,6 @@ interface ImageCropperUIProps {
 
 export function ImageCropperUI({ acceptFormats }: ImageCropperUIProps) {
   const [file, setFile] = useState<File | null>(null);
-  const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [aspect, setAspect] = useState("Free");
   const [rotation, setRotation] = useState(0);
   const [result, setResult] = useState<ProcessedResult | null>(null);
@@ -48,7 +51,12 @@ export function ImageCropperUI({ acceptFormats }: ImageCropperUIProps) {
   const [error, setError] = useState<string | null>(null);
   const imgRef = useRef<HTMLImageElement>(null);
   const cropperRef = useRef<Cropper | null>(null);
+  // Hook-owned so the source URL is revoked on unmount too — the hand-rolled
+  // createObjectURL was only ever revoked by handleReset.
+  const imageUrl = useObjectUrl(file);
   const resultUrl = useObjectUrl(result?.blob ?? null);
+  // The doc's header reads "4032 × 3024 · 4.28 MB", not the byte size alone.
+  const sourceDims = useImageDimensions(file);
 
   const handleFiles = useCallback((files: File[]) => {
     const f = files[0];
@@ -58,7 +66,6 @@ export function ImageCropperUI({ acceptFormats }: ImageCropperUIProps) {
     setError(null);
     setRotation(0);
     setAspect("Free");
-    setImageUrl(URL.createObjectURL(f));
   }, []);
 
   // Initialize cropper when image is set
@@ -117,14 +124,12 @@ export function ImageCropperUI({ acceptFormats }: ImageCropperUIProps) {
   }, [file]);
 
   const handleReset = useCallback(() => {
-    if (imageUrl) URL.revokeObjectURL(imageUrl);
     setFile(null);
-    setImageUrl(null);
     setResult(null);
     setError(null);
     setRotation(0);
     setAspect("Free");
-  }, [imageUrl]);
+  }, []);
 
   if (!file) {
     return <DropZone accept={acceptFormats} onFiles={handleFiles} />;
@@ -133,38 +138,43 @@ export function ImageCropperUI({ acceptFormats }: ImageCropperUIProps) {
   return (
     <>
       {/* ── Canvas: the crop frame, then the cropped result ──── */}
-      <div className="min-w-0 space-y-[13px]">
+      <div className={CANVAS_COLUMN}>
         <CanvasHeader
           file={file.name}
-          meta={formatFileSize(file.size)}
+          meta={imageMeta(sourceDims, formatFileSize(file.size))}
           trailing={result ? "CROPPED" : aspect === "Free" ? "FREE" : aspect}
         />
 
         {result ? (
-          <CanvasStage className="flex items-center justify-center bg-[#0c0e17] p-4">
+          <CanvasStage className={cn(STAGE_GROW, "flex items-center justify-center bg-[#0c0e17] p-4")}>
             {resultUrl && (
               /* eslint-disable-next-line @next/next/no-img-element -- blob: URL, nothing for next/image to optimise */
-              <img src={resultUrl} alt="Cropped" className="max-h-96 w-full object-contain" />
+              <img src={resultUrl} alt="Cropped" className={STAGE_MEDIA} />
             )}
           </CanvasStage>
         ) : (
           <>
-            <CanvasStage className="max-h-[500px] bg-bg-secondary">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                ref={imgRef}
-                src={imageUrl!}
-                alt="Crop preview"
-                className="block max-w-full"
-              />
+            {/*
+              The crop frame is the tool, so it takes the canvas's slack rather
+              than sitting at a fixed 500px in a viewport-tall band. cropperjs
+              sizes its container from the <img>'s RENDERED box, so the cap has
+              to live on the image: `max-h-full` against a stage that now has a
+              definite height.
+            */}
+            <CanvasStage className={cn(STAGE_GROW, "flex bg-bg-secondary")}>
+              {/* The URL arrives one render after the file, and cropperjs must
+                  never initialise against an <img> with no src. */}
+              {imageUrl && (
+                /* eslint-disable-next-line @next/next/no-img-element */
+                <img
+                  ref={imgRef}
+                  src={imageUrl}
+                  alt="Crop preview"
+                  className="block max-h-full max-w-full"
+                />
+              )}
             </CanvasStage>
 
-            {isProcessing && (
-              <div className="space-y-2">
-                <ProgressBar progress={null} />
-                <p className="text-sm text-text-muted text-center">Cropping...</p>
-              </div>
-            )}
             {error && <ErrorMessage message={error} />}
           </>
         )}
@@ -192,29 +202,38 @@ export function ImageCropperUI({ acceptFormats }: ImageCropperUIProps) {
               <ToolResetLink onClick={handleReset} label="CROP ANOTHER" />
             </>
           ) : (
-            <ToolActions
-              primaryLabel={isProcessing ? "Cropping…" : "Crop"}
-              onPrimary={handleCrop}
-              primaryDisabled={isProcessing}
-              onReset={handleReset}
-              resetLabel="CANCEL"
-            />
+            <>
+              {/* The doc pins the running readout to the rail footer, above
+                  the button that started it. The canvas crop reports no
+                  progress, so the bar stays indeterminate. */}
+              {isProcessing && (
+                <ToolProgress phase="CROPPING" percent={null} label="Cropping image" />
+              )}
+              <ToolActions
+                primaryLabel={isProcessing ? "Cropping…" : "Crop"}
+                onPrimary={handleCrop}
+                primaryDisabled={isProcessing}
+                onReset={handleReset}
+                resetLabel="CANCEL"
+              />
+            </>
           )
         }
       >
         {!result && (
-          <>
-            <ToolAsideSection label="ASPECT">
+          <ToolControlGroup>
+            <ToolControl label="ASPECT">
               <ToolChoice
                 label="Aspect ratio"
+                fill
                 value={aspect}
                 onChange={handleAspectRatio}
                 disabled={isProcessing}
                 options={ASPECT_RATIOS.map((ar) => ({ value: ar.label, label: ar.label }))}
               />
-            </ToolAsideSection>
+            </ToolControl>
 
-            <ToolAsideSection>
+            <ToolControl>
               <ToolSlider
                 label="Rotation"
                 display={`${rotation}°`}
@@ -226,8 +245,8 @@ export function ImageCropperUI({ acceptFormats }: ImageCropperUIProps) {
                 onChange={handleRotation}
                 disabled={isProcessing}
               />
-            </ToolAsideSection>
-          </>
+            </ToolControl>
+          </ToolControlGroup>
         )}
 
         <ToolAsideSection label="OUTPUT">

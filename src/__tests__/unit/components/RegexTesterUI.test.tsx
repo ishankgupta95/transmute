@@ -9,7 +9,7 @@ describe("RegexTesterUI", () => {
 
   it("renders pattern input, flag buttons, and test string textarea", () => {
     render(<RegexTesterUI />);
-    expect(screen.getByText("Regex Pattern")).toBeInTheDocument();
+    expect(screen.getByText("PATTERN")).toBeInTheDocument();
     expect(screen.getByText("Test String")).toBeInTheDocument();
     // Flag buttons
     ["g", "i", "m", "s", "u"].forEach((f) => {
@@ -111,9 +111,12 @@ describe("RegexTesterUI", () => {
       target: { value: "user@example" },
     });
 
-    expect(screen.getByText("Capture Groups")).toBeInTheDocument();
-    expect(screen.getByText(/Group 1:/)).toBeInTheDocument();
-    expect(screen.getByText(/Group 2:/)).toBeInTheDocument();
+    // Groups render as GenList rows: the captured value, tagged M<match>·G<group>.
+    expect(screen.getByText("CAPTURE GROUPS")).toBeInTheDocument();
+    expect(screen.getByText("M1 · G1")).toBeInTheDocument();
+    expect(screen.getByText("M1 · G2")).toBeInTheDocument();
+    expect(screen.getByText("user")).toBeInTheDocument();
+    expect(screen.getByText("example")).toBeInTheDocument();
   });
 
   it("shows error for invalid regex", () => {

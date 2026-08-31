@@ -109,8 +109,21 @@ export default function RootLayout({
       {/* The page ground lives here as utilities — `globals.css` is @theme
           plus Tailwind only, no bare element rules. */}
       <body className="min-h-full flex flex-col bg-bg-primary text-text-primary font-body">
+        {/* WCAG 2.4.1: the navbar puts eight tab stops in front of every page's
+            first control. The wrapper below is what the link targets — it needs
+            `flex flex-1 flex-col` because each route's <main className="flex-1">
+            was a direct flex child of <body>, and `tabIndex={-1}` because
+            otherwise the browser scrolls without moving focus. */}
+        <a
+          href="#main-content"
+          className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-[10000] focus:rounded-lg focus:border focus:border-accent focus:bg-bg-primary focus:px-4 focus:py-2 focus:font-body focus:text-sm focus:text-accent-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+        >
+          Skip to content
+        </a>
         <Navbar />
-        {children}
+        <div id="main-content" tabIndex={-1} className="flex flex-1 flex-col">
+          {children}
+        </div>
         <Footer />
         <CommandPalette />
         {/* GA pageviews for client-side navigations — the head snippet only

@@ -211,6 +211,27 @@ describe("videoToGif", () => {
     expect(secondCall[3]).toEqual(expect.objectContaining({ delay: 100, dispose: 2 }));
   });
 
+  it("rejects a zero-length clip instead of writing a 1-byte GIF", async () => {
+    // `playAndExtractFrames` exits on its first callback when start === end, so
+    // `finish()` wrote an empty stream that the UI offered as a finished GIF.
+    const file = new File(["video"], "clip.mp4", { type: "video/mp4" });
+
+    await expect(
+      videoToGif(file, { ...defaultOptions, startTime: 2, endTime: 2 }),
+    ).rejects.toThrow(/longer than zero seconds/i);
+    expect(mockPlayAndExtractFrames).not.toHaveBeenCalled();
+  });
+
+  it("rejects when the frame walk captured nothing", async () => {
+    mockPlayAndExtractFrames.mockImplementationOnce(async () => {
+      /* a source we can open but cannot decode a single frame from */
+    });
+    const file = new File(["video"], "clip.mp4", { type: "video/mp4" });
+
+    await expect(videoToGif(file, defaultOptions)).rejects.toThrow(/No frames were captured/i);
+    expect(mockGifFinish).not.toHaveBeenCalled();
+  });
+
   it("gif.finish() called after frame extraction", async () => {
     const file = new File(["video"], "test.mp4", { type: "video/mp4" });
     await videoToGif(file, defaultOptions);

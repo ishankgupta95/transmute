@@ -41,15 +41,31 @@ const breadcrumbs = [
   { name: "Blog", href: "/blog" },
 ];
 
+/** `3 MAY 2026` — the doc's stamp. UTC so the ISO day never slips a timezone. */
 const formatDate = (iso: string) =>
-  new Date(iso).toLocaleDateString("en-US", {
-    year: "numeric",
-    month: "long",
+  new Date(iso).toLocaleDateString("en-GB", {
     day: "numeric",
+    month: "short",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+
+/** `MAY 2026` — the coarser stamp the UPDATED tile carries. */
+const formatMonth = (iso: string) =>
+  new Date(iso).toLocaleDateString("en-GB", {
+    month: "long",
+    year: "numeric",
+    timeZone: "UTC",
   });
 
 export default function BlogIndexPage() {
-  const sorted = [...posts].sort((a, b) => b.publishedAt.localeCompare(a.publishedAt));
+  // Date first, then longest read — every post currently shares a publish date,
+  // so without the tie-break the sort was a no-op and the numbering fell back
+  // to registry order.
+  const sorted = [...posts].sort(
+    (a, b) =>
+      b.publishedAt.localeCompare(a.publishedAt) || b.readingTime - a.readingTime,
+  );
   const totalReading = posts.reduce((n, p) => n + p.readingTime, 0);
   const latest = sorted[0]?.updatedAt ?? sorted[0]?.publishedAt;
 
@@ -62,7 +78,7 @@ export default function BlogIndexPage() {
       <BreadcrumbSchema items={breadcrumbs} />
 
       <div className="mx-auto max-w-[1440px] px-4 pt-12 pb-10 md:px-11">
-        <nav aria-label="Breadcrumb" className="mb-6">
+        <nav aria-label="Breadcrumb" className="mb-[26px]">
           <ol className="flex items-center gap-2 font-mono text-[11px] leading-none text-text-muted">
             <li>
               <Link href="/" className="transition-colors duration-200 hover:text-accent-200">
@@ -74,7 +90,11 @@ export default function BlogIndexPage() {
           </ol>
         </nav>
 
-        <div className="grid items-end gap-10 lg:grid-cols-[1fr_380px] lg:gap-16">
+        {/* `auto`, not a fixed 380px track: inside a fixed track the UPDATED
+            tile had 93px for a date needing ~99px, so it either wrapped
+            mid-date or (with nowrap) clipped. Content-sized, like the hub
+            strip it is meant to match. */}
+        <div className="grid items-end gap-10 lg:grid-cols-[1fr_auto] lg:gap-16">
           <div>
             <h1 className="m-0 mb-4 font-display text-[clamp(30px,5vw,44px)] leading-[1.1] font-medium tracking-[-0.028em] text-text-primary">
               Notes on file formats
@@ -89,13 +109,13 @@ export default function BlogIndexPage() {
             {[
               ["POSTS", String(posts.length)],
               ["READING", `${totalReading} MIN`],
-              ["UPDATED", formatDate(latest).toUpperCase()],
+              ["UPDATED", formatMonth(latest).toUpperCase()],
             ].map(([k, v]) => (
               <div key={k} className="flex flex-1 flex-col gap-[5px] bg-bg-primary px-4 py-3">
                 <span className="font-mono text-[9.5px] leading-none tracking-[0.12em] text-text-muted">
                   {k}
                 </span>
-                <span className="font-mono text-[15px] leading-none font-medium text-neutral-300">
+                <span className="font-mono text-[15px] leading-none font-medium whitespace-nowrap text-neutral-300">
                   {v}
                 </span>
               </div>
@@ -109,7 +129,7 @@ export default function BlogIndexPage() {
           <Link
             key={post.slug}
             href={`/blog/${post.slug}`}
-            className="flex items-start gap-[18px] border-b border-border py-5.5 transition-[padding-left] duration-200 hover:pl-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+            className="flex items-start gap-[18px] border-b border-border py-5.5 transition-[padding-left] duration-[220ms] hover:pl-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
           >
             <span className="w-[22px] flex-none font-mono text-[10.5px] leading-[1.8] text-text-muted">
               {String(i + 1).padStart(2, "0")}
@@ -126,7 +146,7 @@ export default function BlogIndexPage() {
                 {post.title}
               </span>
               <span className="font-body text-[12.5px] leading-[1.6] text-text-muted">
-                {post.description}
+                {post.indexBlurb ?? post.description}
               </span>
             </span>
           </Link>

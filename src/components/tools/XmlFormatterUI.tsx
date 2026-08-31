@@ -2,7 +2,6 @@
 
 import { useCallback, useState } from "react";
 import { ErrorMessage } from "@/components/tools/ErrorMessage";
-import { copyText } from "@/lib/utils/clipboard";
 import {
   ToolActions,
   ToolAside,
@@ -16,40 +15,48 @@ import {
   TextPanes,
 } from "@/components/tools/ToolCanvas";
 import { formatXml, minifyXml } from "@/lib/tools/xml-format";
+import { CANVAS_COLUMN } from "@/components/workspace/shared";
+import { useCopied } from "@/hooks/useCopied";
+import { formatFileSize } from "@/lib/utils/file-helpers";
 
 export function XmlFormatterUI() {
   const [input, setInput] = useState("");
   const [output, setOutput] = useState("");
   const [error, setError] = useState("");
   const [mode, setMode] = useState<"format" | "minify">("format");
-  const [copied, setCopied] = useState(false);
+  const { copied, copy } = useCopied();
 
-  const handleFormat = useCallback(() => {
+  /*
+    Takes its inputs as parameters so the MODE chip can re-run it immediately,
+    the way JsonFormatterUI already does. Flipping to Minify used to leave the
+    pretty-printed output on screen under a lit "Minify" chip — a claim the
+    control no longer backed.
+  */
+  const runFormat = useCallback((text: string, m: "format" | "minify") => {
     setError("");
     setOutput("");
-    if (!input.trim()) return;
+    if (!text.trim()) return;
     try {
-      setOutput(mode === "format" ? formatXml(input) : minifyXml(input));
+      setOutput(m === "format" ? formatXml(text) : minifyXml(text));
     } catch (e) {
       setError(e instanceof Error ? e.message : "Invalid XML");
     }
-  }, [input, mode]);
+  }, []);
 
   const handleCopy = useCallback(() => {
-    copyText(output).then((ok) => {
-      if (ok) {
-        setCopied(true);
-        setTimeout(() => setCopied(false), 2000);
-      }
-    });
-  }, [output]);
+    void copy(output);
+  }, [copy, output]);
 
   return (
     <>
       {/* ── Canvas: the doc's two-up IN / OUT panes ────────── */}
-      <div className="min-w-0 space-y-[13px]">
+      <div className={CANVAS_COLUMN}>
         <TextPanes columns={output ? 2 : 1}>
-          <TextPane label="Input XML" lines={lineCount(input)}>
+          <TextPane
+            label="Input XML"
+            lines={lineCount(input)}
+            size={formatFileSize(new Blob([input]).size)}
+          >
             <textarea
               value={input}
               onChange={(e) => setInput(e.target.value)}
@@ -64,6 +71,7 @@ export function XmlFormatterUI() {
               tone="out"
               label="Output"
               lines={lineCount(output)}
+              size={formatFileSize(new Blob([output]).size)}
               action={
                 <button
                   onClick={handleCopy}
@@ -85,7 +93,7 @@ export function XmlFormatterUI() {
         footer={
           <ToolActions
             primaryLabel={mode === "format" ? "Format XML" : "Minify XML"}
-            onPrimary={handleFormat}
+            onPrimary={() => runFormat(input, mode)}
             primaryDisabled={!input.trim()}
           />
         }
@@ -95,7 +103,10 @@ export function XmlFormatterUI() {
             label="Output mode"
             fill
             value={mode}
-            onChange={setMode}
+            onChange={(m) => {
+              setMode(m);
+              runFormat(input, m);
+            }}
             options={[
               { value: "format" as const, label: "Format" },
               { value: "minify" as const, label: "Minify" },

@@ -387,13 +387,13 @@ export const faqs: ToolFAQs = {
   // ── PDF Tools ──────────────────────────────────────────────────────
   "merge-pdf": [
     { question: "Is there a limit to how many PDFs I can merge?", answer: "There is no hard limit. The tool processes everything in your browser, so the practical limit depends on your device's memory. Merging dozens of average-sized PDFs should work fine." },
-    { question: "Will the merged PDF keep bookmarks and links?", answer: "Yes. The merge operation copies pages as-is, preserving internal links, annotations, and other page-level features." },
+    { question: "Will the merged PDF keep bookmarks and links?", answer: "Page-level features — internal links, annotations, form fields — are copied with their pages, and the first file's document title and author are carried over. Document bookmarks (the outline tree) are not merged: the pages are grafted into a fresh document, so the combined file starts with no outline." },
     { question: "Can I reorder the files before merging?", answer: "Yes. Drag and drop the files in the list to set the order before you click merge." },
   ],
   "split-pdf": [
     { question: "How do I specify which pages to extract?", answer: "Click individual page thumbnails to select them, or type a range like '1-3, 5, 8-10' in the text input. Selected pages are extracted into a new PDF." },
     { question: "Can I split a PDF into individual pages?", answer: "Yes. Select all pages and each will be included. For truly separate files per page, you can run the tool multiple times or select one page at a time." },
-    { question: "Are bookmarks and metadata preserved?", answer: "Document-level metadata (title, author) is preserved. Bookmarks that point to extracted pages are kept; bookmarks pointing to discarded pages are dropped automatically since their targets no longer exist." },
+    { question: "Are bookmarks and metadata preserved?", answer: "The extracted file keeps the document title and author. Bookmarks are not carried over — the pages are copied into a fresh document, so the outline tree is rebuilt empty. Page-level links and annotations travel with their pages." },
   ],
   "compress-pdf": [
     { question: "How much smaller will my PDF get?", answer: "Results vary. PDFs with lots of metadata or redundant internal objects see the biggest reduction. Heavily optimized PDFs may not shrink much. The tool shows the before and after file sizes." },
@@ -403,7 +403,7 @@ export const faqs: ToolFAQs = {
   "pdf-to-jpg": [
     { question: "What resolution are the output images?", answer: "By default, pages are rendered at 2× scale for crisp output. You can adjust the scale to get higher or lower resolution images." },
     { question: "Can I choose PNG instead of JPG?", answer: "Yes. Toggle between JPG and PNG output. PNG is lossless and larger; JPG is smaller with adjustable quality." },
-    { question: "How do I convert just one page?", answer: "Use the page selector to pick the page or page range you want — for example, 5 or 3-7. Only those pages are rendered to images, and the result downloads as a single image or a small ZIP." },
+    { question: "How do I convert just one page?", answer: "Every page is rendered. The deck shows one tile per page — click a tile to save that page on its own, or use Download all (ZIP) to take the whole set. There is no page-range filter on this tool; to work with a subset, run Split PDF first and convert the extracted file." },
   ],
   "images-to-pdf": [
     { question: "What image formats are supported?", answer: "JPG/JPEG and PNG images are supported. Other formats should be converted to JPG or PNG first using our image converter tools." },
@@ -418,7 +418,7 @@ export const faqs: ToolFAQs = {
   "add-page-numbers": [
     { question: "Where can I place page numbers?", answer: "You can place numbers at the top or bottom of each page, aligned to the left, center, or right. Six positions in total." },
     { question: "Can I start numbering from a number other than 1?", answer: "Yes. Set the starting number to any value. This is useful when your PDF is part of a larger document." },
-    { question: "Can I skip the first few pages — like a cover or title?", answer: "Yes. Set the starting page to skip the cover and title pages so numbering begins on the first body page. The starting number is independent, so you can begin at any value." },
+    { question: "Can I skip the first few pages — like a cover or title?", answer: "No. Numbering always begins on page one and every page in the file gets a number; the only control over the sequence is the starting number. To leave a cover unnumbered, split it off with Split PDF, number the rest, then merge the two files back together." },
   ],
   "pdf-page-reorder": [
     { question: "How do I reorder pages?", answer: "After uploading your PDF, you'll see thumbnail previews of every page. Drag and drop the thumbnails into your desired order, then click download." },

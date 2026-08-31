@@ -3,7 +3,6 @@
 import { useCallback, useState } from "react";
 import { ErrorMessage } from "@/components/tools/ErrorMessage";
 import { DropZone } from "@/components/tools/DropZone";
-import { copyText } from "@/lib/utils/clipboard";
 import {
   ToolActions,
   ToolAside,
@@ -18,13 +17,17 @@ import {
   TextPanes,
 } from "@/components/tools/ToolCanvas";
 import { cn } from "@/lib/utils/cn";
+import { ToolControl, ToolControlGroup } from "@/components/tools/ToolControls";
+import { CANVAS_COLUMN } from "@/components/workspace/shared";
+import { useCopied } from "@/hooks/useCopied";
+import { formatFileSize } from "@/lib/utils/file-helpers";
 
 export function Base64EncodeDecodeUI() {
   const [mode, setMode] = useState<"encode" | "decode">("encode");
   const [input, setInput] = useState("");
   const [output, setOutput] = useState("");
   const [error, setError] = useState("");
-  const [copied, setCopied] = useState(false);
+  const { copied, copy } = useCopied();
   const [fileMode, setFileMode] = useState(false);
   // The loaded file's name lives OUTSIDE the text state: it used to be
   // written into `input`, so switching direction re-encoded "photo.jpg" as
@@ -45,8 +48,12 @@ export function Base64EncodeDecodeUI() {
           for (const b of bytes) binary += String.fromCharCode(b);
           setOutput(btoa(binary));
         } else {
-          // Accept URL-safe Base64 (-/_ , no padding) as used by JWTs and many APIs.
-          let normalized = text.trim().replace(/-/g, "+").replace(/_/g, "/");
+          // Accept URL-safe Base64 (-/_ , no padding) as used by JWTs and many
+          // APIs, and line-wrapped Base64 — `base64` wraps at 76 columns, and
+          // PEM bodies and `kubectl get secret -o yaml` values are wrapped.
+          // `atob` tolerates the newlines itself; it was the `% 4` padding
+          // arithmetic below that counted them and produced a wrong pad.
+          let normalized = text.replace(/\s+/g, "").replace(/-/g, "+").replace(/_/g, "/");
           while (normalized.length % 4) normalized += "=";
           const binary = atob(normalized);
           const bytes = Uint8Array.from(binary, (c) => c.charCodeAt(0));
@@ -98,18 +105,13 @@ export function Base64EncodeDecodeUI() {
   }, []);
 
   const handleCopy = useCallback(() => {
-    copyText(output).then((ok) => {
-      if (ok) {
-        setCopied(true);
-        setTimeout(() => setCopied(false), 2000);
-      }
-    });
-  }, [output]);
+    void copy(output);
+  }, [copy, output]);
 
   return (
     <>
       {/* ── Canvas: the doc's two-up IN / OUT panes ──────────── */}
-      <div className="min-w-0 space-y-[13px]">
+      <div className={CANVAS_COLUMN}>
         {fileMode && <DropZone accept="*/*" onFiles={handleFiles} />}
 
         <TextPanes columns={output ? 2 : 1}>
@@ -123,6 +125,7 @@ export function Base64EncodeDecodeUI() {
             <TextPane
               label={mode === "encode" ? "Text to Encode" : "Base64 to Decode"}
               lines={lineCount(input)}
+              size={formatFileSize(new Blob([input]).size)}
             >
               <textarea
                 value={input}
@@ -139,6 +142,7 @@ export function Base64EncodeDecodeUI() {
               tone="out"
               label="Output"
               lines={lineCount(output)}
+              size={formatFileSize(new Blob([output]).size)}
               action={
                 <button
                   onClick={handleCopy}
@@ -170,36 +174,40 @@ export function Base64EncodeDecodeUI() {
           ) : undefined
         }
       >
-        <ToolAsideSection label="DIRECTION">
-          <ToolChoice
-            label="Direction"
-            fill
-            value={mode}
-            onChange={handleModeChange}
-            options={[
-              { value: "encode" as const, label: "Encode" },
-              { value: "decode" as const, label: "Decode" },
-            ]}
-          />
-        </ToolAsideSection>
-
-        {mode === "encode" && (
-          <ToolAsideSection label="SOURCE">
+        {/* One bordered block for the whole control set — the doc gives its
+            own rule only to START FROM, ADVANCED and OUTPUT. */}
+        <ToolControlGroup>
+          <ToolControl label="DIRECTION">
             <ToolChoice
-              label="Input source"
+              label="Direction"
               fill
-              value={fileMode ? "file" : "text"}
-              onChange={handleSourceChange}
+              value={mode}
+              onChange={handleModeChange}
               options={[
-                { value: "text" as const, label: "Text" },
-                { value: "file" as const, label: "File" },
+                { value: "encode" as const, label: "Encode" },
+                { value: "decode" as const, label: "Decode" },
               ]}
             />
-            <span className="font-body text-[10.5px] leading-[1.5] text-text-muted">
-              A file is read as bytes and encoded whole — nothing leaves this device.
-            </span>
-          </ToolAsideSection>
-        )}
+          </ToolControl>
+
+          {mode === "encode" && (
+            <ToolControl label="SOURCE">
+              <ToolChoice
+                label="Input source"
+                fill
+                value={fileMode ? "file" : "text"}
+                onChange={handleSourceChange}
+                options={[
+                  { value: "text" as const, label: "Text" },
+                  { value: "file" as const, label: "File" },
+                ]}
+              />
+              <span className="font-body text-[10.5px] leading-[1.5] text-text-muted">
+                A file is read as bytes and encoded whole — nothing leaves this device.
+              </span>
+            </ToolControl>
+          )}
+        </ToolControlGroup>
 
         <ToolAsideSection label="OUTPUT">
           <ToolOutput

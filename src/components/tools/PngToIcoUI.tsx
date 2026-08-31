@@ -4,10 +4,12 @@ import { useCallback, useState } from "react";
 import { ErrorMessage } from "@/components/tools/ErrorMessage";
 import { DropZone } from "@/components/tools/DropZone";
 import { DownloadButton } from "@/components/tools/DownloadButton";
-import { ProgressBar } from "@/components/tools/ProgressBar";
 import { encodeIcoAsync } from "@/lib/tools/ico-encode";
 import { loadImage } from "@/lib/tools/canvas-utils";
+import { drawContained } from "@/lib/tools/image-draw";
 import { useObjectUrl } from "@/hooks/useObjectUrl";
+import { useImageDimensions } from "@/hooks/useImageDimensions";
+import { imageMeta } from "@/lib/utils/canvas-meta";
 import { formatFileSize } from "@/lib/utils/file-helpers";
 import {
   ToolActions,
@@ -16,7 +18,9 @@ import {
   ToolOutput,
   ToolResetLink,
 } from "@/components/tools/ToolAside";
+import { ToolProgress } from "@/components/tools/ToolControls";
 import { CanvasHeader, IconSizes } from "@/components/tools/ToolCanvas";
+import { CANVAS_COLUMN } from "@/components/workspace/shared";
 
 const ICO_SIZES = [16, 32, 48];
 
@@ -30,6 +34,9 @@ export function PngToIcoUI({ acceptFormats }: PngToIcoUIProps) {
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const previewUrl = useObjectUrl(file);
+  // The doc's icon readout is "1024 × 1024 · 84 KB" — the source dimensions
+  // matter here, since anything under 48px is upscaled into the .ico.
+  const sourceDims = useImageDimensions(file);
 
   const handleFiles = useCallback((files: File[]) => {
     const f = files[0];
@@ -52,7 +59,7 @@ export function PngToIcoUI({ acceptFormats }: PngToIcoUIProps) {
         canvas.height = size;
         const ctx = canvas.getContext("2d");
         if (!ctx) throw new Error("Canvas 2D context not available");
-        ctx.drawImage(img, 0, 0, size, size);
+        drawContained(ctx, img, size);
         return { canvas, size };
       });
 
@@ -78,10 +85,10 @@ export function PngToIcoUI({ acceptFormats }: PngToIcoUIProps) {
   return (
     <>
       {/* ── Canvas: the icon, at the sizes it will actually ship ─ */}
-      <div className="min-w-0 space-y-[15px]">
+      <div className={CANVAS_COLUMN}>
         <CanvasHeader
           file={file.name}
-          meta={formatFileSize(file.size)}
+          meta={imageMeta(sourceDims, formatFileSize(file.size))}
           trailing="ICO"
         />
 
@@ -94,14 +101,6 @@ export function PngToIcoUI({ acceptFormats }: PngToIcoUIProps) {
           ]}
         />
 
-        {/* Progress */}
-        {isProcessing && (
-          <div className="space-y-2">
-            <ProgressBar progress={null} />
-            <p className="text-sm text-text-muted text-center">Converting...</p>
-          </div>
-        )}
-
         {error && <ErrorMessage message={error} />}
       </div>
 
@@ -109,6 +108,11 @@ export function PngToIcoUI({ acceptFormats }: PngToIcoUIProps) {
       <ToolAside
         footer={
           <>
+            {/* The doc pins the running readout to the rail footer. The three
+                canvas draws report no progress, so the bar is indeterminate. */}
+            {isProcessing && (
+              <ToolProgress phase="ENCODING ICO" percent={null} label="Encoding ICO" />
+            )}
             {result ? (
               <DownloadButton
                 blob={result.blob}

@@ -2,7 +2,6 @@
 
 import { useCallback, useState } from "react";
 import { ErrorMessage } from "@/components/tools/ErrorMessage";
-import { copyText } from "@/lib/utils/clipboard";
 import {
   ToolActions,
   ToolAside,
@@ -16,6 +15,9 @@ import {
   TextPanes,
 } from "@/components/tools/ToolCanvas";
 import { cn } from "@/lib/utils/cn";
+import { CANVAS_COLUMN } from "@/components/workspace/shared";
+import { useCopied } from "@/hooks/useCopied";
+import { formatFileSize } from "@/lib/utils/file-helpers";
 
 interface JwtParts {
   header: Record<string, unknown>;
@@ -57,7 +59,7 @@ export function JwtDecoderUI() {
   const [input, setInput] = useState("");
   const [result, setResult] = useState<JwtParts | null>(null);
   const [error, setError] = useState("");
-  const [copied, setCopied] = useState(false);
+  const { copied, copy } = useCopied();
 
   const handleDecode = useCallback((text: string) => {
     setInput(text);
@@ -72,12 +74,7 @@ export function JwtDecoderUI() {
   }, []);
 
   const copySection = (data: unknown) => {
-    copyText(JSON.stringify(data, null, 2)).then((ok) => {
-      if (ok) {
-        setCopied(true);
-        setTimeout(() => setCopied(false), 2000);
-      }
-    });
+    void copy(JSON.stringify(data, null, 2));
   };
 
   // The rail's readout pulls the two claims people actually scan for.
@@ -94,9 +91,13 @@ export function JwtDecoderUI() {
   return (
     <>
       {/* ── Canvas: the token, then its decoded halves ─────── */}
-      <div className="min-w-0 space-y-[13px]">
+      <div className={CANVAS_COLUMN}>
         <TextPanes columns={1}>
-          <TextPane label="JWT Token" lines={lineCount(input)}>
+          <TextPane
+            label="JWT Token"
+            lines={lineCount(input)}
+            size={formatFileSize(new Blob([input]).size)}
+          >
             <textarea
               value={input}
               onChange={(e) => handleDecode(e.target.value)}
@@ -116,10 +117,16 @@ export function JwtDecoderUI() {
             {/* Expiry warning */}
             {result.expiresAt && (
               <div
-                className={`rounded-lg border p-3 text-sm ${
+                /*
+                  The doc's status card: `padding:10px 12px;border-radius:8px;
+                  border:1px solid rgba(126,224,168,.3);
+                  background:rgba(126,224,168,.07)`, text `font:400 12px/1.35`.
+                  Was `rounded-lg`, which is 14px in this codebase, at 10% tint.
+                */
+                className={`rounded-md border px-3 py-2.5 font-body text-xs leading-[1.35] ${
                   result.isExpired
-                    ? "border-error/30 bg-error/10 text-error"
-                    : "border-success/30 bg-success/10 text-success"
+                    ? "border-error/30 bg-error/7 text-error"
+                    : "border-success/30 bg-success/7 text-success"
                 }`}
               >
                 {result.isExpired ? "Token is expired" : "Token is valid"} — Expires: {result.expiresAt}
@@ -130,6 +137,9 @@ export function JwtDecoderUI() {
               <TextPane
                 label="Header"
                 lines={lineCount(JSON.stringify(result.header, null, 2))}
+                size={formatFileSize(
+                  new Blob([JSON.stringify(result.header, null, 2)]).size,
+                )}
                 action={
                   <button
                     onClick={() => copySection(result.header)}
@@ -146,6 +156,9 @@ export function JwtDecoderUI() {
                 tone="out"
                 label="Payload"
                 lines={lineCount(JSON.stringify(result.payload, null, 2))}
+                size={formatFileSize(
+                  new Blob([JSON.stringify(result.payload, null, 2)]).size,
+                )}
                 action={
                   <button
                     onClick={() => copySection(result.payload)}

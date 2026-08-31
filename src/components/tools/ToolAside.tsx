@@ -2,16 +2,19 @@
 
 import type { ReactNode } from "react";
 import { useEffect } from "react";
+import { Check } from "lucide-react";
 import { cn } from "@/lib/utils/cn";
 import { chipClass, MONO_LABEL, SCROLL_CLASS } from "@/components/workspace/shared";
 
 /*
   The Tool Redesign doc puts a tool's controls in a right-hand rail on desktop
-  and, below `lg`, in a bottom sheet under the canvas ("Tablet keeps the canvas
+  and, below `xl`, in a bottom sheet under the canvas ("Tablet keeps the canvas
   and pushes controls to a bottom sheet. Phone is canvas-first, one sheet, one
   action.").
 
-  `ToolPageLayout` opens a two-column grid only when it finds `[data-tool-aside]`
+  `ToolPageLayout` opens the two-column grid at `xl` (not `lg`: the 230px
+  sibling rail lands at `lg`, and a control rail on top of it made the canvas
+  narrower at 1024 than at 768) and only when it finds `[data-tool-aside]`
   inside the canvas, so a tool that has not been migrated yet keeps the full
   width and nothing breaks mid-migration.
 
@@ -19,27 +22,32 @@ import { chipClass, MONO_LABEL, SCROLL_CLASS } from "@/components/workspace/shar
   same panel drawn for the design explorer.
 */
 
-const SECTION = "border-b border-border px-4 py-3.5";
+const SECTION = "border-b border-border px-4 py-[15px]";
 
 /**
  * Touch wants a bigger target than the 14px thumb the desktop screens draw, so
- * the thumb grows below `lg` — the doc's Phone screen specifies exactly this.
+ * the thumb grows below `xl` — the doc's Phone screen specifies exactly this.
  */
 export const TOOL_RANGE_CLASS = cn(
   "h-[22px] w-full cursor-pointer appearance-none bg-transparent",
-  "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent",
-  "[&::-webkit-slider-runnable-track]:h-0.5 [&::-webkit-slider-runnable-track]:rounded-sm [&::-webkit-slider-runnable-track]:bg-neutral-800",
-  "[&::-moz-range-track]:h-0.5 [&::-moz-range-track]:rounded-sm [&::-moz-range-track]:bg-neutral-800",
+  "focus-visible:outline-2 focus-visible:outline-offset-[3px] focus-visible:outline-accent",
+  "[&::-webkit-slider-runnable-track]:h-0.5 [&::-webkit-slider-runnable-track]:rounded-[2px] [&::-webkit-slider-runnable-track]:bg-neutral-800",
+  "[&::-moz-range-track]:h-0.5 [&::-moz-range-track]:rounded-[2px] [&::-moz-range-track]:bg-neutral-800",
   "[&::-webkit-slider-thumb]:-mt-[9px] [&::-webkit-slider-thumb]:size-5 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full",
-  "lg:[&::-webkit-slider-thumb]:-mt-1.5 lg:[&::-webkit-slider-thumb]:size-3.5",
+  "xl:[&::-webkit-slider-thumb]:-mt-1.5 xl:[&::-webkit-slider-thumb]:size-3.5",
   "[&::-webkit-slider-thumb]:border-[1.5px] [&::-webkit-slider-thumb]:border-accent [&::-webkit-slider-thumb]:bg-bg-primary",
-  "[&::-webkit-slider-thumb]:shadow-[0_0_0_4px_var(--tm-ring)] [&::-webkit-slider-thumb]:transition-shadow",
+  // The doc's Phone screen widens the halo with the thumb: 5px below xl, 4px on desktop.
+  "[&::-webkit-slider-thumb]:shadow-[0_0_0_5px_var(--tm-ring)] [&::-webkit-slider-thumb]:transition-[box-shadow,transform]",
+  "xl:[&::-webkit-slider-thumb]:shadow-[0_0_0_4px_var(--tm-ring)]",
   "hover:[&::-webkit-slider-thumb]:shadow-[0_0_0_7px_var(--tm-ring-hover)]",
+  "active:[&::-webkit-slider-thumb]:scale-[1.12]",
   "[&::-moz-range-thumb]:size-5 [&::-moz-range-thumb]:appearance-none [&::-moz-range-thumb]:rounded-full",
-  "lg:[&::-moz-range-thumb]:size-3.5",
+  "xl:[&::-moz-range-thumb]:size-3.5",
   "[&::-moz-range-thumb]:border-[1.5px] [&::-moz-range-thumb]:border-accent [&::-moz-range-thumb]:bg-bg-primary",
-  "[&::-moz-range-thumb]:shadow-[0_0_0_4px_var(--tm-ring)] [&::-moz-range-thumb]:transition-shadow",
+  "[&::-moz-range-thumb]:shadow-[0_0_0_5px_var(--tm-ring)] [&::-moz-range-thumb]:transition-[box-shadow,transform]",
+  "xl:[&::-moz-range-thumb]:shadow-[0_0_0_4px_var(--tm-ring)]",
   "hover:[&::-moz-range-thumb]:shadow-[0_0_0_7px_var(--tm-ring-hover)]",
+  "active:[&::-moz-range-thumb]:scale-[1.12]",
   "[--tm-ring:color-mix(in_srgb,var(--color-accent)_16%,transparent)]",
   "[--tm-ring-hover:color-mix(in_srgb,var(--color-accent)_20%,transparent)]",
 );
@@ -60,17 +68,17 @@ export function ToolAside({ title, blurb, children, footer }: ToolAsideProps) {
       aria-label="Settings"
       className={cn(
         "flex min-w-0 flex-col rounded-xl border border-border bg-nocturne-rail",
-        // Below lg this is the sheet: it sits under the canvas, edge to edge.
-        "lg:sticky lg:top-[74px] lg:max-h-[calc(100vh-124px)] lg:self-start",
+        // Below xl this is the sheet: it sits under the canvas, edge to edge.
+        "xl:sticky xl:top-[74px] xl:max-h-[calc(100vh-124px)] xl:self-start",
       )}
     >
       {/* The sheet's grabber — the doc draws one on tablet and phone. */}
-      <div className="flex justify-center pt-2.5 pb-0.5 lg:hidden">
-        <span aria-hidden="true" className="h-[3px] w-9 rounded-sm bg-neutral-700" />
+      <div className="flex justify-center pt-2.5 pb-0.5 xl:hidden">
+        <span aria-hidden="true" className="h-[3px] w-9 rounded-[2px] bg-neutral-700" />
       </div>
 
       {title && (
-        <div className="flex flex-col gap-[5px] border-b border-border px-4 pt-[15px] pb-3">
+        <div className="flex flex-col gap-[5px] border-b border-border px-4 pt-4 pb-[13px]">
           <div className="font-display text-base leading-[1.2] font-medium text-text-primary">
             {title}
           </div>
@@ -82,12 +90,12 @@ export function ToolAside({ title, blurb, children, footer }: ToolAsideProps) {
         </div>
       )}
 
-      <div className={cn("flex min-h-0 flex-1 flex-col lg:overflow-y-auto", SCROLL_CLASS)}>
+      <div className={cn("flex min-h-0 flex-1 flex-col xl:overflow-y-auto", SCROLL_CLASS)}>
         {children}
       </div>
 
       {footer && (
-        <div className="flex flex-col gap-[9px] border-t border-border px-4 py-[13px]">
+        <div className="flex flex-col gap-2.5 border-t border-border px-4 py-3.5">
           {footer}
         </div>
       )}
@@ -120,7 +128,11 @@ interface ToolChoiceProps<T extends string | number> {
   /** Accessible name for the group — required, the chips alone are ambiguous. */
   label: string;
   disabled?: boolean;
-  /** Chips share the row width instead of hugging their text. */
+  /**
+   * Chips share the row width instead of hugging their text. Defaults on: the
+   * doc's choice chips are always `flex:1` (which is why its padding is only
+   * 4px at the sides), and all but a handful of callers already passed it.
+   */
   fill?: boolean;
 }
 
@@ -130,10 +142,10 @@ export function ToolChoice<T extends string | number>({
   onChange,
   label,
   disabled,
-  fill,
+  fill = true,
 }: ToolChoiceProps<T>) {
   return (
-    <div className="flex flex-wrap gap-1.5" role="group" aria-label={label}>
+    <div className="flex flex-wrap gap-[5px]" role="group" aria-label={label}>
       {options.map((o) => (
         <button
           key={String(o.value)}
@@ -142,7 +154,13 @@ export function ToolChoice<T extends string | number>({
           onClick={() => onChange(o.value)}
           aria-pressed={o.value === value}
           className={cn(
-            chipClass(o.value === value, "px-3 py-[7px] text-xs disabled:opacity-45"),
+            chipClass(
+              o.value === value,
+              cn(
+                "rounded-[6px] px-1 py-[7px] text-[11.5px] disabled:opacity-45",
+                o.value !== value && "text-text-muted",
+              ),
+            ),
             fill && "flex-1",
           )}
         >
@@ -206,7 +224,7 @@ export function ToolSlider({
 /** The key/value readout the doc puts under OUTPUT. */
 export function ToolOutput({ rows }: { rows: readonly [string, string][] }) {
   return (
-    <div className="flex flex-col gap-px overflow-hidden rounded-lg border border-border bg-border">
+    <div className="flex flex-col gap-px overflow-hidden rounded-md border border-border bg-border">
       {rows.map(([label, value], i) => (
         <div
           key={label}
@@ -255,12 +273,18 @@ export function ToolActions({
   primaryDisabled,
   onReset,
   resetLabel = "RESET",
+  tone = "accent",
 }: {
   primaryLabel: string;
   onPrimary: () => void;
   primaryDisabled?: boolean;
   onReset?: () => void;
   resetLabel?: string;
+  /**
+   * The doc draws one destructive primary — the recorder's "Stop and save" —
+   * as the same outlined box in the record red rather than the accent.
+   */
+  tone?: "accent" | "danger";
 }) {
   // The doc's "⌘↵ TO RUN" — bound for real, so the hint is a promise kept.
   useEffect(() => {
@@ -282,24 +306,38 @@ export function ToolActions({
         onClick={onPrimary}
         disabled={primaryDisabled}
         className={cn(
-          "h-11 w-full cursor-pointer rounded-[9px] border border-accent bg-accent/10 font-display text-sm leading-none font-medium text-accent",
-          "transition-colors duration-200 hover:bg-accent/20",
-          "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent",
-          "disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:bg-accent/10",
-          "lg:h-10",
+          // Three heights, one per screen the doc draws: 48px phone, 40px
+          // tablet, 38px desktop — the accent stays an outline over an 8% tint
+          // at every one of them.
+          "h-12 w-full cursor-pointer rounded-[10px] border font-display text-[15px] leading-none font-medium",
+          "transition-colors duration-200 disabled:cursor-not-allowed disabled:opacity-45",
+          "sm:h-10 sm:rounded-[9px] sm:text-sm",
+          "xl:h-[38px] xl:text-[13.5px]",
+          tone === "danger"
+            ? "border-error bg-error/8 text-error hover:bg-error/12 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-error disabled:hover:bg-error/8"
+            : "border-accent bg-accent/8 text-accent hover:bg-accent/20 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:hover:bg-accent/8",
         )}
       >
         {primaryLabel}
       </button>
-      {onReset && (
-        <div className="flex items-center justify-between">
-          {/* ⌘↵ means nothing on touch — the sheet keeps the device line. */}
-          <span className="font-mono text-[10px] leading-none tracking-[0.04em] text-text-muted lg:hidden">
-            RUNS ON THIS DEVICE
-          </span>
-          <span className="hidden font-mono text-[10px] leading-none tracking-[0.04em] text-text-muted lg:inline">
-            ⌘↵ TO RUN
-          </span>
+      {/*
+        The hint is about the primary above it, not about the reset link, so it
+        renders whether or not a caller passes `onReset`. Gating the whole row
+        on `onReset` hid `⌘↵ TO RUN` on every tool that has no reset — the audio
+        tools among them, where the shortcut works and was simply invisible.
+      */}
+      <div className="flex items-center justify-between gap-3">
+        {/* ⌘↵ means nothing on touch — the sheet keeps the device line, with
+            the doc's green run dot. `0 BYTES SENT` is deliberately NOT
+            repeated here: the status bar on the same page already states it. */}
+        <span className="flex items-center gap-[7px] font-mono text-[10px] leading-none tracking-[0.04em] text-text-muted xl:hidden">
+          <span aria-hidden="true" className="size-1 flex-none rounded-full bg-success" />
+          RUNS ON THIS DEVICE
+        </span>
+        <span className="hidden font-mono text-[10px] leading-none tracking-[0.04em] text-text-muted xl:inline">
+          ⌘↵ TO RUN
+        </span>
+        {onReset && (
           <button
             type="button"
             onClick={onReset}
@@ -307,8 +345,8 @@ export function ToolActions({
           >
             {resetLabel}
           </button>
-        </div>
-      )}
+        )}
+      </div>
     </>
   );
 }
@@ -341,7 +379,16 @@ export function ToolPresets({
   const current = presets.find((p) => p.id === active);
   return (
     <ToolAsideSection label="START FROM">
-      <div className="flex flex-wrap gap-1.5" role="group" aria-label="Start from preset">
+      {/* Phone: one scrolling row, as the doc draws it — wrapping four chips
+          onto three lines is what the overflow row exists to avoid. */}
+      <div
+        className={cn(
+          "flex gap-1.5 overflow-x-auto sm:flex-wrap sm:overflow-visible",
+          SCROLL_CLASS,
+        )}
+        role="group"
+        aria-label="Start from preset"
+      >
         {presets.map((p) => (
           <button
             key={p.id}
@@ -351,7 +398,7 @@ export function ToolPresets({
             onClick={() => onSelect(p.id)}
             className={chipClass(
               active === p.id,
-              "px-2.5 py-2 text-xs disabled:cursor-not-allowed disabled:opacity-45",
+              "flex-none rounded-md px-[13px] py-2 text-[12.5px] disabled:cursor-not-allowed disabled:opacity-45 sm:rounded-[7px] sm:px-3 sm:py-[7px] sm:text-xs",
             )}
           >
             {p.label}
@@ -359,7 +406,7 @@ export function ToolPresets({
         ))}
       </div>
       {current && (
-        <span className="font-body text-[10.5px] leading-[1.5] text-text-muted">
+        <span className="font-body text-[11px] leading-[1.5] text-text-muted">
           {current.note}
         </span>
       )}
@@ -373,32 +420,64 @@ export function ToolPresets({
  */
 export function ToolAdvanced({ rows }: { rows: readonly (readonly [string, string])[] }) {
   return (
-    <details className={cn(SECTION, "group last:border-b-0")}>
+    // Not `SECTION`: the doc's toggle row and its drawer carry their own
+    // vertical padding, so the section's would double up.
+    <details className="group border-b border-border px-4 last:border-b-0">
       <summary
         className={cn(
-          "flex cursor-pointer list-none items-center gap-2",
+          "flex cursor-pointer list-none items-center gap-2 py-3",
           "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent",
         )}
       >
         <span className={cn(MONO_LABEL, "text-text-muted")}>ADVANCED</span>
-        <span className="font-mono text-[9.5px] leading-none text-text-muted">{rows.length}</span>
+        <span className="font-mono text-[10px] leading-none text-text-muted opacity-60">
+          {rows.length} SETTINGS
+        </span>
         <span
           aria-hidden="true"
-          className="ml-auto font-mono text-[11px] leading-none text-text-muted transition-transform duration-200 group-open:rotate-90 motion-reduce:transition-none"
+          className="ml-auto font-mono text-[15px] leading-none text-text-muted transition-transform duration-200 group-open:rotate-90 motion-reduce:transition-none"
         >
           ›
         </span>
       </summary>
-      <div className="flex flex-col gap-2 pt-[9px]">
+      {/* The doc's drawer is its own tinted, ruled band — full-bleed inside the
+          section, which is what the negative inline margin buys. */}
+      <div className="-mx-4 flex animate-tm-drawer flex-col gap-3 border-t border-border bg-text-primary/3 px-4 py-3.5 motion-reduce:animate-none">
         {rows.map(([k, v]) => (
           <div key={k} className="flex items-baseline justify-between gap-3">
-            <span className="font-body text-xs text-text-muted">{k}</span>
-            <span className="text-right font-mono text-[10px] leading-[1.4] font-medium tracking-[0.04em] text-neutral-300">
+            <span className="font-body text-[11.5px] leading-[1.3] text-text-muted">{k}</span>
+            <span className="flex-none rounded-[5px] border border-border px-2 py-1 font-mono text-[11px] leading-none font-medium text-neutral-300">
               {v}
             </span>
           </div>
         ))}
       </div>
     </details>
+  );
+}
+
+/**
+ * The doc's success confirmation, pinned in the rail footer above the primary.
+ *
+ * Copy must stay true: pass `savedToRecent` only where `triggerDownload`
+ * actually recorded the output, otherwise the sentence stops at the elapsed
+ * time.
+ */
+export function ToolDone({
+  elapsed,
+  savedToRecent = false,
+}: {
+  /** Already formatted, e.g. "1.4 s". */
+  elapsed: string;
+  savedToRecent?: boolean;
+}) {
+  return (
+    <div className="flex animate-tm-rise items-center gap-[9px] rounded-md border border-success/30 bg-success/7 px-3 py-2.5 motion-reduce:animate-none">
+      <Check size={15} strokeWidth={2} aria-hidden="true" className="flex-none text-success" />
+      <span className="font-body text-xs leading-[1.35] text-success">
+        Done in {elapsed}
+        {savedToRecent ? " — saved to Recent output." : "."}
+      </span>
+    </div>
   );
 }

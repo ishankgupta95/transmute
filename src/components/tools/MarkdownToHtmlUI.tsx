@@ -3,7 +3,6 @@
 import { useCallback, useState } from "react";
 import { marked } from "marked";
 import DOMPurify from "dompurify";
-import { copyText } from "@/lib/utils/clipboard";
 import {
   ToolActions,
   ToolAside,
@@ -17,10 +16,13 @@ import {
   TextPanes,
 } from "@/components/tools/ToolCanvas";
 import { cn } from "@/lib/utils/cn";
+import { CANVAS_COLUMN } from "@/components/workspace/shared";
+import { useCopied } from "@/hooks/useCopied";
+import { formatFileSize } from "@/lib/utils/file-helpers";
 
 export function MarkdownToHtmlUI() {
   const [input, setInput] = useState("");
-  const [copied, setCopied] = useState(false);
+  const { copied, copy } = useCopied();
   const [view, setView] = useState<"preview" | "html">("preview");
 
   // Raw HTML is the tool's actual output (shown in the HTML view / copied).
@@ -30,20 +32,19 @@ export function MarkdownToHtmlUI() {
   const safeHtml = html ? DOMPurify.sanitize(html) : "";
 
   const handleCopy = useCallback(() => {
-    copyText(html).then((ok) => {
-      if (ok) {
-        setCopied(true);
-        setTimeout(() => setCopied(false), 2000);
-      }
-    });
-  }, [html]);
+    void copy(html);
+  }, [copy, html]);
 
   return (
     <>
       {/* ── Canvas: the doc's two-up IN / OUT panes ────────── */}
-      <div className="min-w-0 space-y-[13px]">
+      <div className={CANVAS_COLUMN}>
         <TextPanes>
-          <TextPane label="Markdown" lines={lineCount(input)}>
+          <TextPane
+            label="Markdown"
+            lines={lineCount(input)}
+            size={formatFileSize(new Blob([input]).size)}
+          >
             <textarea
               value={input}
               onChange={(e) => setInput(e.target.value)}
@@ -57,6 +58,7 @@ export function MarkdownToHtmlUI() {
             tone="out"
             label={view === "preview" ? "Preview" : "HTML"}
             lines={lineCount(html)}
+            size={formatFileSize(new Blob([html]).size)}
             action={
               html ? (
                 <button

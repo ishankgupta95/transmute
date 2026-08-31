@@ -21,7 +21,7 @@ export async function mergeAudio(
 
   const { decodeAudioFile } = await import("./audio-decode");
 
-  const buffers = await Promise.all(files.map((f) => decodeAudioFile(f)));
+  const buffers = await Promise.all(files.map((f) => decodeAudioFile(f, ctx)));
 
   const maxSampleRate = Math.max(...buffers.map((b) => b.sampleRate));
   const maxChannels = Math.max(...buffers.map((b) => b.numberOfChannels));

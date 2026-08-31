@@ -166,8 +166,10 @@ test.describe("image utilities", () => {
     await page.goto("/favicon-generator");
     await uploadFile(page, tinyPng(128));
 
+    // The primary names the work with its real count, as the doc's PRIMARY
+    // labels do ("Generate 7 assets").
     await page
-      .getByRole("button", { name: "Generate All Favicons", exact: true })
+      .getByRole("button", { name: /^Generate \d+ assets$/ })
       .click();
 
     // The HTML snippet block is rendered into a <pre>; assert the canonical
@@ -186,6 +188,24 @@ test.describe("image utilities", () => {
     const bytes = await downloadBytes(download);
     // Zip files begin with the local-file-header magic "PK\x03\x04".
     expect(bytes.subarray(0, 4).toString("hex")).toBe("504b0304");
+
+    /*
+      Every file the snippet links must actually be in the archive. The
+      manifest was the one that wasn't: the snippet has always carried
+      `<link rel="manifest" href="/site.webmanifest">` while the ZIP shipped
+      only icons, so following the instructions gave a 404. Zip stores entry
+      names uncompressed in each local header, so a plain search is enough.
+    */
+    const names = bytes.toString("latin1");
+    for (const linked of [
+      "favicon.ico",
+      "favicon-32x32.png",
+      "favicon-16x16.png",
+      "apple-touch-icon.png",
+      "site.webmanifest",
+    ]) {
+      expect(names).toContain(linked);
+    }
   });
 
   test("image-color-palette: extracts at least one swatch from a two-tone PNG", async ({

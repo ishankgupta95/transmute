@@ -4,13 +4,13 @@ import { useCallback, useState } from "react";
 import { ErrorMessage } from "@/components/tools/ErrorMessage";
 import { DropZone } from "@/components/tools/DropZone";
 import { DownloadButton } from "@/components/tools/DownloadButton";
-import { ProgressBar } from "@/components/tools/ProgressBar";
 import {
   useFileProcessor,
   type FileProcessorContext,
   type ProcessedResult,
 } from "@/hooks/useFileProcessor";
-import { formatFileSize } from "@/lib/utils/file-helpers";
+import { audioMeta } from "@/lib/utils/canvas-meta";
+import { formatDelta, formatFileSize } from "@/lib/utils/file-helpers";
 import {
   ToolActions,
   ToolAside,
@@ -19,6 +19,7 @@ import {
   ToolOutput,
   ToolResetLink,
 } from "@/components/tools/ToolAside";
+import { ToolControl, ToolControlGroup, ToolProgress } from "@/components/tools/ToolControls";
 import {
   CanvasHeader,
   CanvasStage,
@@ -27,6 +28,8 @@ import {
   WaveformSkeleton,
 } from "@/components/tools/ToolCanvas";
 import { computeWaveform } from "@/lib/tools/media-preview";
+import { CANVAS_COLUMN, STAGE_GROW } from "@/components/workspace/shared";
+import { cn } from "@/lib/utils/cn";
 
 type OutputFormat = "wav" | "mp3";
 
@@ -47,7 +50,19 @@ export function AudioConverterUI({
 }: AudioConverterUIProps) {
   const [file, setFile] = useState<File | null>(null);
   const [peaks, setPeaks] = useState<number[] | null>(null);
+  /*
+    `peaks === null` alone cannot tell "still decoding" from "could not
+    decode", and this tool has no <audio> element to report the failure the way
+    the trimmer's does — so a failed preview sat under the loading skeleton
+    forever. Tracked separately so the stage can say which one it is.
+  */
+  const [waveState, setWaveState] = useState<"loading" | "ok" | "failed">("loading");
   const [duration, setDuration] = useState(0);
+  /*
+    Stream facts off the same decode that draws the bars — the doc's header
+    reads "48 kHz · STEREO · 11:30 · 126 MB".
+  */
+  const [stream, setStream] = useState<{ sampleRate: number; channels: number } | null>(null);
   const [bitrate, setBitrate] = useState(192);
 
   const processFn = useCallback(
@@ -65,7 +80,8 @@ export function AudioConverterUI({
 
   // `void` options: the conversion settings are closed over by `processFn`,
   // so `process` takes the file alone.
-  const { status, result, error, process, reset } = useFileProcessor<void>(processFn);
+  const { status, result, error, progress, process, cancel, reset } =
+    useFileProcessor<void>(processFn);
 
   const handleFiles = useCallback(
     (files: File[]) => {
@@ -73,17 +89,25 @@ export function AudioConverterUI({
       if (!f) return;
       setFile(f);
       setPeaks(null);
+      setWaveState("loading");
       setDuration(0);
+      setStream(null);
       reset();
 
-      // Decoration only — a decode failure leaves the skeleton and the
-      // conversion, which decodes independently, is unaffected.
+      // Decoration only — the conversion decodes independently (and through
+      // the FFmpeg fallback this preview lacks), so a failed preview says the
+      // preview failed, never that the conversion will.
       computeWaveform(f, WAVEFORM_BARS)
         .then((w) => {
           setPeaks(w.peaks);
           setDuration(w.duration);
+          setStream({ sampleRate: w.sampleRate, channels: w.channels });
+          setWaveState("ok");
         })
-        .catch(() => setPeaks(null));
+        .catch(() => {
+          setPeaks(null);
+          setWaveState("failed");
+        });
     },
     [reset],
   );
@@ -98,7 +122,9 @@ export function AudioConverterUI({
   const handleReset = useCallback(() => {
     setFile(null);
     setPeaks(null);
+    setWaveState("loading");
     setDuration(0);
+    setStream(null);
     reset();
   }, [reset]);
 
@@ -111,17 +137,23 @@ export function AudioConverterUI({
   return (
     <>
       {/* ── Canvas: the doc's waveform stage ─────────────────── */}
-      <div className="min-w-0 space-y-[15px]">
+      <div className={CANVAS_COLUMN}>
         <CanvasHeader
           file={file.name}
-          meta={`${formatFileSize(file.size)}${duration ? ` · ${formatClock(duration)}` : ""}`}
+          meta={audioMeta(stream, duration ? formatClock(duration) : null, formatFileSize(file.size))}
           trailing={outputFormat.toUpperCase()}
         />
 
-        <CanvasStage>
+        {/* The one growing stage in this column — the waveform is the whole
+            canvas, so it takes the height the column has spare. */}
+        <CanvasStage className={cn(STAGE_GROW, "flex flex-col")}>
           <div className="absolute inset-x-0 top-1/2 h-px bg-border" aria-hidden="true" />
           {peaks ? (
             <Waveform peaks={peaks} startPct={0} endPct={100} />
+          ) : waveState === "failed" ? (
+            <div className="flex h-full min-h-[170px] items-center justify-center px-3.5 text-center font-mono text-[10.5px] leading-none text-text-muted">
+              PREVIEW UNAVAILABLE — CONVERSION STILL RUNS
+            </div>
           ) : (
             <WaveformSkeleton />
           )}
@@ -137,21 +169,18 @@ export function AudioConverterUI({
           stats={[
             { label: "IN", value: formatFileSize(file.size), tone: "neutral" },
             { label: "OUT", value: result ? formatFileSize(result.newSize) : "—" },
+            // Terse and mono, like every other cell — the prose form of this
+            // number wrapped to two lines and set the height of the whole row.
             {
               label: "DELTA",
-              value: result ? formatSizeComparison(file.size, result.newSize) : "—",
-              tone: "ok",
+              value: result ? formatDelta(file.size, result.newSize) : "—",
+              // Green is a claim. MP3 → WAV multiplies the size by ~10 and
+              // this cell used to paint that growth as a success.
+              tone: !result || result.newSize <= file.size ? "ok" : "accent",
             },
             { label: "FORMAT", value: outputFormat.toUpperCase(), tone: "neutral" },
           ]}
         />
-
-        {status === "processing" && (
-          <div className="space-y-2">
-            <ProgressBar progress={null} />
-            <p className="text-sm text-text-muted text-center">Converting...</p>
-          </div>
-        )}
 
         {status === "error" && (
           <ErrorMessage message={error} />
@@ -162,40 +191,60 @@ export function AudioConverterUI({
       <ToolAside
         footer={
           <>
+            {/* The doc pins the running readout to the rail footer. Only the
+                MP3 encoder reports progress, and only once it starts — the
+                decode ahead of it is silent, so stay indeterminate until a
+                real number arrives rather than sitting pinned at 0%. */}
+            {status === "processing" && (
+              <ToolProgress
+                phase="CONVERTING"
+                percent={outputFormat === "mp3" && progress > 0 ? progress : null}
+                label="Converting audio"
+              />
+            )}
             {result ? (
               <DownloadButton
                 blob={result.blob}
                 fileName={result.fileName}
                 className="w-full justify-center"
               />
+            ) : status === "processing" ? (
+              // Cancel stops the run and keeps the loaded file; the reset link,
+              // which throws it away, is hidden while the run is in flight.
+              <ToolActions primaryLabel="Cancel" onPrimary={cancel} />
             ) : (
-              <ToolActions
-                primaryLabel={status === "processing" ? "Converting…" : "Convert"}
-                onPrimary={handleConvert}
-                primaryDisabled={status === "processing"}
+              <ToolActions primaryLabel="Convert" onPrimary={handleConvert} />
+            )}
+            {status !== "processing" && (
+              <ToolResetLink
+                onClick={handleReset}
+                label={result ? "CONVERT ANOTHER" : "START OVER"}
               />
             )}
-            <ToolResetLink
-              onClick={handleReset}
-              label={result ? "CONVERT ANOTHER" : "CANCEL"}
-            />
           </>
         }
       >
         {showBitrate && (
-          <ToolAsideSection label="BITRATE">
-            <ToolChoice
-              label="MP3 bitrate"
-              fill
-              value={bitrate}
-              onChange={setBitrate}
-              disabled={status === "processing"}
-              options={BITRATE_OPTIONS.map((b) => ({ value: b, label: String(b) }))}
-            />
-            <span className="font-body text-[10.5px] leading-[1.5] text-text-muted">
-              kbps. 192 is transparent for most music; 320 is the MP3 ceiling.
-            </span>
-          </ToolAsideSection>
+          <ToolControlGroup>
+            <ToolControl label="BITRATE">
+              <ToolChoice
+                label="MP3 bitrate"
+                fill
+                value={bitrate}
+                // A new bitrate is a new output — drop the finished one rather
+                // than letting the chips describe bytes nobody can download.
+                onChange={(b) => {
+                  setBitrate(b);
+                  if (result) reset();
+                }}
+                disabled={status === "processing"}
+                options={BITRATE_OPTIONS.map((b) => ({ value: b, label: String(b) }))}
+              />
+              <span className="font-body text-[10.5px] leading-[1.5] text-text-muted">
+                kbps. 192 is transparent for most music; 320 is the MP3 ceiling.
+              </span>
+            </ToolControl>
+          </ToolControlGroup>
         )}
 
         <ToolAsideSection label="OUTPUT">
@@ -207,7 +256,9 @@ export function AudioConverterUI({
             ]}
           />
           <span className="font-body text-[10.5px] leading-[1.5] text-text-muted">
-            Decoded and re-encoded in this tab — the audio never leaves your device.
+            {result
+              ? `${formatSizeComparison(file.size, result.newSize)}. Decoded and re-encoded in this tab — the audio never leaves your device.`
+              : "Decoded and re-encoded in this tab — the audio never leaves your device."}
           </span>
         </ToolAsideSection>
       </ToolAside>
@@ -222,6 +273,7 @@ function formatClock(seconds: number): string {
   return `${mins}:${String(secs).padStart(2, "0")}`;
 }
 
+/** The same quantity as a sentence, for the aside — where prose belongs. */
 function formatSizeComparison(original: number, converted: number): string {
   const diff = original - converted;
   const pct = Math.abs(Math.round((diff / original) * 100));

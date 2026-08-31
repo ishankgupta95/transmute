@@ -15,17 +15,26 @@ import {
   TextPane,
   TextPanes,
 } from "@/components/tools/ToolCanvas";
+import { CANVAS_COLUMN } from "@/components/workspace/shared";
+import { formatFileSize } from "@/lib/utils/file-helpers";
 
-type DiffMode = "inline" | "side-by-side";
+/*
+  The chips name the GRANULARITY, which is all this control has ever changed.
+  They used to read "Inline" / "Side-by-Side" while both modes rendered the
+  same single full-width combined pane — a labelled promise of a layout that
+  was never built. Renaming is the honest fix; a real two-column diff is a
+  feature, not a defect.
+*/
+type DiffMode = "words" | "lines";
 
 export function TextDiffUI() {
   const [left, setLeft] = useState("");
   const [right, setRight] = useState("");
-  const [mode, setMode] = useState<DiffMode>("inline");
+  const [mode, setMode] = useState<DiffMode>("words");
 
   const diff = useMemo(() => {
     if (!left && !right) return [];
-    return mode === "side-by-side" ? diffLines(left, right) : diffWords(left, right);
+    return mode === "lines" ? diffLines(left, right) : diffWords(left, right);
   }, [left, right, mode]);
 
   const handleSwap = useCallback(() => {
@@ -39,9 +48,13 @@ export function TextDiffUI() {
   return (
     <>
       {/* ── Canvas: what you look at ─────────────────────────── */}
-      <div className="min-w-0 space-y-[13px]">
+      <div className={CANVAS_COLUMN}>
         <TextPanes>
-          <TextPane label="Original" lines={lineCount(left)}>
+          <TextPane
+            label="Original"
+            lines={lineCount(left)}
+            size={formatFileSize(new Blob([left]).size)}
+          >
             <textarea
               value={left}
               onChange={(e) => setLeft(e.target.value)}
@@ -50,7 +63,11 @@ export function TextDiffUI() {
               className={TEXT_PANE_BODY}
             />
           </TextPane>
-          <TextPane label="Modified" lines={lineCount(right)}>
+          <TextPane
+            label="Modified"
+            lines={lineCount(right)}
+            size={formatFileSize(new Blob([right]).size)}
+          >
             <textarea
               value={right}
               onChange={(e) => setRight(e.target.value)}
@@ -63,7 +80,15 @@ export function TextDiffUI() {
 
         {diff.length > 0 && (left || right) && (
           <TextPanes columns={1}>
-            <TextPane tone="out" label="Diff" lines={added + removed}>
+            {/* `added + removed` counts diff PARTS, not lines — under a
+                header that says "N LINES" that was a third, unrelated
+                number. Count the rendered text instead. */}
+            <TextPane
+              tone="out"
+              label="Diff"
+              lines={lineCount(diff.map((p) => p.value).join(""))}
+              size={formatFileSize(new Blob([diff.map((p) => p.value).join("")]).size)}
+            >
               <div className={TEXT_PANE_BODY}>
                 {diff.map((part, i) => (
                   <span
@@ -102,12 +127,12 @@ export function TextDiffUI() {
             value={mode}
             onChange={setMode}
             options={[
-              { value: "inline" as const, label: "Inline" },
-              { value: "side-by-side" as const, label: "Side-by-Side" },
+              { value: "words" as const, label: "By word" },
+              { value: "lines" as const, label: "By line" },
             ]}
           />
           <span className="font-body text-[10.5px] leading-[1.5] text-text-muted">
-            {mode === "inline"
+            {mode === "words"
               ? "Word by word — best for prose."
               : "Line by line — best for code and config."}
           </span>
@@ -116,8 +141,10 @@ export function TextDiffUI() {
         <ToolAsideSection label="OUTPUT">
           <ToolOutput
             rows={[
-              ["Insertions", left || right ? String(added) : "—"],
-              ["Deletions", left || right ? String(removed) : "—"],
+              // `added`/`removed` are counts of diff parts — contiguous runs
+              // of changed text — not lines and not words. Say so.
+              ["Added runs", left || right ? String(added) : "—"],
+              ["Removed runs", left || right ? String(removed) : "—"],
             ]}
           />
         </ToolAsideSection>

@@ -17,7 +17,7 @@ export function PipelineBar({ steps, engine, accept }: PipelineBarProps) {
         <span
           key={label}
           className={cn(
-            "flex h-[23px] flex-none items-center rounded-md border px-2.5 font-nocturne text-[11px] leading-none font-medium whitespace-nowrap",
+            "flex h-[23px] flex-none items-center rounded-[6px] border px-2.5 font-nocturne text-[11px] leading-none font-medium whitespace-nowrap",
             i === 0
               ? "border-nocturne-accent/55 bg-nocturne-accent/12 text-nocturne-accent-200"
               : "border-nocturne-divider bg-transparent text-nocturne-neutral-400",
@@ -27,7 +27,7 @@ export function PipelineBar({ steps, engine, accept }: PipelineBarProps) {
         </span>
       ))}
 
-      <span className="flex h-[23px] flex-none items-center rounded-md border border-dashed border-nocturne-neutral-700 px-[9px] font-nocturne text-[11px] leading-none whitespace-nowrap text-nocturne-neutral-500">
+      <span className="flex h-[23px] flex-none items-center rounded-[6px] border border-dashed border-nocturne-neutral-700 px-[9px] font-nocturne text-[11px] leading-none whitespace-nowrap text-nocturne-neutral-500">
         + step
       </span>
 

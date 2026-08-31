@@ -5,6 +5,18 @@ export interface BlogPost {
   slug: string;
   title: string;
   description: string;
+  /**
+   * The one-line blurb the blog index shows under the title. `description` is
+   * the SEO/meta lede reused in the page head and the article's own standfirst;
+   * at index size it runs long. Where an `indexBlurb` exists the list prefers it.
+   */
+  indexBlurb?: string;
+  /**
+   * Overrides the tag derived from `primaryTool`'s category. Only for posts
+   * whose subject is not the category their headline tool lives in — a label,
+   * not a taxonomy entry.
+   */
+  tag?: string;
   publishedAt: string; // ISO date (YYYY-MM-DD)
   updatedAt?: string;
   readingTime: number; // minutes
@@ -21,6 +33,9 @@ export const posts: BlogPost[] = [
     title: "HEIC vs JPG: Which Format Should You Use?",
     description:
       "HEIC files are half the size of JPGs at the same quality, but compatibility is uneven. Here's when to pick each — and how to convert without losing detail.",
+    indexBlurb:
+      "Half the size at the same quality, but uneven compatibility. When to pick each.",
+    tag: "IMAGE FORMATS",
     publishedAt: "2026-05-03",
     readingTime: 9,
     keywords: [
@@ -37,8 +52,6 @@ export const posts: BlogPost[] = [
       "png-to-jpg",
       "compress-image",
       "jpg-to-webp",
-      "mp4-to-mp3",
-      "video-trimmer",
       "exif-viewer",
       "avif-to-jpg",
     ],
@@ -48,6 +61,8 @@ export const posts: BlogPost[] = [
     title: "How to Compress Images Without Losing Quality",
     description:
       "A practical guide to image compression: what JPG quality really means, when to resize before compressing, and how to hit a target file size without obvious artifacts.",
+    indexBlurb:
+      "What JPG quality really means, when to resize first, and how to hit a target size cleanly.",
     publishedAt: "2026-05-03",
     readingTime: 11,
     keywords: [
@@ -79,6 +94,9 @@ export const posts: BlogPost[] = [
     title: "A Complete Guide to Modern Image Formats: WebP, AVIF, and JPEG XL",
     description:
       "WebP, AVIF, and JPEG XL all promise smaller files at higher quality than JPG. Here's how they actually compare — file size, browser support, and when to pick each.",
+    indexBlurb:
+      "What each format actually does, where support stands, and which one to reach for.",
+    tag: "IMAGE FORMATS",
     publishedAt: "2026-05-03",
     readingTime: 14,
     keywords: [
@@ -88,6 +106,7 @@ export const posts: BlogPost[] = [
       "image format comparison",
       "next-gen image formats",
     ],
+    primaryTool: "jpg-to-webp",
     relatedTools: [
       "jpg-to-webp",
       "png-to-webp",
@@ -106,6 +125,8 @@ export const posts: BlogPost[] = [
     title: "How to Merge PDFs in Your Browser (No Upload Required)",
     description:
       "A step-by-step guide to combining PDFs locally — including how to reorder pages, keep bookmarks, and handle large documents without sending anything to a server.",
+    indexBlurb:
+      "Combining documents without handing a contract to a stranger.",
     publishedAt: "2026-05-03",
     readingTime: 8,
     keywords: [
@@ -132,6 +153,8 @@ export const posts: BlogPost[] = [
     title: "Reduce PDF File Size for Email — 3 Practical Methods",
     description:
       "Most email providers cap attachments at 25 MB. Here are three browser-only ways to shrink a PDF: structural compression, image down-sampling, and page splitting.",
+    indexBlurb:
+      "Object deduplication, image downsampling and page splitting, in the order worth trying.",
     publishedAt: "2026-05-03",
     readingTime: 9,
     keywords: [
@@ -156,6 +179,8 @@ export const posts: BlogPost[] = [
     title: "Convert Video to GIF — Frame Rate, Size, and Quality Tradeoffs",
     description:
       "GIFs are larger than the videos they replace. Here's how frame rate, resolution, and palette size interact — and how to ship a small, sharp GIF without re-encoding twice.",
+    indexBlurb:
+      "Why every frame costs you bytes, and how to pick a palette that holds up.",
     publishedAt: "2026-05-03",
     readingTime: 10,
     keywords: [
@@ -179,6 +204,8 @@ export const posts: BlogPost[] = [
     title: "10 Free Browser-Based Developer Tools You Didn't Know Existed",
     description:
       "JSON formatting, regex testing, JWT decoding, hash generation — ten utilities every developer reaches for, all running locally in your browser with zero install.",
+    indexBlurb:
+      "JWT decoding, cron expressions, regex testing and more — none of it leaving your machine.",
     publishedAt: "2026-05-03",
     readingTime: 12,
     keywords: [
@@ -188,6 +215,7 @@ export const posts: BlogPost[] = [
       "free developer utilities",
       "web-based dev tools",
     ],
+    primaryTool: "json-formatter",
     relatedTools: [
       "json-formatter",
       "regex-tester",
@@ -221,6 +249,9 @@ export const posts: BlogPost[] = [
     title: "Why Browser-Based Tools Are More Private Than Online Converters",
     description:
       "Most online converters upload your files to a server. Browser-based tools never do. Here's exactly what changes for your privacy — and how to verify it yourself.",
+    indexBlurb:
+      "What actually happens to a file when you upload it, and what happens when you do not.",
+    tag: "PRIVACY",
     publishedAt: "2026-05-03",
     readingTime: 8,
     keywords: [
@@ -230,6 +261,7 @@ export const posts: BlogPost[] = [
       "client-side processing",
       "privacy file converter",
     ],
+    primaryTool: "compress-pdf",
     relatedTools: [
       "heic-to-jpg",
       "compress-pdf",
@@ -271,8 +303,25 @@ export function getPostsLinkingToTool(toolSlug: string): BlogPost[] {
  * most directly about, so it stays correct as the registry moves.
  */
 export function postTag(post: BlogPost): string {
-  const primary = post.primaryTool ?? post.relatedTools[0];
-  const category = primary ? getToolBySlug(primary)?.category : undefined;
-  if (category) return (getCategoryBySlug(category)?.shortName ?? "GUIDE").toUpperCase();
-  return post.keywords.some((k) => k.includes("privacy")) ? "PRIVACY" : "GUIDE";
+  if (post.tag) return post.tag;
+
+  // The headline tool's category, when there is one. `relatedTools[0]` is only
+  // a last resort: it is an internal-link list, not a subject, so a privacy
+  // essay that happens to link HEIC to JPG first must not come out tagged IMAGE.
+  const fromPrimary = post.primaryTool
+    ? getToolBySlug(post.primaryTool)?.category
+    : undefined;
+  if (fromPrimary) {
+    return (getCategoryBySlug(fromPrimary)?.shortName ?? "GUIDE").toUpperCase();
+  }
+
+  if (post.keywords.some((k) => k.includes("privacy"))) return "PRIVACY";
+
+  const fromRelated = post.relatedTools[0]
+    ? getToolBySlug(post.relatedTools[0])?.category
+    : undefined;
+  if (fromRelated) {
+    return (getCategoryBySlug(fromRelated)?.shortName ?? "GUIDE").toUpperCase();
+  }
+  return "GUIDE";
 }

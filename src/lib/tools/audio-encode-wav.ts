@@ -29,7 +29,7 @@ export async function convertToWav(
   ctx: ProcessingContext = {},
 ): Promise<ProcessedResult> {
   const { decodeAudioFile } = await import("./audio-decode");
-  const audioBuffer = await decodeAudioFile(file);
+  const audioBuffer = await decodeAudioFile(file, ctx);
   const { encodeWav } = await import("@/lib/workers/audio-client");
   const blob = await encodeWav(audioBuffer, ctx);
   const baseName = file.name.replace(/\.[^.]+$/, "");

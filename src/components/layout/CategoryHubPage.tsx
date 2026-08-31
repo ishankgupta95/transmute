@@ -3,6 +3,7 @@ import type { Tool } from "@/data/tools";
 import { getCategoryBySlug } from "@/data/categories";
 import { getWorkspaceTool } from "@/data/workspace";
 import { BreadcrumbSchema } from "@/components/seo/BreadcrumbSchema";
+import { HubRail } from "@/components/layout/HubRail";
 import { cn } from "@/lib/utils/cn";
 
 export interface CategoryHubSection {
@@ -49,10 +50,10 @@ export function CategoryHubPage({
 
       {/* ── Header ───────────────────────────────────────────── */}
       <div className="relative overflow-hidden px-4 pt-11 pb-5 md:px-11">
-        <div className="pointer-events-none absolute -top-[160px] left-[120px] h-[340px] w-[520px] animate-tm-glow rounded-full bg-[radial-gradient(circle,color-mix(in_srgb,var(--color-accent)_30%,transparent)_0%,transparent_70%)] blur-[140px]" />
+        <div className="pointer-events-none absolute -top-[160px] left-[120px] h-[340px] w-[520px] animate-tm-glow rounded-full bg-[radial-gradient(circle,color-mix(in_srgb,var(--color-accent)_30%,transparent)_0%,transparent_70%)] blur-[140px] motion-reduce:animate-none" />
 
         <div className="relative mx-auto max-w-[1440px]">
-          <nav aria-label="Breadcrumb" className="mb-6">
+          <nav aria-label="Breadcrumb" className="mb-[26px]">
             <ol className="flex items-center gap-2 font-mono text-[11px] leading-none text-text-muted">
               <li>
                 <Link
@@ -100,31 +101,16 @@ export function CategoryHubPage({
       </div>
 
       {/* ── Sidebar + sections ───────────────────────────────── */}
-      <div className="mx-auto grid max-w-[1440px] items-start gap-10 px-4 pt-6 pb-13 md:px-11 lg:grid-cols-[196px_1fr] lg:gap-12">
+      <div className="mx-auto grid max-w-[1440px] items-start gap-10 px-4 pt-[26px] pb-13 md:px-11 lg:grid-cols-[196px_1fr] lg:gap-12">
         <div className="flex flex-col gap-5.5 lg:sticky lg:top-[74px]">
           {shown.length > 1 && (
-            <div className="flex flex-col gap-[9px]">
-              <span className="font-mono text-[9.5px] leading-none font-medium tracking-[0.14em] text-text-muted">
-                ON THIS PAGE
-              </span>
-              {shown.map((s, i) => (
-                <a
-                  key={s.title ?? i}
-                  href={`#${slugify(s.title ?? `section-${i}`)}`}
-                  className={cn(
-                    "border-l-2 pl-2.5 font-body text-[13px] leading-none transition-colors duration-200 hover:text-accent-200",
-                    i === 0
-                      ? "border-accent text-accent-200"
-                      : "border-transparent text-neutral-400",
-                  )}
-                >
-                  {s.title}{" "}
-                  <span className="font-mono text-[10.5px] text-text-muted">
-                    {s.tools.length}
-                  </span>
-                </a>
-              ))}
-            </div>
+            <HubRail
+              sections={shown.map((s, i) => ({
+                id: slugify(s.title ?? `section-${i}`),
+                title: s.title ?? "",
+                count: s.tools.length,
+              }))}
+            />
           )}
 
           {category && category.formats.length > 0 && (
@@ -136,7 +122,7 @@ export function CategoryHubPage({
                 {category.formats.map((f) => (
                   <span
                     key={f}
-                    className="rounded-md border border-border px-[9px] py-[5px] font-mono text-[10.5px] leading-none font-medium whitespace-nowrap text-neutral-400"
+                    className="rounded-[6px] border border-border px-[9px] py-[5px] font-mono text-[10.5px] leading-none font-medium whitespace-nowrap text-neutral-400"
                   >
                     {f}
                   </span>
@@ -171,14 +157,14 @@ export function CategoryHubPage({
                   <Link
                     key={tool.slug}
                     href={`/${tool.slug}`}
-                    className="flex items-center gap-3.5 border-b border-border py-[13px] transition-[padding-left] duration-200 hover:pl-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                    className="flex items-center gap-3.5 border-b border-border py-[13px] transition-[padding-left] duration-[220ms] hover:pl-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
                   >
                     <span className="flex min-w-0 flex-1 flex-col gap-[3px]">
                       <span className="font-body text-[13.5px] leading-[1.3] font-medium text-text-primary">
-                        {tool.name}
+                        {getWorkspaceTool(tool.slug)?.name ?? tool.name}
                       </span>
                       <span className="line-clamp-2 font-body text-[11.5px] leading-[1.45] text-text-muted">
-                        {tool.description}
+                        {tool.hubLine ?? tool.description}
                       </span>
                     </span>
                     <span className="flex-none font-mono text-[10px] leading-none whitespace-nowrap text-accent-300">

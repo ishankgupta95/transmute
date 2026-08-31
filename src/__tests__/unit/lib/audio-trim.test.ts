@@ -94,10 +94,13 @@ describe("trimAudio", () => {
     ).rejects.toThrow("Selected range is empty");
   });
 
-  it("decodes the input file", async () => {
-    await trimAudio(mockFile, { startTime: 2, endTime: 5, outputFormat: "wav" });
+  it("decodes the input file, forwarding the cancellation context", async () => {
+    // The decode is the long half of a trim on a large file; if the signal
+    // stops here, Cancel does nothing until the encode finally starts.
+    const { signal } = new AbortController();
+    await trimAudio(mockFile, { startTime: 2, endTime: 5, outputFormat: "wav" }, { signal });
 
-    expect(decodeAudioFile).toHaveBeenCalledWith(mockFile);
+    expect(decodeAudioFile).toHaveBeenCalledWith(mockFile, expect.objectContaining({ signal }));
   });
 
   it("creates OfflineAudioContext with correct trimmed length", async () => {

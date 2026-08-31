@@ -27,7 +27,7 @@ export async function trimAudio(
   if (startTime >= endTime) throw new Error("Start time must be before end time");
 
   const { decodeAudioFile } = await import("./audio-decode");
-  const audioBuffer = await decodeAudioFile(file);
+  const audioBuffer = await decodeAudioFile(file, ctx);
 
   const sampleRate = audioBuffer.sampleRate;
   // Clamp to the decoded buffer rather than throwing — a media element's reported

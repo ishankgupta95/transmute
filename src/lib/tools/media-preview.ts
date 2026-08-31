@@ -34,6 +34,18 @@ export interface Waveform {
   /** One 0–1 amplitude per bar, normalised so the loudest bar is 1. */
   peaks: number[];
   duration: number;
+  /**
+   * Decoded stream facts, for the canvas header's technical readout
+   * ("48 kHz · STEREO · 11:30 · 126 MB" in the Tool Redesign doc). They come
+   * free with the decode this function already performs — nothing else in the
+   * app can read them without decoding a second time.
+   *
+   * Note these describe the DECODED buffer: `AudioContext` resamples to its
+   * own rate on some browsers, so this is the rate the encoders will see, not
+   * necessarily the rate stored in the container.
+   */
+  sampleRate: number;
+  channels: number;
 }
 
 /**
@@ -43,6 +55,34 @@ export interface Waveform {
  * it is not extra cost the tool was not already paying — but it is off the main
  * thread only insofar as `decodeAudioData` is, so callers should show a
  * placeholder while it runs.
+ *
+ * ── Why this does NOT call `decodeAudioFile` ─────────────────────────────
+ * `lib/tools/audio-decode`'s `decodeAudioFile` has a second tier: when the
+ * browser's own decoder rejects a container on its allowlist (AAC/M4A in
+ * Firefox, Ogg in Safari) it transcodes through FFmpeg.wasm. Routing the
+ * waveform through it would make the two paths agree — a file whose
+ * conversion succeeds would also draw a waveform instead of the caller's
+ * "preview unavailable" state — and it is tempting, because the conversion
+ * for exactly those files pulls the same engine.
+ *
+ * It is deliberately not done, on two counts:
+ *
+ * 1. Cost. The waveform is decoration behind a file the user has only
+ *    *dropped*, not yet converted. Reaching the fallback pulls the ~31 MB
+ *    FFmpeg core speculatively — spent in full even when the user then
+ *    changes their mind and never presses the button.
+ * 2. Contention. FFmpeg is a single, serialised singleton
+ *    (`lib/tools/ffmpeg-loader`: one instance, one virtual FS, one FIFO
+ *    queue). A preview transcode sitting on that queue sits *in front of*
+ *    the conversion the user actually asked for, and then the conversion
+ *    transcodes the same bytes a second time. Nothing this module can see
+ *    lets it yield that queue to a real job.
+ *
+ * There is no cheaper bridge: on Firefox no browser API decodes AAC at all,
+ * so the choice really is "31 MB for decoration" or "no decoration". The
+ * asymmetry with `decodeAudioFile` is therefore intended — that path pays
+ * because the user asked for the output; this one declines because nobody
+ * did. Callers already degrade to a flat/absent waveform and say so.
  */
 export async function computeWaveform(file: File, bars: number): Promise<Waveform> {
   const Ctor =
@@ -71,7 +111,12 @@ export async function computeWaveform(file: File, bars: number): Promise<Wavefor
     // Normalise against the loudest bar so quiet recordings still read as a
     // waveform rather than a flat line.
     const ceiling = Math.max(...peaks, 1e-4);
-    return { peaks: peaks.map((p) => p / ceiling), duration: buffer.duration };
+    return {
+      peaks: peaks.map((p) => p / ceiling),
+      duration: buffer.duration,
+      sampleRate: buffer.sampleRate,
+      channels: buffer.numberOfChannels,
+    };
   } finally {
     void ctx.close();
   }

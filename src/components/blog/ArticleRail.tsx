@@ -103,7 +103,7 @@ export function ArticleRail({ targetId }: { targetId: string }) {
             key={h.id}
             href={`#${h.id}`}
             className={cn(
-              "border-l-2 pl-[11px] font-body text-[12.5px] leading-[1.45] transition-colors duration-200 hover:text-accent-200",
+              "border-l-2 pl-[11px] font-body text-[12.5px] leading-[1.45] transition-colors duration-200 hover:text-accent-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent",
               h.id === activeId
                 ? "border-accent text-accent-200"
                 : "border-border text-neutral-400",

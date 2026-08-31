@@ -1,8 +1,10 @@
 /**
  * Generates the Transmute icon set from the "seam" mark.
  *
- * Source of truth: the Logo design doc — a 32×32 grid, 3-unit stroke, a 2-unit
- * seam at x=15.5, mark drawn at 68% of the tile on an accent-900 ground.
+ * Source of truth: the Logo design doc — a 32×32 grid, 3-unit stroke, the mark
+ * drawn at 68% of the tile on an accent-900 ground inside an accent-800 edge,
+ * corner radius 22% of the tile (which reproduces the doc's r exactly at every
+ * size it states: 16→4, 32→7, 48→11, 64→14).
  *
  *   node scripts/generate-brand-assets.mjs
  *
@@ -26,7 +28,11 @@ const MARK = `<path d="M13 6.5 H7.5 V25.5 H13" stroke="${ACCENT}" stroke-width="
 /** A rounded app-icon tile with the mark centred at 68%. */
 function tile(size) {
   const radius = Math.round(size * 0.22);
-  const edge = Math.max(0.5, size * 0.008);
+  // The doc draws `border:1px solid` on every tile — but at *display* scale: its
+  // 512 tile is shown at 120px, so that hairline is 4.27px at true 512. Keep the
+  // proportional reading, with a 1px floor so the 16/32/48 tab icons hold the
+  // doc's literal hairline instead of a sub-pixel 0.5.
+  const edge = Math.max(1, size * 0.008);
   const mark = size * 0.68;
   const offset = (size - mark) / 2;
   const scale = mark / 32;

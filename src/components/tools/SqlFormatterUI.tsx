@@ -2,12 +2,10 @@
 
 import { useCallback, useState } from "react";
 import { ErrorMessage } from "@/components/tools/ErrorMessage";
-import { copyText } from "@/lib/utils/clipboard";
 import { format as formatSql } from "sql-formatter";
 import {
   ToolActions,
   ToolAside,
-  ToolAsideSection,
   ToolChoice,
 } from "@/components/tools/ToolAside";
 import {
@@ -16,6 +14,10 @@ import {
   TextPane,
   TextPanes,
 } from "@/components/tools/ToolCanvas";
+import { ToolControl, ToolControlGroup } from "@/components/tools/ToolControls";
+import { CANVAS_COLUMN } from "@/components/workspace/shared";
+import { useCopied } from "@/hooks/useCopied";
+import { formatFileSize } from "@/lib/utils/file-helpers";
 
 const DIALECTS = [
   { value: "sql", label: "Standard SQL" },
@@ -36,39 +38,43 @@ export function SqlFormatterUI() {
   const [error, setError] = useState("");
   const [dialect, setDialect] = useState<Dialect>("sql");
   const [uppercase, setUppercase] = useState(true);
-  const [copied, setCopied] = useState(false);
+  const { copied, copy } = useCopied();
 
-  const handleFormat = useCallback(() => {
+  /*
+    Parameterised so DIALECT and STYLE can re-run it the moment they change:
+    a lit "PostgreSQL / lowercase" pair sitting over upper-cased standard SQL
+    describes an output that was never produced.
+  */
+  const runFormat = useCallback((text: string, d: Dialect, upper: boolean) => {
     setError("");
     setOutput("");
-    if (!input.trim()) return;
+    if (!text.trim()) return;
     try {
-      const result = formatSql(input, {
-        language: dialect,
-        keywordCase: uppercase ? "upper" : "preserve",
+      const result = formatSql(text, {
+        language: d,
+        keywordCase: upper ? "upper" : "preserve",
         tabWidth: 2,
       });
       setOutput(result);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to format SQL");
     }
-  }, [input, dialect, uppercase]);
+  }, []);
 
   const handleCopy = useCallback(() => {
-    copyText(output).then((ok) => {
-      if (ok) {
-        setCopied(true);
-        setTimeout(() => setCopied(false), 2000);
-      }
-    });
-  }, [output]);
+    void copy(output);
+  }, [copy, output]);
 
   return (
     <>
       {/* ── Canvas: the doc's two-up IN / OUT panes ────────── */}
-      <div className="min-w-0 space-y-[13px]">
+      <div className={CANVAS_COLUMN}>
         <TextPanes columns={output ? 2 : 1}>
-          <TextPane label="Input SQL" lines={lineCount(input)}>
+          <TextPane
+            label="Input SQL"
+            lines={lineCount(input)}
+            size={formatFileSize(new Blob([input]).size)}
+          >
             <textarea
               value={input}
               onChange={(e) => setInput(e.target.value)}
@@ -83,6 +89,7 @@ export function SqlFormatterUI() {
               tone="out"
               label="Formatted SQL"
               lines={lineCount(output)}
+              size={formatFileSize(new Blob([output]).size)}
               action={
                 <button
                   onClick={handleCopy}
@@ -104,31 +111,42 @@ export function SqlFormatterUI() {
         footer={
           <ToolActions
             primaryLabel="Format SQL"
-            onPrimary={handleFormat}
+            onPrimary={() => runFormat(input, dialect, uppercase)}
             primaryDisabled={!input.trim()}
           />
         }
       >
-        <ToolAsideSection label="DIALECT">
-          <ToolChoice
-            label="SQL dialect"
-            value={dialect}
-            onChange={setDialect}
-            options={DIALECTS.map((d) => ({ value: d.value as Dialect, label: d.label }))}
-          />
-        </ToolAsideSection>
-
-        <ToolAsideSection label="STYLE">
-          <label className="flex cursor-pointer items-center gap-2.5 font-body text-[12.5px] text-neutral-300">
-            <input
-              type="checkbox"
-              checked={uppercase}
-              onChange={(e) => setUppercase(e.target.checked)}
-              className="size-4 rounded border-border accent-accent"
+        {/* One bordered block for the whole control set — the doc gives its
+            own rule only to START FROM, ADVANCED and OUTPUT. */}
+        <ToolControlGroup>
+          <ToolControl label="DIALECT">
+            <ToolChoice
+              label="SQL dialect"
+              fill
+              value={dialect}
+              onChange={(d) => {
+                setDialect(d);
+                runFormat(input, d, uppercase);
+              }}
+              options={DIALECTS.map((d) => ({ value: d.value as Dialect, label: d.label }))}
             />
-            Uppercase keywords
-          </label>
-        </ToolAsideSection>
+          </ToolControl>
+
+          <ToolControl label="STYLE">
+            <label className="flex cursor-pointer items-center gap-2.5 font-body text-[12.5px] text-neutral-300">
+              <input
+                type="checkbox"
+                checked={uppercase}
+                onChange={(e) => {
+                  setUppercase(e.target.checked);
+                  runFormat(input, dialect, e.target.checked);
+                }}
+                className="size-4 rounded-sm border-border accent-accent"
+              />
+              Uppercase keywords
+            </label>
+          </ToolControl>
+        </ToolControlGroup>
       </ToolAside>
     </>
   );

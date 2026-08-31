@@ -62,6 +62,40 @@ test.describe("image conversions — real output", () => {
     expect(dims).toEqual({ width: 800, height: 600 });
   });
 
+  test("compress-image in target-size mode actually shrinks the file", async ({ page }) => {
+    /*
+      The test above pins the never-grow invariant with `<=`, which a
+      compressor that did nothing at all would also satisfy — verified by
+      mutation: forcing the worker's compress path to always return the
+      original left that assertion green. This one drives target-size mode at a
+      target well under the source and requires a STRICTLY smaller result, so
+      "compression happened" is asserted somewhere.
+    */
+    const jpg = await SAMPLES.jpg();
+    await page.goto("/compress-image");
+    await uploadFixture(page, jpg);
+
+    await page.getByRole("button", { name: "Target size", exact: true }).click();
+    const target = page.getByLabel("Target file size in KB");
+    await target.fill("20");
+    await target.blur();
+
+    await primaryAction(page, /^Compress$/).click();
+
+    const dl = downloadAffordance(page);
+    await expect(dl, `compress failed: ${await toolError(page)}`).toBeVisible({ timeout: 60_000 });
+    const { bytes } = await captureDownload(page, dl);
+
+    assertJpeg(bytes);
+    expect(
+      bytes.length,
+      "target-size compression must produce a strictly smaller file",
+    ).toBeLessThan(jpg.buffer.length);
+    // Only quality should change — the binary search must not resize.
+    const dims = await probeImageInPage(page, bytes, "image/jpeg");
+    expect(dims).toEqual({ width: 800, height: 600 });
+  });
+
   test("crop-image emits a genuinely cropped image", async ({ page }) => {
     await page.goto("/crop-image");
     await uploadFixture(page, await SAMPLES.jpg());

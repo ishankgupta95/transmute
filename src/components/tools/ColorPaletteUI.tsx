@@ -1,10 +1,14 @@
 "use client";
 
 import { useCallback, useState } from "react";
+import { useObjectUrl } from "@/hooks/useObjectUrl";
+import { useImageDimensions } from "@/hooks/useImageDimensions";
+import { imageMeta } from "@/lib/utils/canvas-meta";
+import { useCopied } from "@/hooks/useCopied";
+import { formatFileSize } from "@/lib/utils/file-helpers";
 import { ErrorMessage } from "@/components/tools/ErrorMessage";
 import { DropZone } from "@/components/tools/DropZone";
 import { extractColorPalette, type ColorInfo } from "@/lib/tools/color-palette";
-import { copyText } from "@/lib/utils/clipboard";
 import {
   ToolActions,
   ToolAside,
@@ -12,7 +16,9 @@ import {
   ToolChoice,
   ToolOutput,
 } from "@/components/tools/ToolAside";
-import { ColorStage, SwatchRow } from "@/components/tools/ToolCanvas";
+import { ToolControl, ToolControlGroup, ToolProgress } from "@/components/tools/ToolControls";
+import { CanvasHeader, ColorStage, SwatchRow } from "@/components/tools/ToolCanvas";
+import { CANVAS_COLUMN } from "@/components/workspace/shared";
 
 interface ColorPaletteUIProps {
   acceptFormats: string;
@@ -20,13 +26,18 @@ interface ColorPaletteUIProps {
 
 export function ColorPaletteUI({ acceptFormats }: ColorPaletteUIProps) {
   const [file, setFile] = useState<File | null>(null);
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  // Hook-owned: revoked on unmount and when a second image is dropped. The
+  // hand-rolled createObjectURL leaked on every route change away from here.
+  const previewUrl = useObjectUrl(file);
   const [colors, setColors] = useState<ColorInfo[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [copiedIdx, setCopiedIdx] = useState<number | null>(null);
-  const [copiedAll, setCopiedAll] = useState(false);
+  const { copied: copiedIdx, copy: copySwatch } = useCopied<number>();
+  const { copied: copiedAll, copy: copyAll } = useCopied();
   const [colorCount, setColorCount] = useState(8);
+  // The doc's image readout is dimensions AND size — the palette's own header
+  // names the artefact, so the source's facts go in the meta slot.
+  const sourceDims = useImageDimensions(file);
 
   const extract = useCallback(async (f: File, count: number) => {
     setColors([]);
@@ -46,7 +57,6 @@ export function ColorPaletteUI({ acceptFormats }: ColorPaletteUIProps) {
       const f = files[0];
       if (!f) return;
       setFile(f);
-      setPreviewUrl(URL.createObjectURL(f));
       await extract(f, colorCount);
     },
     [colorCount, extract],
@@ -61,31 +71,22 @@ export function ColorPaletteUI({ acceptFormats }: ColorPaletteUIProps) {
     [file, extract],
   );
 
-  const handleCopy = useCallback((hex: string, idx: number) => {
-    copyText(hex).then((ok) => {
-      if (ok) {
-        setCopiedIdx(idx);
-        setTimeout(() => setCopiedIdx(null), 1500);
-      }
-    });
-  }, []);
+  const handleCopy = useCallback(
+    (hex: string, idx: number) => {
+      void copySwatch(hex, idx);
+    },
+    [copySwatch],
+  );
 
   const handleCopyAll = useCallback(() => {
-    copyText(colors.map((c) => c.hex).join("\n")).then((ok) => {
-      if (ok) {
-        setCopiedAll(true);
-        setTimeout(() => setCopiedAll(false), 2000);
-      }
-    });
-  }, [colors]);
+    void copyAll(colors.map((c) => c.hex).join("\n"));
+  }, [copyAll, colors]);
 
   const handleReset = useCallback(() => {
-    if (previewUrl) URL.revokeObjectURL(previewUrl);
     setFile(null);
-    setPreviewUrl(null);
     setColors([]);
     setError(null);
-  }, [previewUrl]);
+  }, []);
 
   if (!file) {
     return <DropZone accept={acceptFormats} onFiles={handleFiles} />;
@@ -94,15 +95,12 @@ export function ColorPaletteUI({ acceptFormats }: ColorPaletteUIProps) {
   return (
     <>
       {/* ── Canvas: what you look at ─────────────────────────── */}
-      <div className="min-w-0 space-y-[15px]">
-        <div className="flex items-baseline gap-3">
-          <span className="font-display text-[13px] leading-none font-medium text-text-primary">
-            Extracted palette
-          </span>
-          <span className="ml-auto font-mono text-[10.5px] leading-none text-text-muted">
-            {isProcessing ? "SAMPLING…" : `${colors.length} COLORS`}
-          </span>
-        </div>
+      <div className={CANVAS_COLUMN}>
+        <CanvasHeader
+          file="Extracted palette"
+          meta={imageMeta(sourceDims, formatFileSize(file.size))}
+          trailing={isProcessing ? "SAMPLING…" : `${colors.length} COLORS`}
+        />
 
         {previewUrl && (
           <ColorStage className="bg-bg-primary" caption={file.name}>
@@ -110,14 +108,11 @@ export function ColorPaletteUI({ acceptFormats }: ColorPaletteUIProps) {
             <img
               src={previewUrl}
               alt={file.name}
-              className="max-h-72 w-full object-contain"
+              className="max-h-full w-full object-contain"
             />
           </ColorStage>
         )}
 
-        {isProcessing && (
-          <p className="py-8 text-center text-sm text-text-muted">Extracting colors...</p>
-        )}
         {error && <ErrorMessage message={error} />}
 
         {colors.length > 0 && (
@@ -148,27 +143,38 @@ export function ColorPaletteUI({ acceptFormats }: ColorPaletteUIProps) {
       {/* ── Controls: the doc's right-hand rail / bottom sheet ── */}
       <ToolAside
         footer={
-          <ToolActions
-            primaryLabel={copiedAll ? "Copied to clipboard" : "Copy all hex codes"}
-            onPrimary={handleCopyAll}
-            primaryDisabled={colors.length === 0}
-            onReset={handleReset}
-            resetLabel="ANALYZE ANOTHER"
-          />
+          <>
+            {/* The doc pins the running readout to the rail footer. The
+                sampler reports no progress, so the bar stays indeterminate
+                rather than inventing a number. */}
+            {isProcessing && (
+              <ToolProgress phase="SAMPLING" percent={null} label="Extracting colors" />
+            )}
+            <ToolActions
+              primaryLabel={copiedAll ? "Copied to clipboard" : "Copy all hex codes"}
+              onPrimary={handleCopyAll}
+              primaryDisabled={colors.length === 0}
+              onReset={handleReset}
+              resetLabel="ANALYZE ANOTHER"
+            />
+          </>
         }
       >
-        <ToolAsideSection label="COLORS TO EXTRACT">
-          <ToolChoice
-            label="Colors to extract"
-            value={colorCount}
-            onChange={handleCountChange}
-            disabled={isProcessing}
-            options={[4, 6, 8, 10, 12].map((n) => ({ value: n, label: String(n) }))}
-          />
-          <span className="font-body text-[10.5px] leading-[1.5] text-text-muted">
-            Changing this re-analyses the same image. Click any swatch to copy its hex.
-          </span>
-        </ToolAsideSection>
+        <ToolControlGroup>
+          <ToolControl label="COLORS TO EXTRACT">
+            <ToolChoice
+              label="Colors to extract"
+              fill
+              value={colorCount}
+              onChange={handleCountChange}
+              disabled={isProcessing}
+              options={[4, 6, 8, 10, 12].map((n) => ({ value: n, label: String(n) }))}
+            />
+            <span className="font-body text-[10.5px] leading-[1.5] text-text-muted">
+              Changing this re-analyses the same image. Click any swatch to copy its hex.
+            </span>
+          </ToolControl>
+        </ToolControlGroup>
 
         <ToolAsideSection label="OUTPUT">
           <ToolOutput

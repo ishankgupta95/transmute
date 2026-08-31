@@ -2,20 +2,39 @@
 
 import { useCallback, useState } from "react";
 
-import { copyText } from "@/lib/utils/clipboard";
 import {
   ToolActions,
   ToolAside,
-  ToolAsideSection,
 } from "@/components/tools/ToolAside";
-import { CodeBlock, ColorStage } from "@/components/tools/ToolCanvas";
+import { CanvasHeader, CodeBlock, ColorStage } from "@/components/tools/ToolCanvas";
 import { hslToRgb, parseHex, rgbToHex, rgbToHsl } from "@/lib/tools/color-picker";
+import { ToolControl, ToolControlGroup } from "@/components/tools/ToolControls";
+import { CANVAS_COLUMN } from "@/components/workspace/shared";
+import { useCopied } from "@/hooks/useCopied";
+import { cn } from "@/lib/utils/cn";
 
+/**
+ * The doc's small `Copy` button (the HEAD SNIPPET block):
+ * `padding:0 9px;border-radius:6px;border:1px solid var(--color-divider);
+ * background:transparent;color:var(--color-accent);font:500 11px/1`.
+ * Sized to 30px so it sits level with the fields it copies, and focus is the
+ * system's outline rather than the ring this file was still using.
+ */
 const COPY_BUTTON =
-  "shrink-0 inline-flex items-center justify-center min-h-9 px-3 py-1.5 rounded-md text-xs font-medium text-accent hover:bg-accent-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-bg-primary transition-colors";
+  "inline-flex h-[30px] flex-none cursor-pointer items-center justify-center rounded-[6px] border border-border px-[9px] font-display text-[11px] leading-none font-medium text-accent transition-colors duration-200 hover:bg-accent/12 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent";
 
-const NUMBER_INPUT =
-  "w-full rounded-md border border-border bg-bg-elevated px-2 py-2 text-sm text-text-primary font-mono text-center";
+/**
+ * The doc's one field box, from the RANGE strip:
+ * `height:30px;border-radius:7px;background:var(--color-surface);border:1px
+ * solid var(--color-divider);font:400 12px/1 'IBM Plex Mono';padding:0 10px`.
+ * The same shape `RangeField` and the regex pattern input already wear.
+ */
+const FIELD_CLASS =
+  "h-[30px] rounded-[7px] border border-border bg-bg-elevated px-2.5 font-mono text-xs leading-none text-text-primary focus:border-accent focus:outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent";
+
+// `cn` and not a template string: `px-1.5` has to actually beat the
+// field's `px-2.5`, which only tailwind-merge guarantees.
+const NUMBER_INPUT = cn(FIELD_CLASS, "w-full min-w-0 px-1.5 text-center");
 
 export function ColorPickerUI() {
   /*
@@ -27,39 +46,70 @@ export function ColorPickerUI() {
   */
   const [hex, setHex] = useState("#2dd4bf");
   const [hexInput, setHexInput] = useState("#2dd4bf");
-  const [copied, setCopied] = useState<string | null>(null);
+  const { copied, copy } = useCopied<string>();
 
   const [r, g, b] = parseHex(hex) ?? [0, 0, 0];
-  const [h, s, l] = rgbToHsl(r, g, b);
+
+  /*
+    H and S are HELD, not derived from the hex on every render — the same
+    split as `hex`/`hexInput` above, for the same reason. RGB is achromatic at
+    black, white and full grey, so `rgbToHsl` can only answer `[0, 0, l]`
+    there: deriving meant sliding Lightness to 0 and back returned #808080
+    grey, and Saturation to 0 and back returned red. The user's teal was
+    unrecoverable, with no undo.
+  */
+  const [hsl, setHsl] = useState<[number, number, number]>(() =>
+    rgbToHsl(...(parseHex("#2dd4bf") ?? [0, 0, 0])),
+  );
+  const [h, s, l] = hsl;
+
+  /*
+    A colour arriving from ANOTHER surface — the hex field, the RGB triple, the
+    native picker — is an explicit new colour, so H/S resync canonically there.
+    Preservation is scoped to the HSL fields' own edits, which is where the
+    round trip destroyed information: it is one continuous gesture on those
+    three fields, and the hue the user is protecting is the one on screen.
+  */
+  const syncHsl = useCallback((rgb: [number, number, number]) => {
+    setHsl(rgbToHsl(...rgb));
+  }, []);
 
   const applyHex = useCallback((valid: string) => {
     setHex(valid);
     setHexInput(valid);
   }, []);
 
-  const handleHexChange = useCallback((val: string) => {
-    setHexInput(val);
-    const rgb = parseHex(val);
-    if (rgb) setHex(rgbToHex(...rgb));
-  }, []);
+  const handleHexChange = useCallback(
+    (val: string) => {
+      setHexInput(val);
+      const rgb = parseHex(val);
+      if (rgb) {
+        setHex(rgbToHex(...rgb));
+        syncHsl(rgb);
+      }
+    },
+    [syncHsl],
+  );
 
-  const handleRgbChange = useCallback((nr: number, ng: number, nb: number) => {
-    applyHex(rgbToHex(nr, ng, nb));
-  }, [applyHex]);
+  const handleRgbChange = useCallback(
+    (nr: number, ng: number, nb: number) => {
+      applyHex(rgbToHex(nr, ng, nb));
+      syncHsl([nr, ng, nb]);
+    },
+    [applyHex, syncHsl],
+  );
 
-  const handleHslChange = useCallback((nh: number, ns: number, nl: number) => {
-    const [nr, ng, nb] = hslToRgb(nh, ns, nl);
-    applyHex(rgbToHex(nr, ng, nb));
-  }, [applyHex]);
+  const handleHslChange = useCallback(
+    (nh: number, ns: number, nl: number) => {
+      setHsl([nh, ns, nl]);
+      applyHex(rgbToHex(...hslToRgb(nh, ns, nl)));
+    },
+    [applyHex],
+  );
 
   const handleCopy = useCallback((label: string, value: string) => {
-    copyText(value).then((ok) => {
-      if (ok) {
-        setCopied(label);
-        setTimeout(() => setCopied(null), 2000);
-      }
-    });
-  }, []);
+    void copy(value, label);
+  }, [copy]);
 
   const hexStr = hex;
   const rgbStr = `rgb(${r}, ${g}, ${b})`;
@@ -72,15 +122,10 @@ export function ColorPickerUI() {
   return (
     <>
       {/* ── Canvas: the doc's colour stage + code block ────── */}
-      <div className="min-w-0 space-y-[15px]">
-        <div className="flex items-baseline gap-3">
-          <span className="font-display text-[13px] leading-none font-medium text-text-primary">
-            Picker
-          </span>
-          <span className="ml-auto font-mono text-[10.5px] leading-none text-text-muted">
-            HEX · RGB · HSL
-          </span>
-        </div>
+      <div className={CANVAS_COLUMN}>
+        {/* "HEX · RGB · HSL" names the formats below rather than reporting a
+            result, so it keeps the muted tone it already had. */}
+        <CanvasHeader file="Picker" trailing="HEX · RGB · HSL" trailingTone="muted" />
 
         <ColorStage style={{ backgroundColor: hex }} caption={hexStr} className="min-h-[18rem]" />
 
@@ -98,94 +143,98 @@ export function ColorPickerUI() {
           />
         }
       >
-        <ToolAsideSection label="PICKER">
-          <input
-            type="color"
-            value={hex}
-            onChange={(e) => handleHexChange(e.target.value)}
-            aria-label="Pick a color"
-            className="h-11 w-full cursor-pointer rounded-md border border-border bg-bg-elevated p-1"
-          />
-        </ToolAsideSection>
-
-        <ToolAsideSection label="HEX">
-          <div className="flex items-center gap-2">
+        {/* One bordered block for the whole control set — the doc gives its
+            own rule only to START FROM, ADVANCED and OUTPUT. */}
+        <ToolControlGroup>
+          <ToolControl label="PICKER">
             <input
-              type="text"
-              value={hexInput}
+              type="color"
+              value={hex}
               onChange={(e) => handleHexChange(e.target.value)}
-              aria-label="Hex value"
-              className="min-w-0 flex-1 rounded-md border border-border bg-bg-elevated px-3 py-2 text-sm text-text-primary font-mono"
+              aria-label="Pick a color"
+              className="h-11 w-full cursor-pointer rounded-[7px] border border-border bg-bg-elevated p-1"
             />
-            <button
-              onClick={() => handleCopy("hex", hexStr)}
-              aria-label={copied === "hex" ? "Copied HEX" : "Copy HEX value"}
-              className={COPY_BUTTON}
-            >
-              {copied === "hex" ? "Copied!" : "Copy"}
-            </button>
-          </div>
-        </ToolAsideSection>
+          </ToolControl>
 
-        <ToolAsideSection label="RGB">
-          <div className="flex items-center gap-2">
-            <div className="flex min-w-0 flex-1 gap-1">
-              {([r, g, b] as const).map((v, i) => (
-                <input
-                  key={i}
-                  type="number"
-                  min={0}
-                  max={255}
-                  value={v}
-                  onChange={(e) => {
-                    const vals = [r, g, b];
-                    vals[i] = Number(e.target.value);
-                    handleRgbChange(vals[0], vals[1], vals[2]);
-                  }}
-                  aria-label={["Red", "Green", "Blue"][i]}
-                  className={NUMBER_INPUT}
-                />
-              ))}
+          <ToolControl label="HEX">
+            <div className="flex items-center gap-2">
+              <input
+                type="text"
+                value={hexInput}
+                onChange={(e) => handleHexChange(e.target.value)}
+                aria-label="Hex value"
+                className={cn(FIELD_CLASS, "min-w-0 flex-1")}
+              />
+              <button
+                onClick={() => handleCopy("hex", hexStr)}
+                aria-label={copied === "hex" ? "Copied HEX" : "Copy HEX value"}
+                className={COPY_BUTTON}
+              >
+                {copied === "hex" ? "Copied!" : "Copy"}
+              </button>
             </div>
-            <button
-              onClick={() => handleCopy("rgb", rgbStr)}
-              aria-label={copied === "rgb" ? "Copied RGB" : "Copy RGB value"}
-              className={COPY_BUTTON}
-            >
-              {copied === "rgb" ? "Copied!" : "Copy"}
-            </button>
-          </div>
-        </ToolAsideSection>
+          </ToolControl>
 
-        <ToolAsideSection label="HSL">
-          <div className="flex items-center gap-2">
-            <div className="flex min-w-0 flex-1 gap-1">
-              {([h, s, l] as const).map((v, i) => (
-                <input
-                  key={i}
-                  type="number"
-                  min={0}
-                  max={i === 0 ? 360 : 100}
-                  value={v}
-                  onChange={(e) => {
-                    const vals = [h, s, l];
-                    vals[i] = Number(e.target.value);
-                    handleHslChange(vals[0], vals[1], vals[2]);
-                  }}
-                  aria-label={["Hue", "Saturation", "Lightness"][i]}
-                  className={NUMBER_INPUT}
-                />
-              ))}
+          <ToolControl label="RGB">
+            <div className="flex items-center gap-2">
+              <div className="flex min-w-0 flex-1 gap-1">
+                {([r, g, b] as const).map((v, i) => (
+                  <input
+                    key={i}
+                    type="number"
+                    min={0}
+                    max={255}
+                    value={v}
+                    onChange={(e) => {
+                      const vals = [r, g, b];
+                      vals[i] = Number(e.target.value);
+                      handleRgbChange(vals[0], vals[1], vals[2]);
+                    }}
+                    aria-label={["Red", "Green", "Blue"][i]}
+                    className={NUMBER_INPUT}
+                  />
+                ))}
+              </div>
+              <button
+                onClick={() => handleCopy("rgb", rgbStr)}
+                aria-label={copied === "rgb" ? "Copied RGB" : "Copy RGB value"}
+                className={COPY_BUTTON}
+              >
+                {copied === "rgb" ? "Copied!" : "Copy"}
+              </button>
             </div>
-            <button
-              onClick={() => handleCopy("hsl", hslStr)}
-              aria-label={copied === "hsl" ? "Copied HSL" : "Copy HSL value"}
-              className={COPY_BUTTON}
-            >
-              {copied === "hsl" ? "Copied!" : "Copy"}
-            </button>
-          </div>
-        </ToolAsideSection>
+          </ToolControl>
+
+          <ToolControl label="HSL">
+            <div className="flex items-center gap-2">
+              <div className="flex min-w-0 flex-1 gap-1">
+                {([h, s, l] as const).map((v, i) => (
+                  <input
+                    key={i}
+                    type="number"
+                    min={0}
+                    max={i === 0 ? 360 : 100}
+                    value={v}
+                    onChange={(e) => {
+                      const vals = [h, s, l];
+                      vals[i] = Number(e.target.value);
+                      handleHslChange(vals[0], vals[1], vals[2]);
+                    }}
+                    aria-label={["Hue", "Saturation", "Lightness"][i]}
+                    className={NUMBER_INPUT}
+                  />
+                ))}
+              </div>
+              <button
+                onClick={() => handleCopy("hsl", hslStr)}
+                aria-label={copied === "hsl" ? "Copied HSL" : "Copy HSL value"}
+                className={COPY_BUTTON}
+              >
+                {copied === "hsl" ? "Copied!" : "Copy"}
+              </button>
+            </div>
+          </ToolControl>
+        </ToolControlGroup>
       </ToolAside>
     </>
   );

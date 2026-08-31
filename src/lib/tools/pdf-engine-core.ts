@@ -29,6 +29,54 @@ function toUint8Array(buf: ArrayBuffer | Uint8Array): Uint8Array {
   return buf instanceof Uint8Array ? buf : new Uint8Array(buf);
 }
 
+/**
+ * Resolve an INHERITABLE page attribute (/Rotate, /Resources, /MediaBox,
+ * /CropBox — PDF 32000-1 Table 30).
+ *
+ * `doc.findPage(i)` hands back the raw page dictionary; a value that lives on
+ * an ancestor /Pages node reads as a PDF null there. Note the null is a real
+ * object, not JS `undefined`, so `pageObj.get(k)?.asNumber() ?? 0` can never
+ * short-circuit — `isNull()` is the only usable test.
+ */
+function resolveInherited(
+  pageObj: MuPDF.PDFObject,
+  key: string,
+): MuPDF.PDFObject | null {
+  const own = pageObj.get(key);
+  if (!own.isNull()) return own;
+  let parent = pageObj.get("Parent");
+  let depth = 0;
+  while (!parent.isNull() && depth < 32) {
+    const inherited = parent.get(key);
+    if (!inherited.isNull()) return inherited;
+    parent = parent.get("Parent");
+    depth++;
+  }
+  return null;
+}
+
+/**
+ * Copy the source document's /Info dictionary onto a grafted output.
+ *
+ * split / merge / reorder all build a `new PDFDocument()` and graft pages in,
+ * which carries page-level content but leaves the trailer empty — the title
+ * and author silently vanished. (Bookmarks are a separate problem: the
+ * /Outlines tree points at page objects by reference and would need its
+ * destinations remapped across the graft, so it is deliberately not copied.)
+ */
+function copyDocInfo(
+  src: MuPDF.PDFDocument,
+  out: MuPDF.PDFDocument,
+  graftMap: MuPDF.PDFGraftMap,
+): void {
+  try {
+    const info = src.getTrailer().get("Info");
+    if (info && !info.isNull()) out.getTrailer().put("Info", graftMap.graftObject(info));
+  } catch {
+    // A source without a usable trailer must not fail the whole operation.
+  }
+}
+
 // ── Load / Info ────────────────────────────────────────────────────
 
 export async function getPageCount(data: ArrayBuffer | Uint8Array): Promise<number> {
@@ -46,12 +94,19 @@ export async function mergePdfs(buffers: ArrayBuffer[]): Promise<Uint8Array> {
   const out = new mupdf.PDFDocument();
 
   let insertAt = 0;
+  let infoCopied = false;
   for (const buf of buffers) {
     const src = new mupdf.PDFDocument(toUint8Array(buf));
     const count = src.countPages();
     const graftMap = out.newGraftMap();
     for (let i = 0; i < count; i++) {
       graftMap.graftPage(insertAt++, src, i);
+    }
+    // A merge has no single authoritative title, so the first document's
+    // /Info wins rather than the last one silently overwriting it.
+    if (!infoCopied) {
+      copyDocInfo(src, out, graftMap);
+      infoCopied = true;
     }
     src.destroy();
   }
@@ -77,6 +132,7 @@ export async function splitPdf(
   for (let i = 0; i < pageIndices.length; i++) {
     graftMap.graftPage(i, src, pageIndices[i]);
   }
+  copyDocInfo(src, out, graftMap);
 
   const result = out.saveToBuffer("compress");
   const bytes = result.asUint8Array().slice();
@@ -99,8 +155,13 @@ export async function rotatePdfPages(
   for (const idx of pageIndices) {
     if (idx >= 0 && idx < doc.countPages()) {
       const pageObj = doc.findPage(idx);
-      const current = pageObj.get("Rotate")?.asNumber() ?? 0;
-      pageObj.put("Rotate", doc.newInteger((current + angle) % 360));
+      // /Rotate is inheritable: a value on the /Pages node reads as null on
+      // the raw page dict, so the old `?? 0` made every rotation of an
+      // already-rotated document a silent no-op.
+      const rotObj = resolveInherited(pageObj, "Rotate");
+      const current = rotObj ? rotObj.asNumber() : 0;
+      const next = (((current + angle) % 360) + 360) % 360;
+      pageObj.put("Rotate", doc.newInteger(next));
     }
   }
 
@@ -125,6 +186,7 @@ export async function reorderPdfPages(
   for (let i = 0; i < newOrder.length; i++) {
     graftMap.graftPage(i, src, newOrder[i]);
   }
+  copyDocInfo(src, out, graftMap);
 
   const result = out.saveToBuffer("compress");
   const bytes = result.asUint8Array().slice();
@@ -133,7 +195,7 @@ export async function reorderPdfPages(
   return bytes;
 }
 
-// ── Add Page Numbers (pdf-lib — creates content on existing pages) ─
+// ── Add Page Numbers (mupdf — creates content on existing pages) ───
 
 export type PageNumberPosition = "bottom-left" | "bottom-center" | "bottom-right" | "top-left" | "top-center" | "top-right";
 
@@ -151,7 +213,16 @@ export async function addPageNumbers(
   const count = doc.countPages();
   for (let i = 0; i < count; i++) {
     const pageObj = doc.findPage(i);
-    const bounds = doc.loadPage(i).getBounds(); // [x0, y0, x1, y1]
+    /*
+      `loadPage` allocates a Page in the MuPDF WASM heap that the JS GC will
+      not reclaim on its own. `getBounds()` hands back a plain number[], so the
+      Page is dead the moment it returns — destroy it inside the loop. Dropping
+      it on the floor (as this did) grew the heap by one live Page per page,
+      which a several-hundred-page document turns into an OOM.
+    */
+    const page = doc.loadPage(i);
+    const bounds = page.getBounds(); // [x0, y0, x1, y1]
+    page.destroy();
     const width = bounds[2] - bounds[0];
     const text = String(startNumber + i);
 
@@ -175,33 +246,52 @@ export async function addPageNumbers(
 
     // Escape parentheses in text for PDF string literal
     const escaped = text.replace(/([()\\])/g, "\\$1");
-    const stream = `q BT /Fn ${fontSize} Tf ${x} ${y} Td (${escaped}) Tj ET Q`;
+
+    /*
+      `loadPage().getBounds()` is the VISUAL rectangle — /Rotate already
+      applied — which is the right frame to place the number in. But the
+      stream below is appended to the page's own content, which is UNROTATED
+      space, so it needs the inverse of the display rotation. Without this a
+      number on a /Rotate 90 A4 page was centred on 842 in a 595-wide media
+      box and drawn sideways off the edge.
+
+      /Rotate R displays the page turned R clockwise, so content = inverse of
+      display: R=90 maps visual (X,Y) to (y, w−x), inverted as [0 1 −1 0 w 0].
+    */
+    const rotObj = resolveInherited(pageObj, "Rotate");
+    const rawRot = rotObj ? rotObj.asNumber() : 0;
+    const rot = ((((Math.round(rawRot / 90) * 90) % 360) + 360) % 360);
+    const visualHeight = bounds[3] - bounds[1];
+    // Unrotated media dimensions: a quarter turn swaps them back.
+    const w = rot % 180 === 0 ? width : visualHeight;
+    const h = rot % 180 === 0 ? visualHeight : width;
+    const cm =
+      rot === 90
+        ? `0 1 -1 0 ${w} 0 cm `
+        : rot === 180
+          ? `-1 0 0 -1 ${w} ${h} cm `
+          : rot === 270
+            ? `0 -1 1 0 0 ${h} cm `
+            : "";
+    // The matrix works in a box whose origin is (0,0), so a rotated page with
+    // an offset MediaBox needs its visual origin taken out first. Unrotated
+    // pages keep the raw coordinates — they are already content space.
+    const tx = rot === 0 ? x : x - bounds[0];
+    const ty = rot === 0 ? y : y - bounds[1];
+    const stream = `q ${cm}BT /Fn ${fontSize} Tf ${tx} ${ty} Td (${escaped}) Tj ET Q`;
 
     // Ensure page has Resources > Font dict, add our font.
     // /Resources can be INHERITED from a parent Pages node — findPage returns the
     // raw page dict without resolving inheritance. Creating a fresh empty dict in
     // that case would shadow the inherited fonts/XObjects and visually corrupt the
     // page, so walk the /Parent chain and reuse the inherited Resources instead.
-    let resources = pageObj.get("Resources");
-    if (resources.isNull()) {
-      let parent = pageObj.get("Parent");
-      let depth = 0;
-      while (!parent.isNull() && depth < 32) {
-        const inherited = parent.get("Resources");
-        if (!inherited.isNull()) {
-          resources = inherited;
-          break;
-        }
-        parent = parent.get("Parent");
-        depth++;
-      }
-      if (resources.isNull()) {
-        pageObj.put("Resources", doc.newDictionary());
-        resources = pageObj.get("Resources");
-      } else {
-        // Attach the inherited dict to the page so our /Fn font is reachable.
-        pageObj.put("Resources", resources);
-      }
+    let resources = resolveInherited(pageObj, "Resources");
+    if (!resources) {
+      pageObj.put("Resources", doc.newDictionary());
+      resources = pageObj.get("Resources");
+    } else if (pageObj.get("Resources").isNull()) {
+      // Attach the inherited dict to the page so our /Fn font is reachable.
+      pageObj.put("Resources", resources);
     }
     let fonts = resources.get("Font");
     if (fonts.isNull()) {

@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useMemo, useState } from "react";
-import { copyText } from "@/lib/utils/clipboard";
 import {
   ToolActions,
   ToolAside,
@@ -15,6 +14,9 @@ import {
   TextPanes,
 } from "@/components/tools/ToolCanvas";
 import { cn } from "@/lib/utils/cn";
+import { CANVAS_COLUMN } from "@/components/workspace/shared";
+import { useCopied } from "@/hooks/useCopied";
+import { formatFileSize } from "@/lib/utils/file-helpers";
 
 interface Stats {
   characters: number;
@@ -40,30 +42,29 @@ function computeStats(text: string): Stats {
 
 export function WordCounterUI() {
   const [input, setInput] = useState("");
-  const [copied, setCopied] = useState(false);
+  const { copied, copy } = useCopied();
   const stats = useMemo(() => computeStats(input), [input]);
 
   const handleCopy = useCallback(() => {
-    copyText(input).then((ok) => {
-      if (ok) {
-        setCopied(true);
-        setTimeout(() => setCopied(false), 2000);
-      }
-    });
-  }, [input]);
+    void copy(input);
+  }, [copy, input]);
 
   return (
     <>
       {/* ── Canvas: the text itself is the whole canvas here ─── */}
-      <div className="min-w-0 space-y-[13px]">
+      <div className={CANVAS_COLUMN}>
         <TextPanes columns={1}>
-          <TextPane label="Enter or paste your text" lines={lineCount(input)}>
+          <TextPane
+            label="Enter or paste your text"
+            lines={lineCount(input)}
+            size={formatFileSize(new Blob([input]).size)}
+          >
             <textarea
               value={input}
               onChange={(e) => setInput(e.target.value)}
               placeholder="Start typing or paste your text here..."
               aria-label="Text to count"
-              className={cn(TEXT_PANE_BODY, "min-h-[24rem] font-body text-[13px] leading-[1.7]")}
+              className={cn(TEXT_PANE_BODY, "font-body text-[13px] leading-[1.7]")}
             />
           </TextPane>
         </TextPanes>
@@ -97,10 +98,12 @@ export function WordCounterUI() {
             ].map((stat) => (
               <div
                 key={stat.label}
-                className="flex items-baseline justify-between gap-3 rounded-lg border border-border bg-bg-secondary px-3 py-2"
+                className="flex items-baseline justify-between gap-3 rounded-md border border-border bg-bg-secondary px-3 py-2.5"
               >
-                <p className="text-xs text-text-muted">{stat.label}</p>
-                <p className="text-2xl font-bold text-text-primary font-mono leading-none">
+                <p className="font-body text-[11.5px] leading-none text-text-muted">
+                  {stat.label}
+                </p>
+                <p className="text-2xl font-medium text-text-primary font-mono leading-none">
                   {stat.value}
                 </p>
               </div>

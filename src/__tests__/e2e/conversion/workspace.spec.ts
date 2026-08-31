@@ -69,9 +69,12 @@ test.describe("workspace mounts real tools", () => {
     await uploadFixture(page, [a, b]);
     await primaryAction(page, /^Compress$/).click();
 
-    await expect(page.getByText(/2 OF 2 DONE · \d+ THREADS/)).toBeVisible({
+    // The queue's live counts moved into the canvas header, beside the
+    // measured "N FILES · SIZE IN · N THREADS" line.
+    await expect(page.getByText(/2 DONE · 0 RUNNING · 0 QUEUED/)).toBeVisible({
       timeout: 60_000,
     });
+    await expect(page.getByText(/2 FILES · .* IN · \d+ THREADS/)).toBeVisible();
     const zip = await captureDownload(page, page.getByRole("button", { name: /Download all/ }));
     await assertZip(zip.bytes, { minEntries: 2 });
   });
@@ -153,7 +156,8 @@ test.describe("workspace mounts real tools", () => {
   test("icons: favicon-generator bundles a ZIP", async ({ page }) => {
     await gotoWorkspaceTool(page, "favicon-generator");
     await uploadFixture(page, await SAMPLES.jpg());
-    await page.getByRole("button", { name: "Generate All Favicons", exact: true }).click();
+    // The primary names the work with its real count ("Generate 8 assets").
+    await page.getByRole("button", { name: /^Generate \d+ assets$/ }).click();
 
     await expect(page.locator("pre")).toContainText("apple-touch-icon", { timeout: 30_000 });
     const dl = downloadAffordance(page);
@@ -196,7 +200,7 @@ test.describe("workspace mounts real tools", () => {
     await expect(start).toBeVisible({ timeout: 30_000 });
     await start.click();
 
-    const stop = page.getByRole("button", { name: /Stop Recording/i });
+    const stop = page.getByRole("button", { name: /Stop and save/i });
     const failed = page.locator('[role="alert"]').filter({ hasText: /\S/ }).first();
     await expect(stop.or(failed)).toBeVisible({ timeout: 60_000 });
     if (await failed.count()) {

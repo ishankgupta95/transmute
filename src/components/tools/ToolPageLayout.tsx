@@ -12,6 +12,7 @@ import { ToolUsedTracker } from "@/components/tools/ToolUsedTracker";
 import { CapabilityReadout } from "@/components/tools/CapabilityReadout";
 import { RecentOutputs } from "@/components/tools/RecentOutputs";
 import { cn } from "@/lib/utils/cn";
+import { TOOL_SURFACE } from "@/components/workspace/shared";
 
 interface ToolPageLayoutProps {
   tool: Tool;
@@ -29,12 +30,29 @@ const BAND = "mx-auto flex w-full max-w-[1440px]";
 
 const MONO_LABEL =
   "font-mono text-[9.5px] leading-none font-medium tracking-[0.14em] text-text-muted";
-const SPEC_KEY = "font-mono text-[9.5px] leading-none tracking-[0.12em] text-text-muted";
-const SPEC_VALUE = "font-mono text-[13px] leading-none font-medium";
-const SPEC = "flex flex-col gap-[5px] bg-bg-primary px-4 py-3";
-const H2 = "m-0 mb-5 font-display text-xl leading-[1.25] font-medium text-text-primary";
+/*
+  The doc's spec panel is a 250px key/value column beside the h1 — one mono row
+  per fact, key left, value right — not the four stacked tiles this used to
+  draw across the full measure.
+*/
+const SPEC_ROW =
+  "flex items-center justify-between gap-3 bg-bg-primary px-[13px] py-2.5 font-mono text-[11px] leading-none";
+const SPEC_KEY = "flex-none text-text-muted";
+const SPEC_VALUE = "min-w-0 truncate text-right text-neutral-300";
+const H2 = "m-0 font-display text-xl leading-[1.2] font-medium text-text-primary";
 const ROW =
   "flex items-center gap-3.5 border-b border-border py-[13px] transition-[padding-left] duration-200 hover:pl-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent";
+
+/**
+ * The Nocturne signature rule: a hairline that fades to transparent over
+ * exactly 48px at each end. The doc draws one between the header and the
+ * how-to grid, and one between the how-to grid and the sections below.
+ */
+const RULE =
+  "h-px bg-[linear-gradient(to_right,transparent,var(--color-border)_48px,var(--color-border)_calc(100%-48px),transparent)]";
+
+/** The doc's `220px 1fr` split: the h2 sits in its own left column. */
+const DOC_SECTION = "grid gap-4 md:grid-cols-[220px_1fr] md:items-start md:gap-11";
 
 export function ToolPageLayout({
   tool,
@@ -69,7 +87,7 @@ export function ToolPageLayout({
         href={`/${t.slug}`}
         aria-current={active ? "page" : undefined}
         className={cn(
-          "flex w-full items-center gap-2 rounded-[7px] p-2 transition-colors duration-150",
+          "flex w-full items-center gap-[9px] rounded-[7px] px-[9px] py-2 transition-colors duration-150",
           "focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-accent",
           active
             ? "bg-accent/14 text-accent-200"
@@ -78,15 +96,15 @@ export function ToolPageLayout({
       >
         <span
           className={cn(
-            "h-[21px] w-0.5 flex-none rounded-sm",
+            "h-[22px] w-0.5 flex-none rounded-[2px]",
             active ? "bg-accent" : "bg-transparent",
           )}
         />
         <span className="flex min-w-0 flex-col items-start gap-0.5">
-          <span className="max-w-[170px] truncate font-body text-xs leading-[1.25] font-medium">
+          <span className="max-w-[170px] truncate font-body text-[12.5px] leading-[1.25] font-medium">
             {t.name}
           </span>
-          <span className="font-mono text-[9px] leading-none tracking-[0.04em] opacity-60">
+          <span className="font-mono text-[9.5px] leading-none tracking-[0.04em] opacity-[0.62]">
             {getWorkspaceTool(t.slug)?.route}
           </span>
         </span>
@@ -185,15 +203,26 @@ export function ToolPageLayout({
           {/* Sibling tools in this category. */}
           <nav
             aria-label={`Other ${category?.shortName ?? ""} tools`}
-            className="hidden flex-none flex-col border-border bg-nocturne-rail lg:flex lg:w-[230px] lg:border-r"
+            /*
+              The cap is load-bearing, not cosmetic. The rail's own content is
+              1011px on a 22-tool category, and because it is a flex item in a
+              row whose parent only carries a `min-height`, that number set the
+              height of the whole shell — so the canvas band measured an
+              identical 967px at 1440×900 and 1920×1080 and no preview inside
+              it could track the viewport. Capping the rail at the band's own
+              height (viewport − navbar − top bar − status bar) hands the row
+              back to the canvas and lets the list scroll, which is what its
+              `overflow-y-auto` was always meant to do.
+            */
+            className="hidden flex-none flex-col border-border bg-nocturne-rail lg:flex lg:max-h-[calc(100vh-124px)] lg:w-[214px] lg:border-r"
           >
-            <div className="flex items-baseline justify-between px-3 pt-3 pb-[9px]">
+            <div className="flex items-baseline justify-between px-3 pt-3.5 pb-2">
               <span className={MONO_LABEL}>TOOLS</span>
               <span className="font-mono text-[9.5px] leading-none text-text-muted">
                 {siblings.length}
               </span>
             </div>
-            <div className="flex flex-1 flex-col gap-px overflow-y-auto px-2 pb-3">
+            <div className="flex flex-1 flex-col gap-px overflow-y-auto px-2 pb-2.5">
               {railLinks}
             </div>
             {/* The doc's RECENT OUTPUT section — real saved downloads,
@@ -202,13 +231,13 @@ export function ToolPageLayout({
           </nav>
 
           <div className="flex min-w-0 flex-1 flex-col">
-            <div className="flex items-center gap-2 border-b border-border px-4 py-2 md:px-6 lg:h-10 lg:py-0">
-              <span className={cn(MONO_LABEL, "hidden lg:inline")}>PIPELINE</span>
+            <div className="flex items-center gap-2 border-b border-border px-4 py-2 md:px-[18px] lg:h-11 lg:py-0">
+              <span className={cn(MONO_LABEL, "hidden lg:mr-1 lg:inline")}>PIPELINE</span>
               {pipeline.map((step, i) => (
                 <span
                   key={step}
                   className={cn(
-                    "hidden h-[23px] flex-none items-center rounded-md border px-2.5 font-body text-[11px] leading-none font-medium whitespace-nowrap lg:flex",
+                    "hidden h-6 flex-none items-center rounded-[6px] border px-2.5 font-body text-[11px] leading-none font-medium whitespace-nowrap lg:flex",
                     i === 0
                       ? "border-accent/55 bg-accent/12 text-accent-200"
                       : "border-border text-neutral-400",
@@ -217,7 +246,7 @@ export function ToolPageLayout({
                   {i > 0 ? `▸ ${step}` : step}
                 </span>
               ))}
-              <div className="flex min-w-0 items-center gap-[11px] font-mono text-[10.5px] leading-none text-text-muted lg:ml-auto lg:whitespace-nowrap">
+              <div className="flex min-w-0 items-center gap-3 font-mono text-[10.5px] leading-none text-text-muted lg:ml-auto lg:whitespace-nowrap">
                 <span className="flex-none">ENGINE {ws?.engine}</span>
                 <span aria-hidden="true" className="flex-none opacity-40">
                   ·
@@ -226,10 +255,26 @@ export function ToolPageLayout({
               </div>
             </div>
 
-            {/* The canvas — the real, working tool. */}
-            <div className="relative flex flex-1 flex-col overflow-hidden bg-nocturne-canvas px-4 py-6 md:px-8 lg:justify-center lg:py-10">
-              <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_1px_1px,rgba(233,233,237,.055)_1px,transparent_0)] bg-[length:22px_22px] opacity-50" />
-              <div className="pointer-events-none absolute -top-[90px] left-[38%] h-[300px] w-[420px] animate-tm-glow rounded-full bg-[radial-gradient(circle,color-mix(in_srgb,var(--color-accent)_30%,transparent)_0%,transparent_70%)] blur-[110px]" />
+            {/*
+              The canvas — the real, working tool.
+
+              No `overflow-hidden` here: it made this band the scroll port for
+              `ToolAside`'s `lg:sticky`, so the control rail scrolled away with
+              the page instead of pinning. The decoration below is clipped by
+              its own wrapper instead, which is all the property was doing.
+
+              No `justify-center` either: centring an intrinsically-sized
+              surface is what left a viewport-tall band mostly empty. The
+              surface stretches instead (see `TOOL_SURFACE`).
+            */}
+            {/* `padding:22px 26px` is the doc's canvas band on every branch —
+                and it hands the stage back the 36px of vertical padding the
+                previous `lg:py-10` was spending on empty dot-grid. */}
+            <div className="relative flex min-h-0 flex-1 flex-col bg-nocturne-canvas px-4 py-6 md:px-[26px] lg:py-[22px]">
+              <div className="pointer-events-none absolute inset-0 overflow-hidden">
+                <div className="absolute inset-0 bg-[radial-gradient(circle_at_1px_1px,rgba(233,233,237,.055)_1px,transparent_0)] bg-[length:22px_22px] opacity-50" />
+                <div className="absolute -top-[90px] left-[38%] h-[300px] w-[420px] animate-tm-glow rounded-full bg-[radial-gradient(circle,color-mix(in_srgb,var(--color-accent)_34%,transparent)_0%,transparent_70%)] blur-[110px]" />
+              </div>
               {/*
                 Two columns — canvas + control rail — but only for tools that
                 actually render a `ToolAside`. `:has()` keeps the single-column
@@ -237,11 +282,15 @@ export function ToolPageLayout({
                 migration can land tool by tool.
               */}
               <div
-                className={cn(
-                  "relative mx-auto grid w-full max-w-[820px] grid-cols-1 items-start gap-5",
-                  "has-[[data-tool-aside]]:max-w-[1180px]",
-                  "lg:has-[[data-tool-aside]]:grid-cols-[minmax(0,1fr)_328px] lg:has-[[data-tool-aside]]:gap-7",
-                )}
+                /*
+                 * Marks the tool's OWN interactive surface, as distinct from the
+                 * navbar, the FAQ accordion and the related-tools list — all of
+                 * which render buttons inside <main>. The all-tools sweep asserts
+                 * against this region so "the page has a button somewhere" can
+                 * never stand in for "the tool actually mounted".
+                 */
+                data-tool-surface=""
+                className={TOOL_SURFACE}
               >
                 {children}
               </div>
@@ -281,66 +330,84 @@ export function ToolPageLayout({
       </div>
 
       {/* ══ Below the fold — documentation ══════════════════════ */}
-      <div className="mx-auto w-full max-w-[860px] px-4 py-16 md:px-11">
-        <h1 className="m-0 mb-4 font-display text-[clamp(26px,4.5vw,36px)] leading-[1.15] font-medium tracking-[-0.028em] text-text-primary">
-          {tool.h1}
-        </h1>
-        <p className="m-0 mb-7 font-body text-[15px] leading-[1.7] text-neutral-400">
-          {tool.subtitle}
-        </p>
+      <div className="mx-auto flex w-full max-w-[1040px] flex-col gap-14 px-4 pt-14 pb-12 md:px-10">
+        {/* h1 + lede on the left, the spec panel beside them at 250px. */}
+        <div className="flex flex-col gap-8 md:flex-row md:items-start md:gap-14">
+          <div className="min-w-0 flex-1">
+            <h1 className="m-0 mb-3 font-display text-[clamp(26px,4.5vw,32px)] leading-[1.15] font-medium tracking-[-0.02em] text-text-primary">
+              {tool.h1}
+            </h1>
+            <p className="m-0 max-w-[600px] font-body text-[15px] leading-[1.65] text-neutral-400">
+              {tool.subtitle}
+            </p>
+          </div>
 
-        <div className="mb-12 grid grid-cols-2 gap-px overflow-hidden rounded-[9px] border border-border bg-border sm:grid-cols-4">
-          <div className={SPEC}>
-            <span className={SPEC_KEY}>ENGINE</span>
-            <span className={cn(SPEC_VALUE, "text-neutral-300")}>{ws?.engine}</span>
-          </div>
-          <div className={SPEC}>
-            <span className={SPEC_KEY}>ACCEPTS</span>
-            <span className={cn(SPEC_VALUE, "truncate text-neutral-300")}>{ws?.accept}</span>
-          </div>
-          <div className={SPEC}>
-            <span className={SPEC_KEY}>MAX SIZE</span>
-            <span className={cn(SPEC_VALUE, "text-neutral-300")}>
-              {tool.maxSizeMB ? `${tool.maxSizeMB} MB` : "NONE"}
-            </span>
-          </div>
-          <div className={SPEC}>
-            <span className={SPEC_KEY}>UPLOAD</span>
-            <span className={cn(SPEC_VALUE, "text-success")}>NEVER</span>
+          <div className="flex w-full flex-col gap-px overflow-hidden rounded-[9px] border border-border bg-border md:w-[250px] md:flex-none">
+            <div className={SPEC_ROW}>
+              <span className={SPEC_KEY}>ENGINE</span>
+              <span className={SPEC_VALUE}>{ws?.engine}</span>
+            </div>
+            <div className={SPEC_ROW}>
+              <span className={SPEC_KEY}>ACCEPTS</span>
+              <span className={SPEC_VALUE}>{ws?.accept}</span>
+            </div>
+            <div className={SPEC_ROW}>
+              <span className={SPEC_KEY}>MAX SIZE</span>
+              <span className={SPEC_VALUE}>
+                {tool.maxSizeMB ? `${tool.maxSizeMB} MB` : "NONE"}
+              </span>
+            </div>
+            <div className={SPEC_ROW}>
+              <span className={SPEC_KEY}>UPLOAD</span>
+              <span className={cn(SPEC_VALUE, "text-success")}>NEVER</span>
+            </div>
           </div>
         </div>
 
         {howToSteps.length > 0 && (
-          <section className="mb-12 flex flex-col gap-4">
-            {howToSteps.map((step, i) => (
-              <div key={i} className="flex items-start gap-3.5">
-                <span className="w-[22px] flex-none font-mono text-[11px] leading-[1.6] font-medium text-accent">
-                  {String(i + 1).padStart(2, "0")}
-                </span>
-                <span className="font-body text-[13.5px] leading-[1.65] text-neutral-400">
-                  {step}
-                </span>
-              </div>
-            ))}
-          </section>
+          <>
+            <div aria-hidden="true" className={RULE} />
+            {/*
+              The doc's three-column how-to. Its cells carry a titled headline
+              over the body copy; `howToSteps` is a flat `string[]` shared with
+              the HowTo structured data, so the title tier waits on a metadata
+              change (owner call) — the grid does not.
+            */}
+            <section className="grid grid-cols-1 gap-8 md:grid-cols-3 md:gap-[34px]">
+              {howToSteps.map((step, i) => (
+                <div key={i} className="flex flex-col gap-[9px]">
+                  <span className="font-mono text-[11px] leading-none font-medium text-accent">
+                    {String(i + 1).padStart(2, "0")}
+                  </span>
+                  <span className="font-body text-[13px] leading-[1.6] text-neutral-400">
+                    {step}
+                  </span>
+                </div>
+              ))}
+            </section>
+          </>
+        )}
+
+        {(aboutText || faqs.length > 0 || blogPosts.length > 0 || relatedTools.length > 0) && (
+          <div aria-hidden="true" className={RULE} />
         )}
 
         {aboutText && (
-          <section className="mb-12">
+          <section className={DOC_SECTION}>
             <h2 className={H2}>About {tool.name}</h2>
-            <p className="m-0 font-body text-sm leading-[1.75] text-neutral-400">
+            <p className="m-0 max-w-[620px] font-body text-sm leading-[1.75] text-neutral-400">
               {aboutText}
             </p>
           </section>
         )}
 
         {faqs.length > 0 && (
-          <section className="mb-12">
+          <section className={DOC_SECTION}>
             <h2 className={H2}>Questions</h2>
             <div className="flex flex-col">
               {faqs.map((faq, i) => (
                 <details key={i} className="group border-b border-border">
-                  <summary className="flex cursor-pointer list-none items-center justify-between gap-4 py-4 font-body text-sm font-medium text-text-primary transition-colors duration-200 hover:text-accent-200">
+                  <summary className="flex cursor-pointer list-none items-center justify-between gap-4 py-4 font-body text-sm leading-[1.4] font-medium text-text-primary transition-colors duration-200 hover:text-accent-200">
                     {faq.question}
                     <span
                       aria-hidden="true"
@@ -349,7 +416,7 @@ export function ToolPageLayout({
                       +
                     </span>
                   </summary>
-                  <p className="m-0 pb-5 font-body text-[13px] leading-[1.7] text-neutral-400">
+                  <p className="m-0 max-w-[620px] pb-5 font-body text-[13px] leading-[1.65] text-text-muted">
                     {faq.answer}
                   </p>
                 </details>
@@ -359,7 +426,7 @@ export function ToolPageLayout({
         )}
 
         {blogPosts.length > 0 && (
-          <section className="mb-12">
+          <section className={DOC_SECTION}>
             <h2 className={H2}>From the blog</h2>
             <div className="flex flex-col">
               {blogPosts.map((post) => (
@@ -382,20 +449,29 @@ export function ToolPageLayout({
         )}
 
         {relatedTools.length > 0 && (
-          <section>
+          <section className={DOC_SECTION}>
             <h2 className={H2}>Related</h2>
-            <div className="grid grid-cols-1 gap-x-10 md:grid-cols-2">
+            {/*
+              The doc's bordered cards, not underlined rows. The two-line
+              description is extra-in-app and SEO-load-bearing, so the card is
+              taller than the doc's one-line version — kept deliberately.
+            */}
+            <div className="grid grid-cols-1 gap-2.5 md:grid-cols-2">
               {relatedTools.map((related) => (
-                <Link key={related.slug} href={`/${related.slug}`} className={ROW}>
+                <Link
+                  key={related.slug}
+                  href={`/${related.slug}`}
+                  className="flex items-center justify-between gap-3 rounded-[9px] border border-border px-[15px] py-3.5 transition-colors duration-200 hover:border-accent/40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                >
                   <span className="flex min-w-0 flex-1 flex-col gap-[3px]">
-                    <span className="font-body text-[13.5px] leading-[1.3] font-medium text-text-primary">
+                    <span className="font-body text-[13.5px] leading-[1.3] text-neutral-300">
                       {related.name}
                     </span>
                     <span className="line-clamp-2 font-body text-[11.5px] leading-[1.45] text-text-muted">
                       {related.description}
                     </span>
                   </span>
-                  <span className="flex-none font-mono text-[10px] leading-none whitespace-nowrap text-accent-300">
+                  <span className="flex-none font-mono text-[10px] leading-none whitespace-nowrap text-text-muted">
                     {getWorkspaceTool(related.slug)?.route}
                   </span>
                 </Link>

@@ -6,9 +6,26 @@ vi.mock("heic2any", () => ({
 }));
 
 // Mock utif2
+/*
+ * utif2 is mocked to the shape the REAL library emits, verified against
+ * `UTIF.encodeImage` output in Node: `decode()` returns IFD objects carrying
+ * only numeric TIFF tags (t256 = ImageWidth, t257 = ImageLength) — `.width`
+ * and `.height` do not exist until `decodeImage()` has populated them.
+ *
+ * The earlier mock put `width`/`height` straight on `decode()`'s return, which
+ * no real TIFF ever does. That made the decode order untestable: reading the
+ * dimensions before `decodeImage()` ran would have kept passing here while
+ * producing a NaN-sized canvas in the browser. Populating them in
+ * `decodeImage` instead pins the ordering the production path depends on.
+ */
 vi.mock("utif2", () => ({
-  decode: vi.fn().mockReturnValue([{ width: 100, height: 80 }]),
-  decodeImage: vi.fn(),
+  // A fresh IFD per call — real decode() never hands back a shared object,
+  // and reusing one would leak decodeImage's mutations between tests.
+  decode: vi.fn(() => [{ t256: [100], t257: [80] } as Record<string, unknown>]),
+  decodeImage: vi.fn((_buf: ArrayBuffer, ifd: Record<string, unknown>) => {
+    ifd.width = (ifd.t256 as number[])[0];
+    ifd.height = (ifd.t257 as number[])[0];
+  }),
   toRGBA8: vi.fn().mockReturnValue(new Uint8Array(100 * 80 * 4)),
 }));
 
@@ -194,6 +211,21 @@ describe("convertImage", () => {
     expect(UTIF.decode).toHaveBeenCalled();
     expect(UTIF.decodeImage).toHaveBeenCalled();
     expect(UTIF.toRGBA8).toHaveBeenCalled();
+  });
+
+  it("reads TIFF dimensions only after decodeImage has populated them", async () => {
+    // Real utif2 leaves width/height undefined until decodeImage runs, so a
+    // regression that reads them straight off decode()'s IFD would size the
+    // canvas NaN x NaN. A decodeImage that populates nothing must break the run.
+    vi.mocked(UTIF.decodeImage).mockImplementationOnce(() => {});
+
+    const file = makeFile("scan.tiff", "image/tiff");
+    const opts: ImageConvertOptions = { targetFormat: "png", quality: 1 };
+    // With no dimensions on the IFD the canvas is sized undefined x undefined
+    // and the RGBA copy overruns a zero-length buffer — the browser-side
+    // symptom of reading the tags too early, surfaced here as a rejection.
+    await expect(convertImage(file, opts)).rejects.toThrow();
+    expect(mockCtx.createImageData).toHaveBeenCalledWith(undefined, undefined);
   });
 
   it("sets RGBA data into imageData when converting TIFF", async () => {

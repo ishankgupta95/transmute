@@ -30,6 +30,12 @@ export async function videoToGif(
     const video = createVideo(videoUrl);
     await waitForReady(video);
 
+    // A zero-length selection used to walk zero frames and still "succeed",
+    // handing the user a 1-byte file named *.gif.
+    if (!(endTime - startTime > 0)) {
+      throw new Error("Select a clip longer than zero seconds.");
+    }
+
     const scale = width / video.videoWidth;
     const height = Math.round(video.videoHeight * scale);
 
@@ -77,6 +83,10 @@ export async function videoToGif(
       },
       { signal, onProgress },
     );
+
+    // `isFirst` is only cleared inside the frame callback, so it is still true
+    // iff nothing was written — `finish()` would emit an unopenable stub.
+    if (isFirst) throw new Error("No frames were captured from this clip.");
 
     gif.finish();
 

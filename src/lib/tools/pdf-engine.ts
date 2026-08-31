@@ -183,29 +183,38 @@ export async function pdfToImages(
     ctx.onProgress?.((encodedCount / doc.numPages) * 100);
   };
 
-  // Pages render sequentially — pdfjs serialises the raster math in its own
-  // worker anyway — but each rendered canvas is handed straight to the image
-  // pool for encoding, so a 60-page export overlaps render(n+1) with
-  // encode(n..) instead of blocking the main thread per page.
-  const encodes: Promise<{ blob: Blob; name: string }>[] = [];
-  for (let i = 1; i <= doc.numPages; i++) {
-    const page = await doc.getPage(i);
-    const viewport = page.getViewport({ scale });
-    const canvas = document.createElement("canvas");
-    canvas.width = viewport.width;
-    canvas.height = viewport.height;
-    await page.render({ canvas, viewport }).promise;
+  // pdf.js keeps the parsed document, its font/image caches and every page's
+  // operator list pinned in its worker until the proxy is destroyed — there is
+  // no FinalizationRegistry to clean up after us. The destroy has to wait for
+  // the last encode, so `Promise.all` runs inside the try.
+  try {
+    // Pages render sequentially — pdfjs serialises the raster math in its own
+    // worker anyway — but each rendered canvas is handed straight to the image
+    // pool for encoding, so a 60-page export overlaps render(n+1) with
+    // encode(n..) instead of blocking the main thread per page.
+    const encodes: Promise<{ blob: Blob; name: string }>[] = [];
+    for (let i = 1; i <= doc.numPages; i++) {
+      const page = await doc.getPage(i);
+      const viewport = page.getViewport({ scale });
+      const canvas = document.createElement("canvas");
+      canvas.width = viewport.width;
+      canvas.height = viewport.height;
+      await page.render({ canvas, viewport }).promise;
+      page.cleanup();
 
-    encodes.push(
-      encodePageCanvas(canvas, i, mimeType, quality)
-        .then((blob) => {
-          reportDone();
-          return { blob, name: `page-${i}.${ext}` };
-        }),
-    );
+      encodes.push(
+        encodePageCanvas(canvas, i, mimeType, quality)
+          .then((blob) => {
+            reportDone();
+            return { blob, name: `page-${i}.${ext}` };
+          }),
+      );
+    }
+
+    return await Promise.all(encodes);
+  } finally {
+    await doc.destroy();
   }
-
-  return Promise.all(encodes);
 }
 
 /**
@@ -271,6 +280,9 @@ export async function renderPageFromDoc(
   canvas.width = viewport.width;
   canvas.height = viewport.height;
   await page.render({ canvas, viewport }).promise;
+  // Release the page's operator list; the pixels we care about are on the
+  // canvas now. Without this a 60-page thumbnail sweep keeps all 60 alive.
+  page.cleanup();
   return canvas;
 }
 
@@ -281,5 +293,9 @@ export async function renderPageToCanvas(
   scale: number = 0.5,
 ): Promise<HTMLCanvasElement> {
   const doc = await loadPdfjsDocument(data);
-  return renderPageFromDoc(doc, pageNumber, scale);
+  try {
+    return await renderPageFromDoc(doc, pageNumber, scale);
+  } finally {
+    await doc.destroy();
+  }
 }

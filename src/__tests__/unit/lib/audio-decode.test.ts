@@ -236,6 +236,65 @@ describe("sniffSampleRate", () => {
     new DataView(bogus.buffer, bogus.byteOffset).setUint32(24, 1, true);
     expect(sniffSampleRate(bogus)).toBeNull();
   });
+
+  /*
+    Multi-track ISO-BMFF. Synthesised rather than fixtured: the checked-in
+    m4a has a single trak, so only a hand-built container can express "the
+    video/metadata track is written first" — the case where returning the
+    first mdhd in file order hands back the wrong timescale entirely.
+  */
+  const isoBox = (type: string, payload: Uint8Array): Uint8Array => {
+    const out = new Uint8Array(8 + payload.length);
+    new DataView(out.buffer).setUint32(0, out.length);
+    out.set(new TextEncoder().encode(type), 4);
+    out.set(payload, 8);
+    return out;
+  };
+  const join = (...parts: Uint8Array[]): Uint8Array => {
+    const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
+    let at = 0;
+    for (const p of parts) {
+      out.set(p, at);
+      at += p.length;
+    }
+    return out;
+  };
+  /** version-0 mdhd: version/flags(4) ctime(4) mtime(4) timescale(4) … */
+  const mdhd = (timescale: number): Uint8Array => {
+    const p = new Uint8Array(20);
+    new DataView(p.buffer).setUint32(12, timescale);
+    return isoBox("mdhd", p);
+  };
+  /** hdlr: version/flags(4) pre_defined(4) handlerType(4) reserved(12) name */
+  const hdlr = (handler: string): Uint8Array => {
+    const p = new Uint8Array(25);
+    p.set(new TextEncoder().encode(handler), 8);
+    return isoBox("hdlr", p);
+  };
+  // mdhd BEFORE hdlr, matching the real fixture's box order.
+  const trak = (handler: string, timescale: number): Uint8Array =>
+    isoBox("trak", isoBox("mdia", join(mdhd(timescale), hdlr(handler))));
+  const mp4 = (...traks: Uint8Array[]): Uint8Array =>
+    join(isoBox("ftyp", new TextEncoder().encode("M4A isom")), isoBox("moov", join(...traks)));
+
+  it("skips a leading video track and reads the sound track's timescale", () => {
+    // First-mdhd-wins returned 90000 here — inside the sanity band, so the
+    // audio silently decoded at a 90 kHz rate it never had.
+    expect(sniffSampleRate(mp4(trak("vide", 90000), trak("soun", 44100)))).toBe(44100);
+  });
+
+  it("skips a leading timed-metadata track too", () => {
+    expect(sniffSampleRate(mp4(trak("meta", 600), trak("soun", 48000)))).toBe(48000);
+  });
+
+  it("still reads a single sound track, whatever the box order", () => {
+    expect(sniffSampleRate(mp4(trak("soun", 22050)))).toBe(22050);
+  });
+
+  it("falls back to the first mdhd when no track declares a handler", () => {
+    const noHdlr = isoBox("trak", isoBox("mdia", mdhd(32000)));
+    expect(sniffSampleRate(mp4(noHdlr))).toBe(32000);
+  });
 });
 
 /*
@@ -288,6 +347,35 @@ describe("decodeAudioFile — FFmpeg fallback", () => {
 
     expect(ffmpegMock.runFFmpegTask).toHaveBeenCalledTimes(1);
     expect(result).toBe(decodedBuffer);
+  });
+
+  it("hands the fallback the abort signal — and deliberately not the progress reporter", async () => {
+    /*
+      The fallback pulls a 31 MB core and runs it to completion, so it has to
+      be interruptible. `onProgress` is withheld on purpose: this is the decode
+      half of a job whose encode owns the bar, and letting the decode drive it
+      0→100 would make the encode look like it restarted from zero.
+    */
+    ffmpegMock.runFFmpegTask.mockResolvedValue(tinyWav(22050));
+    const { signal } = new AbortController();
+    const onProgress = vi.fn();
+    const file = new File(["fake-aac-bytes"], "song.m4a", { type: "audio/mp4" });
+
+    await decodeAudioFile(file, { signal, onProgress });
+
+    expect(ffmpegMock.runFFmpegTask).toHaveBeenCalledWith(expect.any(Function), { signal });
+  });
+
+  it("never starts the fallback once the caller has cancelled", async () => {
+    ffmpegMock.runFFmpegTask.mockResolvedValue(tinyWav(22050));
+    const controller = new AbortController();
+    controller.abort();
+    const file = new File(["fake-aac-bytes"], "song.m4a", { type: "audio/mp4" });
+
+    await expect(
+      decodeAudioFile(file, { signal: controller.signal }),
+    ).rejects.toThrow(/aborted/i);
+    expect(ffmpegMock.runFFmpegTask).not.toHaveBeenCalled();
   });
 
   it("does NOT reach for FFmpeg on unknown extensions", async () => {

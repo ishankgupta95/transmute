@@ -5,6 +5,7 @@ const {
   mockPlayAndExtractFrames,
   mockCreateVideo,
   mockWaitForReady,
+  mockResolveDuration,
   mockDecodeAudio,
   mockAssertWebCodecsSupported,
   mockPickH264Config,
@@ -12,6 +13,9 @@ const {
   mockPlayAndExtractFrames: vi.fn().mockResolvedValue(undefined),
   mockCreateVideo: vi.fn(),
   mockWaitForReady: vi.fn().mockResolvedValue(undefined),
+  // The real helper returns `video.duration` when the container declares
+  // one, and only probes by seeking when it is Infinity.
+  mockResolveDuration: vi.fn((video: { duration: number }) => Promise.resolve(video.duration)),
   mockDecodeAudio: vi.fn().mockResolvedValue(null),
   mockAssertWebCodecsSupported: vi.fn(),
   mockPickH264Config: vi.fn((base: Record<string, unknown>) =>
@@ -45,6 +49,7 @@ const {
 vi.mock("@/lib/tools/video-utils", () => ({
   createVideo: mockCreateVideo,
   waitForReady: mockWaitForReady,
+  resolveDuration: mockResolveDuration,
   decodeAudio: mockDecodeAudio,
   assertWebCodecsSupported: mockAssertWebCodecsSupported,
   pickH264Config: mockPickH264Config,
@@ -131,6 +136,9 @@ import type { CompressionPreset } from "@/lib/tools/video-compress";
 describe("compressVideo", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockResolveDuration.mockImplementation((video: { duration: number }) =>
+      Promise.resolve(video.duration),
+    );
     mockDecodeAudio.mockResolvedValue(null);
     mockPickH264Config.mockImplementation((base: Record<string, unknown>) =>
       Promise.resolve({ codec: "avc1.640034", hardwareAcceleration: "prefer-hardware", ...base }),
@@ -282,28 +290,60 @@ describe("compressVideo", () => {
   });
 
   describe("preset bitrates", () => {
-    it("uses 1Mbps bitrate for whatsapp", async () => {
+    /*
+      The target is now `min(preset, 90% of the source's own bitrate)` so a clip
+      that is already leaner than the preset cannot be re-encoded LARGER than it
+      started. These three assert the preset still wins for a source that is
+      genuinely fatter than it, so the file has to carry a realistic size: the
+      default 5-byte mock spends ~0 bits per second and the cap would swallow
+      every preset. `duration` comes from the shared 60 s video mock, so 40 MB
+      is ~5.3 Mbps — above every preset.
+    */
+    function fatFile(): File {
       const file = new File(["video"], "input.mp4", { type: "video/mp4" });
-      await compressVideo(file, "whatsapp");
+      Object.defineProperty(file, "size", { value: 40_000_000 });
+      return file;
+    }
+
+    it("uses 1Mbps bitrate for whatsapp", async () => {
+      await compressVideo(fatFile(), "whatsapp");
 
       const configCall = mockVideoEncoderConfigure.mock.calls[0][0];
       expect(configCall.bitrate).toBe(1_000_000);
     });
 
     it("uses 500kbps bitrate for email", async () => {
-      const file = new File(["video"], "input.mp4", { type: "video/mp4" });
-      await compressVideo(file, "email");
+      await compressVideo(fatFile(), "email");
 
       const configCall = mockVideoEncoderConfigure.mock.calls[0][0];
       expect(configCall.bitrate).toBe(500_000);
     });
 
     it("uses 2Mbps bitrate for web", async () => {
+      await compressVideo(fatFile(), "web");
+
+      const configCall = mockVideoEncoderConfigure.mock.calls[0][0];
+      expect(configCall.bitrate).toBe(2_000_000);
+    });
+
+    it("caps the target at 90% of the source bitrate when the source is leaner", async () => {
+      // 3 MB over 60 s = 400 kbps. The "web" preset asks for 2 Mbps, which
+      // would have inflated the file — 90% of 400 kbps is what must be used.
+      const file = new File(["video"], "input.mp4", { type: "video/mp4" });
+      Object.defineProperty(file, "size", { value: 3_000_000 });
+      await compressVideo(file, "web");
+
+      const configCall = mockVideoEncoderConfigure.mock.calls[0][0];
+      expect(configCall.bitrate).toBe(360_000);
+    });
+
+    it("never drops the target below the 200 kbps floor", async () => {
+      // 5 bytes over 60 s is ~0 bps; re-encoding at that would be mush.
       const file = new File(["video"], "input.mp4", { type: "video/mp4" });
       await compressVideo(file, "web");
 
       const configCall = mockVideoEncoderConfigure.mock.calls[0][0];
-      expect(configCall.bitrate).toBe(2_000_000);
+      expect(configCall.bitrate).toBe(200_000);
     });
   });
 

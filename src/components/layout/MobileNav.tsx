@@ -2,9 +2,11 @@
 
 import { useState, useEffect, useRef, useSyncExternalStore } from "react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { Menu, X } from "lucide-react";
 import { categories } from "@/data/categories";
 import { createPortal } from "react-dom";
+import { lockScroll, unlockScroll } from "@/lib/utils/scroll-lock";
 
 const subscribe = () => () => {};
 const getSnapshot = () => true;
@@ -14,6 +16,7 @@ const ITEM =
   "group flex items-center gap-3 rounded-lg px-4 py-3.5 text-lg font-medium text-text-secondary transition-colors duration-200 hover:bg-accent/8 hover:text-text-primary motion-reduce:animate-none animate-tm-rise focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent";
 
 export function MobileNav() {
+  const pathname = usePathname();
   const [open, setOpen] = useState(false);
   const mounted = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
   const buttonRef = useRef<HTMLButtonElement>(null);
@@ -22,12 +25,12 @@ export function MobileNav() {
   const close = () => setOpen(false);
 
   useEffect(() => {
-    if (!open) {
-      document.body.style.overflow = "";
-      return;
-    }
+    // No direct write in the closed branch: the previous run's cleanup already
+    // released this component's claim, and clearing `overflow` here would also
+    // release the command palette's.
+    if (!open) return;
 
-    document.body.style.overflow = "hidden";
+    lockScroll();
     // Move focus into the panel so the menu is reachable by keyboard and is
     // announced as the current context.
     panelRef.current?.querySelector<HTMLAnchorElement>("a")?.focus();
@@ -43,7 +46,7 @@ export function MobileNav() {
 
     return () => {
       document.removeEventListener("keydown", onKeyDown);
-      document.body.style.overflow = "";
+      unlockScroll();
     };
   }, [open]);
 
@@ -68,18 +71,24 @@ export function MobileNav() {
     >
       <nav className="px-4 py-6">
         <div className="flex flex-col gap-0.5">
-          {links.map((l, i) => (
-            <Link
-              key={l.href}
-              href={l.href}
-              onClick={close}
-              className={ITEM}
-              style={{ animationDelay: `${i * 40}ms`, animationFillMode: "backwards" }}
-            >
-              <span className="h-1 w-1 rounded-full bg-accent opacity-0 transition-opacity duration-200 group-hover:opacity-100" />
-              {l.label}
-            </Link>
-          ))}
+          {links.map((l, i) => {
+            // Same rule as the desktop navbar, including sub-routes — the
+            // drawer previously marked nothing as current on any route.
+            const active = pathname === l.href || pathname.startsWith(`${l.href}/`);
+            return (
+              <Link
+                key={l.href}
+                href={l.href}
+                onClick={close}
+                aria-current={active ? "page" : undefined}
+                className={`${ITEM} ${active ? "bg-accent/8 text-text-primary" : ""}`}
+                style={{ animationDelay: `${i * 40}ms`, animationFillMode: "backwards" }}
+              >
+                <span className="h-1 w-1 rounded-full bg-accent opacity-0 transition-opacity duration-200 group-hover:opacity-100" />
+                {l.label}
+              </Link>
+            );
+          })}
         </div>
       </nav>
     </div>
@@ -90,7 +99,7 @@ export function MobileNav() {
       <button
         ref={buttonRef}
         onClick={() => setOpen(!open)}
-        className="relative inline-flex min-h-11 min-w-11 items-center justify-center rounded-md text-text-secondary transition-colors hover:bg-text-primary/5 hover:text-text-primary motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-bg-primary"
+        className="relative inline-flex min-h-11 min-w-11 items-center justify-center rounded-md text-text-secondary transition-colors hover:bg-text-primary/5 hover:text-text-primary motion-reduce:transition-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
         aria-label={open ? "Close menu" : "Open menu"}
         aria-expanded={open}
       >

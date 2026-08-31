@@ -4,10 +4,9 @@ import { useCallback, useState } from "react";
 import { ErrorMessage } from "@/components/tools/ErrorMessage";
 import { DropZone } from "@/components/tools/DropZone";
 import { DownloadButton } from "@/components/tools/DownloadButton";
-import { ProgressBar } from "@/components/tools/ProgressBar";
-import { mergeAudio, type AudioMergeOptions } from "@/lib/tools/audio-merge";
+import { mergeAudio } from "@/lib/tools/audio-merge";
 import { formatFileSize } from "@/lib/utils/file-helpers";
-import type { ProcessedResult } from "@/hooks/useFileProcessor";
+import { useFileProcessor, type FileProcessorContext } from "@/hooks/useFileProcessor";
 import {
   ToolActions,
   ToolAside,
@@ -16,65 +15,83 @@ import {
   ToolOutput,
   ToolResetLink,
 } from "@/components/tools/ToolAside";
+import { ToolControl, ToolControlGroup, ToolProgress } from "@/components/tools/ToolControls";
 import { CanvasHeader, StatStrip } from "@/components/tools/ToolCanvas";
+import { CANVAS_COLUMN } from "@/components/workspace/shared";
 
 export function AudioMergerUI() {
   const [files, setFiles] = useState<File[]>([]);
   const [outputFormat, setOutputFormat] = useState<"wav" | "mp3">("mp3");
   const [bitrate, setBitrate] = useState(192);
-  const [status, setStatus] = useState<"idle" | "processing" | "done" | "error">("idle");
-  const [result, setResult] = useState<ProcessedResult | null>(null);
-  const [error, setError] = useState<string | null>(null);
 
-  const handleFiles = useCallback((newFiles: File[]) => {
-    setFiles((prev) => [...prev, ...newFiles]);
-    setStatus("idle");
-    setResult(null);
-    setError(null);
-  }, []);
+  /*
+    The hook owns the run, not this component: it carries the AbortSignal that
+    CLEAR ALL and unmounting need, and the run-id guard that stops an abandoned
+    merge from writing its result over a queue the user has already changed.
+    `mergeAudio` takes the whole list, so the per-call options are `void` and
+    the queue/settings are closed over here.
+  */
+  const processFn = useCallback(
+    async (_file: File, _options: void, ctx: FileProcessorContext) =>
+      mergeAudio(files, { outputFormat, bitrate }, ctx),
+    [files, outputFormat, bitrate],
+  );
 
-  const removeFile = useCallback((index: number) => {
-    setFiles((prev) => prev.filter((_, i) => i !== index));
-  }, []);
+  const { status, result, error, progress, process, cancel, reset } =
+    useFileProcessor<void>(processFn);
 
-  const moveFile = useCallback((from: number, to: number) => {
-    setFiles((prev) => {
-      const next = [...prev];
-      const [moved] = next.splice(from, 1);
-      next.splice(to, 0, moved);
-      return next;
-    });
-  }, []);
+  /*
+    Every mutation of the queue — add, remove, reorder — invalidates the merge
+    that came out of the old queue. Dropping `result` also restores the
+    `Merge n files` primary, since the footer branches on it.
+  */
+  const handleFiles = useCallback(
+    (newFiles: File[]) => {
+      setFiles((prev) => [...prev, ...newFiles]);
+      reset();
+    },
+    [reset],
+  );
 
-  const handleMerge = useCallback(async () => {
+  const removeFile = useCallback(
+    (index: number) => {
+      setFiles((prev) => prev.filter((_, i) => i !== index));
+      reset();
+    },
+    [reset],
+  );
+
+  const moveFile = useCallback(
+    (from: number, to: number) => {
+      setFiles((prev) => {
+        const next = [...prev];
+        const [moved] = next.splice(from, 1);
+        next.splice(to, 0, moved);
+        return next;
+      });
+      reset();
+    },
+    [reset],
+  );
+
+  // The file argument is only the hook's analytics label — `processFn` reads
+  // the whole queue.
+  const handleMerge = useCallback(() => {
     if (files.length < 2) return;
-    setStatus("processing");
-    setError(null);
-    setResult(null);
-    try {
-      const opts: AudioMergeOptions = { outputFormat, bitrate };
-      const output = await mergeAudio(files, opts);
-      setResult(output);
-      setStatus("done");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Merge failed");
-      setStatus("error");
-    }
-  }, [files, outputFormat, bitrate]);
+    process(files[0]);
+  }, [files, process]);
 
   const handleReset = useCallback(() => {
     setFiles([]);
-    setStatus("idle");
-    setResult(null);
-    setError(null);
-  }, []);
+    reset();
+  }, [reset]);
 
   const totalSize = files.reduce((sum, f) => sum + f.size, 0);
 
   return (
     <>
       {/* ── Canvas: the queue, in the order it will be joined ── */}
-      <div className="min-w-0 space-y-[15px]">
+      <div className={CANVAS_COLUMN}>
         <DropZone
           accept=".mp3,.wav,.ogg,.m4a,.flac,.aac"
           multiple
@@ -84,14 +101,14 @@ export function AudioMergerUI() {
 
         {files.length > 0 && (
           <>
-            <div className="flex items-baseline gap-3">
-              <span className="font-display text-[13px] leading-none font-medium text-text-primary">
-                Join order
-              </span>
-              <span className="font-mono text-[10.5px] leading-none text-text-muted">
-                {files.length} FILES · {formatFileSize(totalSize)}
-              </span>
-            </div>
+            {/* A section title rather than a filename, but the same header
+                rhythm as every other canvas — hence `file` carrying the title
+                and the counts sitting in the muted `meta` slot they already
+                occupied. */}
+            <CanvasHeader
+              file="Join order"
+              meta={`${files.length} FILES · ${formatFileSize(totalSize)}`}
+            />
 
             <div className="flex flex-col overflow-hidden rounded-[10px] border border-neutral-800 bg-bg-primary">
               {files.map((file, index) => (
@@ -156,13 +173,6 @@ export function AudioMergerUI() {
           </>
         )}
 
-        {status === "processing" && (
-          <div className="space-y-2">
-            <ProgressBar progress={null} />
-            <p className="text-sm text-text-muted text-center">Merging audio files...</p>
-          </div>
-        )}
-
         {status === "error" && (
           <ErrorMessage message={error} />
         )}
@@ -180,22 +190,35 @@ export function AudioMergerUI() {
       <ToolAside
         footer={
           <>
+            {/* The doc pins the running readout to the rail footer. Only the
+                MP3 encoder reports progress, and only once it starts — the
+                decode ahead of it is silent, so stay indeterminate until a
+                real number arrives rather than sitting pinned at 0%. */}
+            {status === "processing" && (
+              <ToolProgress
+                phase="MERGING"
+                percent={outputFormat === "mp3" && progress > 0 ? progress : null}
+                label="Merging audio files"
+              />
+            )}
             {result ? (
               <DownloadButton
                 blob={result.blob}
                 fileName={result.fileName}
                 className="w-full justify-center"
               />
+            ) : status === "processing" ? (
+              // Cancel stops the run and keeps the queue; CLEAR ALL, which
+              // throws the queue away, is hidden while a merge is in flight.
+              <ToolActions primaryLabel="Cancel" onPrimary={cancel} />
             ) : (
               <ToolActions
-                primaryLabel={
-                  status === "processing" ? "Merging…" : `Merge ${files.length} files`
-                }
+                primaryLabel={`Merge ${files.length} files`}
                 onPrimary={handleMerge}
-                primaryDisabled={files.length < 2 || status === "processing"}
+                primaryDisabled={files.length < 2}
               />
             )}
-            {files.length > 0 && (
+            {files.length > 0 && status !== "processing" && (
               <ToolResetLink
                 onClick={handleReset}
                 label={result ? "START OVER" : "CLEAR ALL"}
@@ -204,35 +227,46 @@ export function AudioMergerUI() {
           </>
         }
       >
-        <ToolAsideSection label="FORMAT">
-          <ToolChoice
-            label="Output format"
-            fill
-            value={outputFormat}
-            onChange={setOutputFormat}
-            disabled={status === "processing"}
-            options={[
-              { value: "mp3" as const, label: "MP3" },
-              { value: "wav" as const, label: "WAV" },
-            ]}
-          />
-        </ToolAsideSection>
-
-        {outputFormat === "mp3" && (
-          <ToolAsideSection label="BITRATE">
+        <ToolControlGroup>
+          <ToolControl label="FORMAT">
             <ToolChoice
-              label="MP3 bitrate"
+              label="Output format"
               fill
-              value={bitrate}
-              onChange={setBitrate}
+              value={outputFormat}
+              // Changing the format changes the output, so the finished merge is
+              // no longer what these controls describe — drop it and re-offer the
+              // primary rather than letting the strip lie about the download.
+              onChange={(v) => {
+                setOutputFormat(v);
+                if (result) reset();
+              }}
               disabled={status === "processing"}
-              options={[128, 192, 256, 320].map((b) => ({ value: b, label: String(b) }))}
+              options={[
+                { value: "mp3" as const, label: "MP3" },
+                { value: "wav" as const, label: "WAV" },
+              ]}
             />
-            <span className="font-body text-[10.5px] leading-[1.5] text-text-muted">
-              kbps
-            </span>
-          </ToolAsideSection>
-        )}
+          </ToolControl>
+
+          {outputFormat === "mp3" && (
+            <ToolControl label="BITRATE">
+              <ToolChoice
+                label="MP3 bitrate"
+                fill
+                value={bitrate}
+                onChange={(v) => {
+                  setBitrate(v);
+                  if (result) reset();
+                }}
+                disabled={status === "processing"}
+                options={[128, 192, 256, 320].map((b) => ({ value: b, label: String(b) }))}
+              />
+              <span className="font-body text-[10.5px] leading-[1.5] text-text-muted">
+                kbps
+              </span>
+            </ToolControl>
+          )}
+        </ToolControlGroup>
 
         <ToolAsideSection label="OUTPUT">
           <ToolOutput

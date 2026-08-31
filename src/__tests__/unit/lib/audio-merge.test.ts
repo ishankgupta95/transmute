@@ -86,12 +86,13 @@ describe("mergeAudio", () => {
     ).rejects.toThrow("At least 2 files required");
   });
 
-  it("decodes all input files", async () => {
-    await mergeAudio([file1, file2], { outputFormat: "wav" });
+  it("decodes all input files, forwarding the cancellation context to each", async () => {
+    const { signal } = new AbortController();
+    await mergeAudio([file1, file2], { outputFormat: "wav" }, { signal });
 
     expect(decodeAudioFile).toHaveBeenCalledTimes(2);
-    expect(decodeAudioFile).toHaveBeenCalledWith(file1);
-    expect(decodeAudioFile).toHaveBeenCalledWith(file2);
+    expect(decodeAudioFile).toHaveBeenCalledWith(file1, expect.objectContaining({ signal }));
+    expect(decodeAudioFile).toHaveBeenCalledWith(file2, expect.objectContaining({ signal }));
   });
 
   it("outputs WAV when outputFormat is wav", async () => {

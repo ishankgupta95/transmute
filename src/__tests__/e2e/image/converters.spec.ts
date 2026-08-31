@@ -1,6 +1,34 @@
 import { test, expect } from "@playwright/test";
 import { uploadFile, downloadButton, waitForDownload, downloadBytes } from "../helpers";
-import { tinyPng, tinyJpg, tinyWebp, tinyBmp, tinySvg } from "../fixtures";
+import { tinyPng, tinyJpg, tinyWebp, tinyBmp, tinySvg, tinyTiff } from "../fixtures";
+import type { Page } from "@playwright/test";
+
+/**
+ * Decode a converted image inside the browser and report its real dimensions.
+ *
+ * Magic bytes alone are a weak assertion: a converter that lost the pixels and
+ * emitted a 1x1 or an empty canvas still writes a perfectly valid JPEG/PNG
+ * header. Asserting the decoded size is what makes these tests able to fail on
+ * a real regression.
+ */
+async function decodedSize(
+  page: Page,
+  bytes: Buffer,
+  mime: string,
+): Promise<{ width: number; height: number }> {
+  return page.evaluate(
+    async ({ b64, type }: { b64: string; type: string }) => {
+      const bin = atob(b64);
+      const buf = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
+      const bitmap = await createImageBitmap(new Blob([buf], { type }));
+      const out = { width: bitmap.width, height: bitmap.height };
+      bitmap.close();
+      return out;
+    },
+    { b64: bytes.toString("base64"), type: mime },
+  );
+}
 
 /**
  * Golden-path coverage for image converters. We hit one concrete pair per
@@ -8,11 +36,17 @@ import { tinyPng, tinyJpg, tinyWebp, tinyBmp, tinySvg } from "../fixtures";
  * every entry in `tools.ts` resolves and renders, so we don't need to
  * exhaustively iterate here.
  *
- * Heavy decoders (HEIC via heic2any, TIFF via utif2, AVIF via the Chromium
- * AVIF decoder) cannot be exercised end-to-end without shipping binary
- * fixtures we don't keep in-tree. Those slugs get a smoke test that confirms
- * the page renders and the dropzone accepts the right MIME — the conversion
- * code itself is covered by the unit suite.
+ * Every conversion here asserts the DECODED dimensions of the output, not just
+ * its magic bytes — a converter that dropped the pixels still emits a valid
+ * header, so a format-only assertion cannot fail on the regression that
+ * matters.
+ *
+ * HEIC and AVIF are the only two inputs still on a page smoke, and for a
+ * verified reason: neither can be synthesised. `heic2any` decodes but never
+ * encodes, and Chromium's `canvas.toBlob("image/avif")` silently falls back to
+ * PNG (probed 2026-08-19 — it returns `image/png`). TIFF used to be on that
+ * list by assumption; `utif2` ships an encoder, so it now has a real
+ * conversion test below.
  */
 
 test.describe("image converters — lightweight pairs", () => {
@@ -26,6 +60,11 @@ test.describe("image converters — lightweight pairs", () => {
     const bytes = await downloadBytes(download);
     // JPEG SOI marker
     expect(bytes.subarray(0, 2).toString("hex")).toBe("ffd8");
+    // ...and the pixels actually survived the round trip.
+    expect(await decodedSize(page, bytes, "image/jpeg")).toEqual({
+      width: 16,
+      height: 16,
+    });
   });
 
   test("JPG → PNG produces a PNG download", async ({ page }) => {
@@ -94,6 +133,23 @@ test.describe("image converters — lightweight pairs", () => {
     expect(bytes.subarray(0, 2).toString("hex")).toBe("ffd8");
   });
 
+  test("TIFF → JPG decodes a real TIFF and preserves its dimensions", async ({ page }) => {
+    await page.goto("/tiff-to-jpg");
+    await uploadFile(page, tinyTiff(40, 30));
+    await page.getByRole("button", { name: "Convert", exact: true }).click();
+
+    const { suggestedFilename, download } = await waitForDownload(page, downloadButton(page));
+    expect(suggestedFilename).toMatch(/\.jpe?g$/i);
+    const bytes = await downloadBytes(download);
+    expect(bytes.subarray(0, 2).toString("hex")).toBe("ffd8");
+    // 40x30, not 30x40 and not 1x1 — pins both the utif2 decode order
+    // (width/height are only populated by decodeImage) and the pixel copy.
+    expect(await decodedSize(page, bytes, "image/jpeg")).toEqual({
+      width: 40,
+      height: 30,
+    });
+  });
+
   test("SVG → PNG rasterises a vector input to a valid PNG download", async ({ page }) => {
     await page.goto("/svg-to-png");
     await uploadFile(page, tinySvg());
@@ -113,7 +169,6 @@ test.describe("image converters — page smoke (binary-fixture-required formats)
   // or the dropzone accept attribute is caught.
   for (const { slug, accept } of [
     { slug: "heic-to-jpg", accept: ".heic,.heif" },
-    { slug: "tiff-to-jpg", accept: ".tiff,.tif" },
     { slug: "avif-to-jpg", accept: ".avif" },
   ]) {
     test(`${slug} renders with H1 and a dropzone that accepts ${accept}`, async ({ page }) => {

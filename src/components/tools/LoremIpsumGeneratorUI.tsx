@@ -2,11 +2,9 @@
 
 import { useCallback, useState } from "react";
 
-import { copyText } from "@/lib/utils/clipboard";
 import {
   ToolActions,
   ToolAside,
-  ToolAsideSection,
   ToolChoice,
 } from "@/components/tools/ToolAside";
 import {
@@ -16,6 +14,19 @@ import {
   TextPane,
   TextPanes,
 } from "@/components/tools/ToolCanvas";
+import { ToolControl, ToolControlGroup } from "@/components/tools/ToolControls";
+import { CANVAS_COLUMN } from "@/components/workspace/shared";
+import { useCopied } from "@/hooks/useCopied";
+import { formatFileSize } from "@/lib/utils/file-helpers";
+
+/**
+ * The doc's one field box, from the RANGE strip:
+ * `height:30px;border-radius:7px;background:var(--color-surface);border:1px
+ * solid var(--color-divider);font:400 12px/1 'IBM Plex Mono';padding:0 10px`.
+ * The same shape `RangeField` and the regex pattern input already wear.
+ */
+const FIELD_CLASS =
+  "h-[30px] w-24 rounded-[7px] border border-border bg-bg-elevated px-2.5 text-center font-mono text-xs leading-none text-text-primary focus:border-accent focus:outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent";
 
 const LOREM_WORDS = "lorem ipsum dolor sit amet consectetur adipiscing elit sed do eiusmod tempor incididunt ut labore et dolore magna aliqua ut enim ad minim veniam quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur excepteur sint occaecat cupidatat non proident sunt in culpa qui officia deserunt mollit anim id est laborum".split(" ");
 
@@ -75,8 +86,15 @@ type Unit = "paragraphs" | "sentences" | "words";
 export function LoremIpsumGeneratorUI() {
   const [unit, setUnit] = useState<Unit>("paragraphs");
   const [count, setCount] = useState(3);
+  /*
+    The field holds a string draft. Binding it straight to the clamped number
+    meant `Number("")` was 0, `Math.max(1, 0)` wrote 1 back into the controlled
+    value, and backspacing to empty repopulated "1" — so retyping 25 landed as
+    "125" and clamped to 100. `count` stays the clamped number generation reads.
+  */
+  const [countText, setCountText] = useState("3");
   const [output, setOutput] = useState("");
-  const [copied, setCopied] = useState(false);
+  const { copied, copy } = useCopied();
 
   const handleGenerate = useCallback(() => {
     switch (unit) {
@@ -93,18 +111,13 @@ export function LoremIpsumGeneratorUI() {
   }, [unit, count]);
 
   const handleCopy = useCallback(() => {
-    copyText(output).then((ok) => {
-      if (ok) {
-        setCopied(true);
-        setTimeout(() => setCopied(false), 2000);
-      }
-    });
-  }, [output]);
+    void copy(output);
+  }, [copy, output]);
 
   return (
     <>
       {/* ── Canvas: the generated copy, in the doc's OUT pane ── */}
-      <div className="min-w-0 space-y-[13px]">
+      <div className={CANVAS_COLUMN}>
         {output ? (
           <>
             <TextPanes columns={1}>
@@ -112,6 +125,7 @@ export function LoremIpsumGeneratorUI() {
                 tone="out"
                 label="Output"
                 lines={lineCount(output)}
+                size={formatFileSize(new Blob([output]).size)}
                 action={
                   <button
                     onClick={handleCopy}
@@ -127,44 +141,54 @@ export function LoremIpsumGeneratorUI() {
             <CanvasFootnote>GENERATED LOCALLY · NOTHING LOGGED</CanvasFootnote>
           </>
         ) : (
-          <p className="py-10 text-center font-body text-sm text-text-muted">
+          <p className="py-10 text-center font-body text-[12.5px] leading-[1.5] text-text-muted">
             Choose a unit and a count, then generate.
           </p>
         )}
       </div>
 
       <ToolAside footer={<ToolActions primaryLabel="Generate" onPrimary={handleGenerate} />}>
-        <ToolAsideSection label="UNIT">
-          <ToolChoice
-            label="Unit"
-            fill
-            value={unit}
-            onChange={(u) => {
-              setUnit(u);
-              setOutput(""); // three paragraphs under a lit "Words" chip lie
-            }}
-            options={[
-              { value: "paragraphs" as const, label: "Paragraphs" },
-              { value: "sentences" as const, label: "Sentences" },
-              { value: "words" as const, label: "Words" },
-            ]}
-          />
-        </ToolAsideSection>
+        {/* One bordered block for the whole control set — the doc gives its
+            own rule only to START FROM, ADVANCED and OUTPUT. */}
+        <ToolControlGroup>
+          <ToolControl label="UNIT">
+            <ToolChoice
+              label="Unit"
+              fill
+              value={unit}
+              onChange={(u) => {
+                setUnit(u);
+                setOutput(""); // three paragraphs under a lit "Words" chip lie
+              }}
+              options={[
+                { value: "paragraphs" as const, label: "Paragraphs" },
+                { value: "sentences" as const, label: "Sentences" },
+                { value: "words" as const, label: "Words" },
+              ]}
+            />
+          </ToolControl>
 
-        <ToolAsideSection label="HOW MANY">
-          <input
-            type="number"
-            min={1}
-            max={100}
-            value={count}
-            onChange={(e) => {
-              setCount(Math.max(1, Math.min(100, Number(e.target.value))));
-              setOutput("");
-            }}
-            aria-label={`Number of ${unit}`}
-            className="w-24 rounded-md border border-border bg-bg-elevated px-3 py-2 text-center font-mono text-sm text-text-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-          />
-        </ToolAsideSection>
+          <ToolControl label="HOW MANY">
+            <input
+              type="number"
+              min={1}
+              max={100}
+              value={countText}
+              onChange={(e) => {
+                const text = e.target.value;
+                setCountText(text);
+                setOutput(""); // three paragraphs under a "20" count lie
+                const n = Number(text);
+                if (text !== "" && Number.isFinite(n)) {
+                  setCount(Math.max(1, Math.min(100, n)));
+                }
+              }}
+              onBlur={() => setCountText(String(count))}
+              aria-label={`Number of ${unit}`}
+              className={FIELD_CLASS}
+            />
+          </ToolControl>
+        </ToolControlGroup>
       </ToolAside>
     </>
   );

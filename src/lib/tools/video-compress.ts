@@ -6,6 +6,7 @@ import {
   waitForReady,
   decodeAudio,
   playAndExtractFrames,
+  resolveDuration,
   assertWebCodecsSupported,
   pickH264Config,
 } from "./video-utils";
@@ -42,12 +43,30 @@ export async function compressVideo(
     const video = createVideo(videoUrl);
     await waitForReady(video);
 
-    const { videoWidth, videoHeight, duration } = video;
+    const { videoWidth, videoHeight } = video;
+    // Not `video.duration`: a MediaRecorder WebM (every browser screen
+    // recording, this site's own included) declares none, so the element
+    // reports Infinity until the demuxer is forced to resolve it.
+    const duration = await resolveDuration(video);
     if (!Number.isFinite(duration) || duration <= 0 || !videoWidth || !videoHeight) {
       throw new Error(
         "Couldn't read this video — its codec or container may not be supported in-browser. Try an MP4 (H.264).",
       );
     }
+    /*
+      The presets are fixed TARGET bitrates. Aimed at a clip that is already
+      leaner than the target they inflate it — a 158 KB source came back at
+      213 KB and was still presented as "compressed". Cap the target at 90% of
+      what the source actually spends per second so the output cannot be a
+      bigger file than the input, with a 200 kbps floor so a tiny clip is not
+      re-encoded into mush.
+    */
+    const sourceBitrate = (file.size * 8) / duration;
+    const targetBitrate = Math.min(
+      config.bitrate,
+      Math.max(200_000, Math.round(sourceBitrate * 0.9)),
+    );
+
     // Decode the audio once up front so we can both detect it and reuse the
     // buffer (the old code decoded the whole file twice — easy to OOM).
     const audioBuffer = await decodeAudio(file);
@@ -105,7 +124,7 @@ export async function compressVideo(
         await pickH264Config({
           width: outWidth,
           height: outHeight,
-          bitrate: config.bitrate,
+          bitrate: targetBitrate,
           framerate: 30,
         }),
       );

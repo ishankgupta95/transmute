@@ -21,6 +21,9 @@ const ARCHETYPES: Archetype[] = [
   "pdfpages",
   "pdfdocs",
   "video",
+  "gif",
+  "extract",
+  "transcode",
   "audio",
   "text",
   "gen",
@@ -76,4 +79,61 @@ describe("workspace config tracks the tool registry", () => {
   it.each(ARCHETYPES)("archetype %s has pipeline chips", (kind) => {
     expect(pipelineByArchetype[kind].length).toBeGreaterThan(0);
   });
+});
+
+/*
+  The ACCEPTS line (ToolPageLayout's pipeline strip, its spec tile and the
+  workspace PipelineBar) all render `WorkspaceTool.accept`, while the file
+  picker on the same screen is built from `Tool.acceptFormats`. These used to
+  be two hand-written lists and drifted 16 ways — mp4-to-mp3 advertised M4V
+  the picker rejects, crop-image hid the GIF/BMP/AVIF it takes. `accept` is
+  now derived, and this pins it so the two cannot part again.
+*/
+describe("the ACCEPTS label matches the file picker", () => {
+  /** Extensions that spell one format two ways; either may back a token. */
+  const ALIASES: Record<string, string[]> = {
+    JPG: ["jpg", "jpeg"],
+    TIFF: ["tiff", "tif"],
+    HEIC: ["heic", "heif"],
+    MD: ["md", "markdown"],
+  };
+
+  const fileTools = tools.filter((t) =>
+    t.acceptFormats.split(",").some((token) => token.trim().startsWith(".")),
+  );
+
+  it("covers every tool that takes files", () => {
+    expect(fileTools.length).toBeGreaterThan(30);
+  });
+
+  it.each(fileTools.map((t) => [t.slug, t] as const))(
+    "%s claims exactly what its DropZone accepts",
+    (slug, tool) => {
+      const exts = new Set(
+        tool.acceptFormats
+          .split(",")
+          .map((s) => s.trim().toLowerCase())
+          .filter((s) => s.startsWith("."))
+          .map((s) => s.slice(1)),
+      );
+      const claimed = getWorkspaceTool(slug)!.accept.split(" ").filter(Boolean);
+
+      // Nothing is advertised that the picker would reject.
+      for (const token of claimed) {
+        const candidates = ALIASES[token] ?? [token.toLowerCase()];
+        expect(
+          candidates.some((c) => exts.has(c)),
+          `${slug} advertises ${token} but accepts ${[...exts].join(",")}`,
+        ).toBe(true);
+      }
+
+      // Nothing the picker takes is hidden from the user.
+      const covered = new Set(
+        claimed.flatMap((token) => ALIASES[token] ?? [token.toLowerCase()]),
+      );
+      for (const ext of exts) {
+        expect(covered.has(ext), `${slug} accepts .${ext} but never says so`).toBe(true);
+      }
+    },
+  );
 });

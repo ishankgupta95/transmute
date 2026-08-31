@@ -2,7 +2,6 @@
 
 import { useCallback, useState } from "react";
 
-import { copyText } from "@/lib/utils/clipboard";
 import {
   ToolActions,
   ToolAside,
@@ -14,7 +13,9 @@ import {
   TextPane,
   TextPanes,
 } from "@/components/tools/ToolCanvas";
-import { chipClass } from "@/components/workspace/shared";
+import { chipClass, CANVAS_COLUMN } from "@/components/workspace/shared";
+import { useCopied } from "@/hooks/useCopied";
+import { formatFileSize } from "@/lib/utils/file-helpers";
 
 export function toWords(text: string): string[] {
   return text
@@ -51,7 +52,7 @@ export function TextCaseConverterUI() {
   const [input, setInput] = useState("");
   const [output, setOutput] = useState("");
   const [activeCase, setActiveCase] = useState("");
-  const [copied, setCopied] = useState(false);
+  const { copied, copy } = useCopied();
 
   const handleConvert = useCallback(
     (caseName: string) => {
@@ -62,23 +63,31 @@ export function TextCaseConverterUI() {
   );
 
   const handleCopy = useCallback(() => {
-    copyText(output).then((ok) => {
-      if (ok) {
-        setCopied(true);
-        setTimeout(() => setCopied(false), 2000);
-      }
-    });
-  }, [output]);
+    void copy(output);
+  }, [copy, output]);
 
   return (
     <>
       {/* ── Canvas: the doc's two-up IN / OUT panes ────────── */}
-      <div className="min-w-0 space-y-[13px]">
+      <div className={CANVAS_COLUMN}>
         <TextPanes columns={output ? 2 : 1}>
-          <TextPane label="Input Text" lines={lineCount(input)}>
+          <TextPane
+            label="Input Text"
+            lines={lineCount(input)}
+            size={formatFileSize(new Blob([input]).size)}
+          >
             <textarea
               value={input}
-              onChange={(e) => setInput(e.target.value)}
+              onChange={(e) => {
+                // Recompute, don't just invalidate: the sibling formatters run
+                // as you type, and a lit "UPPERCASE" pane holding the previous
+                // input's conversion is what "Copy output" would put on the
+                // clipboard. `activeCase` starts "" — converters[""] is
+                // undefined, so the guard is load-bearing.
+                const v = e.target.value;
+                setInput(v);
+                if (activeCase) setOutput(converters[activeCase](v));
+              }}
               placeholder="Enter text to convert..."
               aria-label="Input text"
               className={TEXT_PANE_BODY}
@@ -90,6 +99,7 @@ export function TextCaseConverterUI() {
               tone="out"
               label={activeCase}
               lines={lineCount(output)}
+              size={formatFileSize(new Blob([output]).size)}
               action={
                 <button
                   onClick={handleCopy}

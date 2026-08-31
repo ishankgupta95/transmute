@@ -6,7 +6,7 @@ import { SearchTrigger } from "@/components/layout/SearchTrigger";
 export default function NotFound() {
   return (
     <main className="relative flex flex-1 items-center overflow-hidden px-4 py-20 md:px-11">
-      <div className="pointer-events-none absolute -top-[120px] left-[30%] h-[340px] w-[520px] animate-tm-glow rounded-full bg-[radial-gradient(circle,color-mix(in_srgb,var(--color-accent)_26%,transparent)_0%,transparent_70%)] blur-[140px]" />
+      <div className="pointer-events-none absolute -top-[120px] left-[30%] h-[340px] w-[520px] animate-tm-glow rounded-full bg-[radial-gradient(circle,color-mix(in_srgb,var(--color-accent)_26%,transparent)_0%,transparent_70%)] blur-[140px] motion-reduce:animate-none" />
 
       <div className="relative mx-auto grid w-full max-w-[1440px] items-center gap-12 lg:grid-cols-[1fr_400px] lg:gap-20">
         <div className="max-w-[520px]">
@@ -18,15 +18,19 @@ export default function NotFound() {
             Nothing converts to this.
           </h1>
 
-          <p className="m-0 mb-7 font-body text-[15px] leading-[1.7] text-neutral-400">
+          <p className="m-0 mb-[30px] font-body text-[15px] leading-[1.7] text-neutral-400">
             The page you asked for is not one of the {tools.length}. Search for the format
             you have and the format you want — that is usually faster than guessing a URL.
           </p>
 
+          {/* The doc's 404 field is smaller and flatter than the hero's: 48px
+              tall, 10px radius, 14px label, no drop shadow. The `field` size
+              itself stays at the hero's 54px, so the difference is an override
+              here rather than a third variant. */}
           <SearchTrigger
             size="field"
             placeholder={`Search ${tools.length} tools…`}
-            className="max-w-[400px]"
+            className="h-12 max-w-[400px] gap-[11px] rounded-[10px] px-[15px] text-sm shadow-none [&>span]:text-text-muted"
           />
 
           <div className="mt-5.5 flex flex-wrap gap-5.5">
@@ -36,7 +40,7 @@ export default function NotFound() {
                 href={`/${c.slug}`}
                 className="font-body text-[12.5px] leading-none text-neutral-400 transition-colors duration-200 hover:text-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
               >
-                {c.name}
+                {c.shortName} tools
               </Link>
             ))}
           </div>

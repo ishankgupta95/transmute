@@ -3,7 +3,7 @@
 import type { ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils/cn";
-import { MONO_LABEL, SCROLL_CLASS } from "@/components/workspace/shared";
+import { MONO_LABEL, SCROLL_CLASS, STAGE_GROW } from "@/components/workspace/shared";
 import { TOOL_RANGE_CLASS } from "@/components/tools/ToolAside";
 
 /*
@@ -11,19 +11,41 @@ import { TOOL_RANGE_CLASS } from "@/components/tools/ToolAside";
   retired (Phase 4 — the workspace now mounts the real tools), the primitive
   moved here, the one place both trimming surfaces (video stage below,
   AudioTrimmerUI's waveform) draw it from.
-*/
-const TRIM_HANDLE =
-  "pointer-events-none absolute inset-y-0 w-0.5 bg-nocturne-accent shadow-[0_0_12px_color-mix(in_srgb,var(--color-nocturne-accent)_70%,transparent)]";
-const TRIM_MASK = "pointer-events-none absolute inset-y-0 bg-[rgba(15,17,28,.68)]";
 
-/** Dims everything outside the selection and marks both edges. */
-export function TrimOverlay({ trimA, trimB }: { trimA: number; trimB: number }) {
+  The doc draws those two surfaces differently, and it is right to: over
+  a 56px filmstrip the mask has to be heavy (.72) and the handles are 2px with a
+  glow, while over a full-height waveform the same treatment buries the bars, so
+  it dims to .55 and the handles thin to a 1px accent-300 line.
+*/
+const TRIM_HANDLE = "pointer-events-none absolute inset-y-0";
+const TRIM_MASK = "pointer-events-none absolute inset-y-0";
+
+/**
+ * Dims everything outside the selection and marks both edges.
+ *
+ * `surface` defaults to `audio` because `Filmstrip` below is the only video
+ * consumer and passes its own value; every other caller is a waveform.
+ */
+export function TrimOverlay({
+  trimA,
+  trimB,
+  surface = "audio",
+}: {
+  trimA: number;
+  trimB: number;
+  surface?: "video" | "audio";
+}) {
+  const mask = surface === "video" ? "bg-[rgba(15,17,28,.72)]" : "bg-[rgba(15,17,28,.55)]";
+  const handle =
+    surface === "video"
+      ? "w-0.5 bg-nocturne-accent shadow-[0_0_12px_color-mix(in_srgb,var(--color-nocturne-accent)_70%,transparent)]"
+      : "w-px bg-accent-300";
   return (
     <>
-      <div className={cn(TRIM_MASK, "left-0")} style={{ width: `${trimA}%` }} />
-      <div className={cn(TRIM_MASK, "right-0")} style={{ width: `${100 - trimB}%` }} />
-      <div className={TRIM_HANDLE} style={{ left: `${trimA}%` }} />
-      <div className={TRIM_HANDLE} style={{ left: `${trimB}%` }} />
+      <div className={cn(TRIM_MASK, mask, "left-0")} style={{ width: `${trimA}%` }} />
+      <div className={cn(TRIM_MASK, mask, "right-0")} style={{ width: `${100 - trimB}%` }} />
+      <div className={cn(TRIM_HANDLE, handle)} style={{ left: `${trimA}%` }} />
+      <div className={cn(TRIM_HANDLE, handle)} style={{ left: `${trimB}%` }} />
     </>
   );
 }
@@ -45,10 +67,17 @@ export function CanvasHeader({
   file,
   meta,
   trailing,
+  trailingTone = "accent",
 }: {
   file: string;
   meta?: string;
   trailing?: string;
+  /**
+   * The right-hand slot is an accent stat by default. Headers whose trailing
+   * text is plain metadata ("3 FILES", "SRGB") pass "muted" instead, so
+   * migrating them off hand-rolled markup does not silently repaint them.
+   */
+  trailingTone?: "accent" | "muted";
 }) {
   return (
     <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
@@ -59,7 +88,12 @@ export function CanvasHeader({
         <span className="font-mono text-[10.5px] leading-none text-text-muted">{meta}</span>
       )}
       {trailing && (
-        <span className="ml-auto font-mono text-[10.5px] leading-none text-accent-300">
+        <span
+          className={cn(
+            "ml-auto font-mono text-[10.5px] leading-none",
+            trailingTone === "muted" ? "text-text-muted" : "text-accent-300",
+          )}
+        >
           {trailing}
         </span>
       )}
@@ -67,7 +101,14 @@ export function CanvasHeader({
   );
 }
 
-/** The bordered, near-black plate every media canvas sits on. */
+/**
+ * The bordered, near-black plate every media canvas sits on.
+ *
+ * Pass `STAGE_GROW` (from workspace/shared) as part of `className` on the one
+ * stage in a canvas column that should absorb the leftover height — that is
+ * what lets a preview grow with the viewport instead of sitting at whatever
+ * fixed height it was born with.
+ */
 export function CanvasStage({
   children,
   className,
@@ -103,7 +144,7 @@ export function Waveform({
   className?: string;
 }) {
   return (
-    <div className={cn("relative flex h-[170px] items-center gap-0.5 px-3.5", className)}>
+    <div className={cn("relative flex h-full min-h-[180px] items-center gap-0.5 px-3.5", className)}>
       {peaks.map((h, i) => {
         const pos = (i / peaks.length) * 100;
         const inSelection = pos >= startPct && pos <= endPct;
@@ -126,7 +167,7 @@ export function Waveform({
 /** A placeholder waveform while the file is still decoding. */
 export function WaveformSkeleton() {
   return (
-    <div className="flex h-[170px] items-center gap-0.5 px-3.5" aria-hidden="true">
+    <div className="flex h-full min-h-[180px] items-center gap-0.5 px-3.5" aria-hidden="true">
       {Array.from({ length: 90 }, (_, i) => (
         <span
           key={i}
@@ -149,7 +190,7 @@ export function Filmstrip({
   endPct: number;
 }) {
   return (
-    <div className="relative h-[52px] overflow-hidden rounded-lg border border-neutral-800 bg-bg-primary">
+    <div className="relative h-14 overflow-hidden rounded-md border border-neutral-800 bg-bg-primary">
       <div className="absolute inset-0 flex gap-0.5 p-0.5">
         {frames.length > 0
           ? frames.map((src, i) => (
@@ -163,7 +204,7 @@ export function Filmstrip({
               <span key={i} className="flex-1 rounded-[3px] bg-neutral-900" />
             ))}
       </div>
-      <TrimOverlay trimA={startPct} trimB={endPct} />
+      <TrimOverlay trimA={startPct} trimB={endPct} surface="video" />
     </div>
   );
 }
@@ -181,6 +222,11 @@ interface TrimControlsProps {
   startName: string;
   endName: string;
   disabled?: boolean;
+  /**
+   * Width of the two time readouts in px. 52 is the doc's video figure; audio
+   * draws 56 because its formatter carries tenths.
+   */
+  readoutWidth?: number;
 }
 
 /**
@@ -198,14 +244,16 @@ export function TrimControls({
   startName,
   endName,
   disabled,
+  readoutWidth = 52,
 }: TrimControlsProps) {
   const max = duration || 0;
   const step = max > 600 ? 1 : 0.1;
+  const readout = { width: readoutWidth };
 
   return (
     <div className="flex flex-wrap items-center gap-4">
       <div className="flex min-w-[220px] flex-1 items-center gap-2">
-        <span className={cn(MONO_LABEL, "w-6 tracking-[0.1em] text-text-muted")}>IN</span>
+        <span className={cn(MONO_LABEL, "w-[26px] tracking-[0.1em] text-text-muted")}>IN</span>
         <input
           type="range"
           min={0}
@@ -217,7 +265,10 @@ export function TrimControls({
           aria-label={startName}
           className={cn(TOOL_RANGE_CLASS, disabled && "cursor-not-allowed opacity-45")}
         />
-        <span className="w-[52px] text-right font-mono text-[11px] leading-none font-medium text-accent-300">
+        <span
+          style={readout}
+          className="flex-none text-right font-mono text-[11px] leading-none font-medium text-accent-300"
+        >
           {format(start)}
         </span>
       </div>
@@ -235,7 +286,10 @@ export function TrimControls({
           aria-label={endName}
           className={cn(TOOL_RANGE_CLASS, disabled && "cursor-not-allowed opacity-45")}
         />
-        <span className="w-[52px] text-right font-mono text-[11px] leading-none font-medium text-accent-300">
+        <span
+          style={readout}
+          className="flex-none text-right font-mono text-[11px] leading-none font-medium text-accent-300"
+        >
           {format(end)}
         </span>
       </div>
@@ -256,49 +310,72 @@ export function PageTile({
   thumb,
   selected,
   onClick,
+  interactive,
+  dimUnselected = true,
   label,
   badge,
   draggableProps,
   className,
+  ...rest
 }: {
   number: number;
   thumb?: string;
   selected: boolean;
   onClick?: () => void;
+  /**
+   * The tile is not a button but is still operable — a drag-to-reorder deck.
+   * Makes it a focusable listbox option so keyboards reach it too.
+   */
+  interactive?: boolean;
+  /**
+   * Unselected tiles are dimmed so the selection reads at a glance. A deck
+   * where nothing is selected *yet* passes false — otherwise the whole deck
+   * greys out on load and looks disabled.
+   */
+  dimUnselected?: boolean;
   label?: string;
   /** Rendered over a corner, e.g. the rotation marker or the drag grip. */
   badge?: ReactNode;
   /** Spread onto the tile when the deck is a drag-to-reorder one. */
   draggableProps?: Record<string, unknown>;
   className?: string;
+  onKeyDown?: (e: React.KeyboardEvent<HTMLElement>) => void;
 }) {
   const Tag = onClick ? "button" : "div";
   return (
     <Tag
-      {...(onClick ? { type: "button" as const, onClick, "aria-pressed": selected } : {})}
+      {...(onClick
+        ? { type: "button" as const, onClick, "aria-pressed": selected }
+        : interactive
+          ? { role: "option" as const, "aria-selected": selected, tabIndex: 0 }
+          : {})}
       {...draggableProps}
-      aria-label={label ?? `Page ${number}`}
+      {...rest}
+      // A purely decorative tile must not claim a name of its own.
+      aria-label={onClick || interactive ? (label ?? `Page ${number}`) : undefined}
       className={cn(
         "relative aspect-3/4 overflow-hidden rounded-[5px] border-2 p-0 transition-all duration-200",
         "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent",
-        onClick && "cursor-pointer",
+        (onClick || interactive) && "cursor-pointer",
         thumb ? "bg-bg-elevated" : "bg-[linear-gradient(170deg,#f3f5fe_0%,#dfe3f0_100%)]",
         selected
           ? "border-accent shadow-[0_0_0_3px_color-mix(in_srgb,var(--color-accent)_22%,transparent)]"
-          : "border-transparent opacity-55 hover:opacity-80",
+          : dimUnselected
+            ? "border-transparent opacity-55 hover:opacity-80"
+            : "border-transparent hover:opacity-80",
         className,
       )}
     >
       {thumb ? (
         // eslint-disable-next-line @next/next/no-img-element -- data: URL from pdf.js, nothing for next/image to optimise
-        <img src={thumb} alt="" className="size-full object-cover" />
+        <img src={thumb} alt="" className="size-full object-contain" />
       ) : (
-        <span className="absolute inset-x-[7px] top-2 flex flex-col gap-[3px]">
-          <span className="h-[3px] w-[70%] rounded-sm bg-[#75798c]" />
-          <span className="h-0.5 w-full rounded-sm bg-[#b2b6ca]" />
-          <span className="h-0.5 w-[92%] rounded-sm bg-[#b2b6ca]" />
-          <span className="h-0.5 w-[97%] rounded-sm bg-[#b2b6ca]" />
-          <span className="h-0.5 w-[64%] rounded-sm bg-[#b2b6ca]" />
+        <span className="absolute inset-x-2 top-[9px] flex flex-col gap-[3px]">
+          <span className="h-[3px] w-[70%] rounded-[2px] bg-[#75798c]" />
+          <span className="h-0.5 w-full rounded-[2px] bg-[#b2b6ca]" />
+          <span className="h-0.5 w-[92%] rounded-[2px] bg-[#b2b6ca]" />
+          <span className="h-0.5 w-[97%] rounded-[2px] bg-[#b2b6ca]" />
+          <span className="h-0.5 w-[64%] rounded-[2px] bg-[#b2b6ca]" />
         </span>
       )}
       {badge}
@@ -314,11 +391,32 @@ export function PageTile({
   );
 }
 
-/** The doc's page deck: a scrolling 8-up grid on a dark plate. */
-export function PageDeck({ children }: { children: ReactNode }) {
+/**
+ * The doc's page deck: a scrolling grid of page tiles on a dark plate.
+ *
+ * `auto-fill` rather than a fixed column count — a hard `lg:grid-cols-8` made
+ * every tile 33px wide the moment the control rail appeared, and never used
+ * the extra width of a large screen. A ~100px tile is the smallest at which a
+ * page thumbnail is still recognisable, so that is the track minimum.
+ *
+ * `label` turns the grid into a listbox; pass it only for decks whose tiles
+ * are `interactive` (drag-to-reorder). Decks whose tiles are buttons must not
+ * be listboxes.
+ */
+export function PageDeck({ children, label }: { children: ReactNode; label?: string }) {
   return (
-    <CanvasStage className="p-[15px]">
-      <div className="grid grid-cols-4 gap-[11px] sm:grid-cols-6 lg:grid-cols-8">{children}</div>
+    // `STAGE_GROW` so a short deck fills the canvas it was given; the vh cap so
+    // a 60-page deck scrolls inside the plate instead of growing the page to
+    // 1500px and pushing the status bar off the bottom.
+    <CanvasStage className={cn(STAGE_GROW, "flex flex-col p-4")}>
+      <div
+        className={cn("min-h-0 flex-1 overflow-y-auto max-h-[min(62vh,720px)]", SCROLL_CLASS)}
+        {...(label ? { role: "listbox", "aria-label": label, "aria-orientation": "horizontal" as const } : {})}
+      >
+        <div className="grid grid-cols-[repeat(auto-fill,minmax(100px,1fr))] gap-3">
+          {children}
+        </div>
+      </div>
     </CanvasStage>
   );
 }
@@ -346,19 +444,19 @@ export function RecordStage({
   const headroom = Math.round(METER_SEGMENTS * 0.82);
 
   return (
-    <div className="relative flex animate-tm-rise items-center justify-center p-9">
-      <div className="flex w-full max-w-[520px] flex-col items-center gap-6">
-        <div className="relative flex size-24 items-center justify-center">
+    <div className="relative flex animate-tm-rise items-center justify-center p-10">
+      <div className="flex w-full max-w-[560px] flex-col items-center gap-[26px]">
+        <div className="relative flex size-[104px] items-center justify-center">
           <span
             className={cn(
               "absolute inset-0 rounded-full border border-accent/35",
               !paused && "animate-tm-pulse",
             )}
           />
-          <span className="absolute inset-[13px] rounded-full border border-accent/20" />
+          <span className="absolute inset-[14px] rounded-full border border-accent/20" />
           <span
             className={cn(
-              "size-10 rounded-full",
+              "size-11 rounded-full",
               paused
                 ? "bg-neutral-700"
                 : "bg-error shadow-[0_0_26px_color-mix(in_srgb,var(--color-error)_50%,transparent)]",
@@ -366,11 +464,11 @@ export function RecordStage({
           />
         </div>
 
-        <div className="font-mono text-[42px] leading-none font-medium text-text-primary">
+        <div className="font-mono text-[44px] leading-none font-medium tracking-[0.02em] text-text-primary">
           {elapsed}
         </div>
 
-        <div className="flex flex-wrap justify-center gap-5 font-mono text-[10.5px] leading-none tracking-[0.06em] whitespace-nowrap text-text-muted">
+        <div className="flex flex-wrap justify-center gap-[22px] font-mono text-[10.5px] leading-none tracking-[0.06em] whitespace-nowrap text-text-muted">
           {meta.map((m, i) => (
             <span key={m} className="contents">
               {i > 0 && <span className="opacity-40">·</span>}
@@ -419,7 +517,9 @@ export function RangeField({
 }) {
   return (
     <div className="flex flex-wrap items-center gap-2.5">
-      <span className={cn(MONO_LABEL, "tracking-[0.1em] text-text-muted")}>RANGE</span>
+      <span className="font-mono text-[10.5px] leading-none tracking-[0.1em] text-text-muted">
+        RANGE
+      </span>
       <input
         type="text"
         value={value}
@@ -434,7 +534,7 @@ export function RangeField({
         }}
         placeholder="1-3, 5, 8-10"
         aria-label="Page range"
-        className="h-[30px] w-[190px] rounded-[7px] border border-border bg-bg-elevated px-2.5 font-mono text-xs leading-none text-text-primary placeholder:text-text-muted focus:border-accent focus:outline-none disabled:opacity-45"
+        className="h-[30px] w-[200px] rounded-[7px] border border-border bg-bg-elevated px-2.5 font-mono text-xs leading-none text-text-primary placeholder:text-text-muted focus:border-accent focus:outline-none disabled:opacity-45"
       />
       <span className="font-body text-[11px] leading-[1.4] text-text-muted">{hint}</span>
     </div>
@@ -451,8 +551,8 @@ const PANE_HEAD =
 
 /** Body styling for whatever sits in a text pane — textarea, pre or div. */
 export const TEXT_PANE_BODY = cn(
-  "m-0 min-h-[15rem] flex-1 resize-none overflow-auto border-0 bg-transparent p-3.5",
-  "font-mono text-[11.5px] leading-[1.8] break-words whitespace-pre-wrap text-neutral-300",
+  "m-0 min-h-[12rem] flex-1 resize-none overflow-auto border-0 bg-transparent p-3.5",
+  "font-mono text-xs leading-[1.75] break-words whitespace-pre-wrap text-neutral-400",
   "placeholder:text-text-muted focus:outline-none",
   SCROLL_CLASS,
 );
@@ -466,12 +566,18 @@ export function lineCount(text: string): number {
 export function TextPane({
   label,
   lines,
+  size,
   action,
   tone = "in",
   children,
 }: {
   label: string;
   lines?: number;
+  /**
+   * Byte count for the header's right-hand readout — the doc prints
+   * "1.2 KB · 41 LINES", not the line count alone.
+   */
+  size?: string;
   /** Rendered at the right of the header, e.g. a copy button. */
   action?: ReactNode;
   tone?: "in" | "out";
@@ -480,13 +586,19 @@ export function TextPane({
   return (
     <div
       className={cn(
-        "flex min-w-0 flex-col",
-        tone === "out" ? "bg-bg-primary" : "bg-bg-secondary",
+        "flex min-h-0 min-w-0 flex-col",
+        tone === "out" ? "bg-bg-primary" : "bg-nocturne-sunken",
       )}
     >
       <div className={cn(PANE_HEAD, tone === "out" ? "text-accent-300" : "text-text-muted")}>
         <span className="truncate">{label}</span>
         <span className="flex flex-none items-center gap-3 text-text-muted">
+          {size && <span>{size}</span>}
+          {size && lines !== undefined && (
+            <span aria-hidden="true" className="opacity-40">
+              ·
+            </span>
+          )}
           {lines !== undefined && <span>{lines} LINES</span>}
           {action}
         </span>
@@ -496,7 +608,14 @@ export function TextPane({
   );
 }
 
-/** The two-up plate the panes sit on; hairlines come from the gap. */
+/**
+ * The two-up plate the panes sit on; hairlines come from the gap.
+ *
+ * `STAGE_GROW` here is what lets a text tool use the canvas it was given: the
+ * plate absorbs the column's leftover height and each pane's body stretches
+ * into it, instead of every developer tool sitting at a 240px floor inside a
+ * 1000px band.
+ */
 export function TextPanes({
   children,
   columns = 2,
@@ -507,6 +626,7 @@ export function TextPanes({
   return (
     <div
       className={cn(
+        STAGE_GROW,
         "grid grid-cols-1 gap-px overflow-hidden rounded-[10px] border border-neutral-800 bg-border",
         columns === 2 && "md:grid-cols-2",
       )}
@@ -527,15 +647,30 @@ export interface StatCell {
 /** The doc's four-up stat strip under an image or document canvas. */
 export function StatStrip({ stats }: { stats: StatCell[] }) {
   return (
-    <div className="grid grid-cols-2 gap-px overflow-hidden rounded-[9px] border border-border bg-border sm:grid-cols-4">
+    <div
+      className={cn(
+        "grid gap-px overflow-hidden rounded-[9px] border border-border bg-border",
+        // A fixed 4-up dropped a 5th stat onto its own row beside three empty
+        // cells. Literal class names so Tailwind's scanner still sees them.
+        // The doc's Phone screen draws a 3-stat strip 3-up rather than 2-up.
+        stats.length === 5
+          ? "grid-cols-2 sm:grid-cols-5"
+          : stats.length === 3
+            ? "grid-cols-3"
+            : "grid-cols-2 sm:grid-cols-4",
+      )}
+    >
       {stats.map((s) => (
-        <div key={s.label} className="flex flex-col gap-[5px] bg-bg-primary px-[13px] py-2.5">
-          <span className="font-mono text-[9.5px] leading-none tracking-[0.12em] text-text-muted">
+        <div
+          key={s.label}
+          className="flex flex-col gap-[5px] bg-bg-primary px-2.5 py-[9px] lg:px-3.5 lg:py-[11px]"
+        >
+          <span className="font-mono text-[9px] leading-none tracking-[0.12em] text-text-muted lg:text-[9.5px]">
             {s.label}
           </span>
           <span
             className={cn(
-              "font-mono text-[15px] leading-none font-medium",
+              "font-mono text-[13px] leading-none font-medium lg:text-[15px]",
               s.tone === "ok" && "text-success",
               s.tone === "neutral" && "text-neutral-300",
               (s.tone ?? "accent") === "accent" && "text-accent-300",
@@ -572,8 +707,8 @@ export function CodeBlock({
       )}
       <pre
         className={cn(
-          "m-0 overflow-auto rounded-[9px] border border-neutral-800 bg-bg-secondary px-3.5 py-3",
-          "font-mono text-[11.5px] leading-[1.7] whitespace-pre-wrap text-neutral-400",
+          "m-0 overflow-auto rounded-[9px] border border-neutral-800 bg-nocturne-sunken p-[13px]",
+          "font-mono text-[11.5px] leading-[1.8] whitespace-pre-wrap text-neutral-400",
           SCROLL_CLASS,
         )}
       >
@@ -754,7 +889,7 @@ export function IconSizes({
             <span className="font-mono text-[10.5px] leading-none font-medium text-neutral-300">
               {px}×{px}
             </span>
-            <span className="max-w-20 text-center font-body text-[9.5px] leading-[1.3] text-text-muted">
+            <span className="max-w-[82px] text-center font-body text-[9.5px] leading-[1.3] text-text-muted">
               {use}
             </span>
           </div>
@@ -782,7 +917,7 @@ export function ColorStage({
   return (
     <div
       className={cn(
-        "relative flex min-h-[16rem] items-center justify-center overflow-hidden rounded-[10px] border border-neutral-800",
+        "relative flex h-[clamp(16rem,calc(100vh_-_28rem),40rem)] items-center justify-center overflow-hidden rounded-[10px] border border-neutral-800",
         checkered &&
           "bg-[#e4e7f5] bg-[repeating-conic-gradient(#161826_0%_25%,#e4e7f5_0%_50%)] bg-[length:26px_26px]",
         className,
@@ -812,6 +947,7 @@ export function CompareStage({
   onSplitChange,
   busy,
   caption,
+  className,
 }: {
   beforeUrl: string | null;
   afterUrl: string | null;
@@ -822,6 +958,7 @@ export function CompareStage({
   onSplitChange: (value: number) => void;
   busy?: boolean;
   caption?: string;
+  className?: string;
 }) {
   const BADGE =
     "absolute top-3 rounded-sm bg-[rgba(12,14,23,.72)] px-[7px] py-1 font-mono text-[9.5px] leading-none font-medium tracking-[0.12em]";
@@ -896,7 +1033,18 @@ export function CompareStage({
   const mode = showTabs ? view : "split";
 
   return (
-    <div className="relative min-h-[18rem] overflow-hidden rounded-[10px] border border-neutral-800 bg-[#0c0e17]">
+    <div
+      className={cn(
+        // The doc's plate is `flex:1` in the canvas column, not a viewport
+        // clamp: it takes the height the column has. The clamp survives as the
+        // floor, which is what the column falls back to below `xl` where it
+        // has no definite height of its own.
+        "relative overflow-hidden rounded-[10px] border border-neutral-800 bg-[#0c0e17]",
+        STAGE_GROW,
+        "min-h-[clamp(18rem,calc(100vh_-_28rem),40rem)]",
+        className,
+      )}
+    >
       {mode === "side" ? (
         <div className="absolute inset-0 grid grid-cols-2 gap-px">
           <div className="relative">
@@ -945,7 +1093,7 @@ export function CompareStage({
 
       {showTabs && (
         /* z-10 keeps the tabs clickable above the full-stage split-drag input. */
-        <div className="absolute top-3 left-1/2 z-10 flex -translate-x-1/2 items-center gap-px overflow-hidden rounded-md border border-neutral-800 bg-[rgba(12,14,23,.72)]">
+        <div className="absolute top-3 left-1/2 z-10 flex -translate-x-1/2 items-center gap-1 rounded-[7px] border border-border bg-[rgba(12,14,23,.72)] p-[3px]">
           {(
             [
               ["split", "SPLIT"],
@@ -959,10 +1107,10 @@ export function CompareStage({
               aria-pressed={view === value}
               onClick={() => setView(value)}
               className={cn(
-                "cursor-pointer px-2 py-1.5 font-mono text-[9px] leading-none font-medium tracking-[0.1em] transition-colors duration-150",
+                "cursor-pointer rounded-[5px] px-2.5 py-1 font-mono text-[10.5px] leading-none font-medium transition-colors duration-150",
                 "focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-accent",
                 view === value
-                  ? "bg-accent/15 text-accent-200"
+                  ? "bg-accent/18 text-accent-300"
                   : "text-text-muted hover:text-neutral-300",
               )}
             >
@@ -1013,7 +1161,7 @@ export interface QueueRow {
   state: "DONE" | "RUNNING" | "QUEUED" | "FAILED";
 }
 
-const QUEUE_GRID = "grid grid-cols-[26px_1fr_88px_88px_110px_70px] gap-3";
+const QUEUE_GRID = "grid grid-cols-[26px_1fr_92px_92px_120px_74px] gap-3";
 
 /** The doc's batch queue: one row per file, with progress and state. */
 export function QueueTable({ rows, footnote }: { rows: QueueRow[]; footnote?: string }) {
@@ -1040,7 +1188,7 @@ export function QueueTable({ rows, footnote }: { rows: QueueRow[]; footnote?: st
               key={`${r.name}-${i}`}
               className={cn(
                 QUEUE_GRID,
-                "items-center border-b border-border px-3.5 py-[11px] font-body text-xs leading-none last:border-b-0",
+                "items-center border-b border-text-primary/6 px-3.5 py-[11px] font-body text-xs leading-none last:border-b-0",
               )}
             >
               <span className="font-mono text-[10.5px] text-text-muted">
@@ -1049,10 +1197,10 @@ export function QueueTable({ rows, footnote }: { rows: QueueRow[]; footnote?: st
               <span className="truncate text-neutral-300">{r.name}</span>
               <span className="text-right font-mono text-[11px] text-text-muted">{r.inSize}</span>
               <span className="text-right font-mono text-[11px] text-accent-300">{r.outSize}</span>
-              <span className="block h-[3px] overflow-hidden rounded-sm bg-neutral-800">
+              <span className="block h-[3px] overflow-hidden rounded-[2px] bg-neutral-800">
                 <span
                   className={cn(
-                    "block h-full rounded-sm",
+                    "block h-full rounded-[2px] transition-[width] duration-[400ms] ease-out",
                     r.state === "FAILED"
                       ? "bg-error"
                       : r.pct === 100
@@ -1108,33 +1256,35 @@ export function DocCard({
   draggableProps?: Record<string, unknown>;
 }) {
   return (
-    <div className="flex w-[166px] flex-none flex-col gap-2">
+    <div className="flex w-44 flex-none flex-col gap-[9px]">
       <div
         {...draggableProps}
-        className="relative h-[214px] cursor-grab overflow-hidden rounded-lg border border-neutral-800 bg-[linear-gradient(170deg,#f3f5fe_0%,#cfd3e5_100%)] shadow-[0_8px_22px_rgba(0,0,0,.4)] active:cursor-grabbing"
+        className="relative h-[228px] cursor-grab overflow-hidden rounded-md border border-neutral-800 bg-[linear-gradient(170deg,#f3f5fe_0%,#cfd3e5_100%)] shadow-[0_8px_22px_rgba(0,0,0,.4)] active:cursor-grabbing"
       >
         {thumb ? (
           // A blob: URL — next/image can't optimise it under output: "export",
           // so this reports the same no-img-element warning as the other
-          // preview surfaces (FilePreview, VideoToGifUI). Left as-is for
+          // preview surfaces (VideoToGifUI). Left as-is for
           // consistency with them.
           <img src={thumb} alt={name} className="size-full object-cover" />
         ) : (
-          <div className="absolute inset-x-[13px] top-[15px] flex flex-col gap-[5px]">
-            <div className="h-[7px] w-[62%] rounded-sm bg-[#75798c]" />
-            <div className="h-[3px] w-full rounded-sm bg-[#b2b6ca]" />
-            <div className="h-[3px] w-[94%] rounded-sm bg-[#b2b6ca]" />
-            <div className="h-[3px] w-[71%] rounded-sm bg-[#b2b6ca]" />
+          <div className="absolute inset-x-3.5 top-4 flex flex-col gap-[5px]">
+            <div className="h-[7px] w-[62%] rounded-[2px] bg-[#75798c]" />
+            <div className="h-[3px] w-full rounded-[2px] bg-[#b2b6ca]" />
+            <div className="h-[3px] w-[94%] rounded-[2px] bg-[#b2b6ca]" />
+            <div className="h-[3px] w-[98%] rounded-[2px] bg-[#b2b6ca]" />
+            <div className="h-[3px] w-[71%] rounded-[2px] bg-[#b2b6ca]" />
             <div className="mt-1.5 h-8 w-full rounded-[3px] bg-[#cfd3e5]" />
-            <div className="mt-1 h-[3px] w-[88%] rounded-sm bg-[#b2b6ca]" />
-            <div className="h-[3px] w-[60%] rounded-sm bg-[#b2b6ca]" />
+            <div className="mt-1 h-[3px] w-[88%] rounded-[2px] bg-[#b2b6ca]" />
+            <div className="h-[3px] w-[96%] rounded-[2px] bg-[#b2b6ca]" />
+            <div className="h-[3px] w-[60%] rounded-[2px] bg-[#b2b6ca]" />
           </div>
         )}
-        <span className="absolute top-[9px] left-[9px] size-5 rounded-[5px] bg-bg-primary text-center font-mono text-[10.5px] leading-5 font-medium text-accent-300">
+        <span className="absolute top-2.5 left-2.5 size-5 rounded-[5px] bg-bg-primary text-center font-mono text-[10.5px] leading-5 font-medium text-accent-300">
           {index}
         </span>
         {badge && (
-          <span className="absolute right-[9px] bottom-[9px] rounded-sm bg-[rgba(22,24,38,.82)] px-1.5 py-1 font-mono text-[9.5px] leading-none font-medium text-neutral-300">
+          <span className="absolute right-2.5 bottom-2.5 rounded-sm bg-[rgba(22,24,38,.82)] px-1.5 py-1 font-mono text-[9.5px] leading-none font-medium text-neutral-300">
             {badge}
           </span>
         )}
@@ -1143,7 +1293,7 @@ export function DocCard({
             type="button"
             onClick={onRemove}
             aria-label={`Remove ${name}`}
-            className="absolute top-[9px] right-[9px] cursor-pointer rounded-[5px] bg-[rgba(22,24,38,.82)] px-1.5 py-1 font-mono text-[9.5px] leading-none text-neutral-300 transition-colors hover:text-error"
+            className="absolute top-2.5 right-2.5 cursor-pointer rounded-[5px] bg-[rgba(22,24,38,.82)] px-1.5 py-1 font-mono text-[9.5px] leading-none text-neutral-300 transition-colors hover:text-error"
           >
             ✕
           </button>
@@ -1162,6 +1312,6 @@ export function DocCard({
 /** The horizontal strip the document cards live on. */
 export function DocStrip({ children }: { children: ReactNode }) {
   return (
-    <div className={cn("flex gap-[13px] overflow-x-auto pb-1.5", SCROLL_CLASS)}>{children}</div>
+    <div className={cn("flex gap-[14px] overflow-x-auto pb-1.5", SCROLL_CLASS)}>{children}</div>
   );
 }

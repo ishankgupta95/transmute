@@ -28,6 +28,7 @@ await build({
     "src/lib/workers/audio-encode.worker.ts",
     "src/lib/workers/pdf.worker.ts",
     "src/lib/workers/regex.worker.ts",
+    "src/lib/workers/hash.worker.ts",
   ],
   outdir: "public/workers",
   bundle: true,

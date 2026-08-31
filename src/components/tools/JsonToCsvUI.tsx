@@ -2,7 +2,6 @@
 
 import { useCallback, useState } from "react";
 import { ErrorMessage } from "@/components/tools/ErrorMessage";
-import { copyText } from "@/lib/utils/clipboard";
 import { triggerDownload } from "@/lib/utils/download";
 import {
   ToolActions,
@@ -17,6 +16,9 @@ import {
   TextPane,
   TextPanes,
 } from "@/components/tools/ToolCanvas";
+import { CANVAS_COLUMN } from "@/components/workspace/shared";
+import { useCopied } from "@/hooks/useCopied";
+import { formatFileSize } from "@/lib/utils/file-helpers";
 
 /** Flatten nested objects into dot-notation keys (address.city, etc.). */
 function flatten(
@@ -78,7 +80,7 @@ export function JsonToCsvUI() {
   const [output, setOutput] = useState("");
   const [shape, setShape] = useState<{ rows: number; cols: number } | null>(null);
   const [error, setError] = useState("");
-  const [copied, setCopied] = useState(false);
+  const { copied, copy } = useCopied();
 
   const handleConvert = useCallback(() => {
     setError("");
@@ -95,13 +97,8 @@ export function JsonToCsvUI() {
   }, [input]);
 
   const handleCopy = useCallback(() => {
-    copyText(output).then((ok) => {
-      if (ok) {
-        setCopied(true);
-        setTimeout(() => setCopied(false), 2000);
-      }
-    });
-  }, [output]);
+    void copy(output);
+  }, [copy, output]);
 
   const handleDownload = useCallback(() => {
     const blob = new Blob([output], { type: "text/csv" });
@@ -111,9 +108,13 @@ export function JsonToCsvUI() {
   return (
     <>
       {/* ── Canvas: the doc's two-up IN / OUT panes ────────── */}
-      <div className="min-w-0 space-y-[13px]">
+      <div className={CANVAS_COLUMN}>
         <TextPanes columns={output ? 2 : 1}>
-          <TextPane label="Input JSON Array" lines={lineCount(input)}>
+          <TextPane
+            label="Input JSON Array"
+            lines={lineCount(input)}
+            size={formatFileSize(new Blob([input]).size)}
+          >
             <textarea
               value={input}
               onChange={(e) => setInput(e.target.value)}
@@ -128,6 +129,7 @@ export function JsonToCsvUI() {
               tone="out"
               label="CSV Output"
               lines={lineCount(output)}
+              size={formatFileSize(new Blob([output]).size)}
               action={
                 <>
                   <button onClick={handleCopy} className="cursor-pointer text-accent transition-colors hover:text-accent-hover">

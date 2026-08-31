@@ -30,6 +30,54 @@ export function waitForReady(video: HTMLVideoElement): Promise<void> {
 }
 
 /**
+ * The real duration of a loaded video, recovering it when the container does
+ * not declare one.
+ *
+ * A MediaRecorder WebM written with a timeslice — exactly what Transmute's own
+ * /screen-recorder produces (`recorder.start(1000)`) — carries no Duration
+ * element, so the browser reports `Infinity` forever. Seeking past the end
+ * forces the demuxer to walk the clusters and resolve the real value, which it
+ * then announces with `durationchange`.
+ *
+ * Must be called AFTER `waitForReady` (it seeks, which needs a loaded element)
+ * and BEFORE `playAndExtractFrames` (which drives `currentTime` itself). The
+ * playhead is put back to 0 before this resolves.
+ *
+ * Falls back to whatever the element reports after `timeoutMs` — callers still
+ * guard on a non-finite result, which is now the genuine "unreadable" case.
+ */
+export function resolveDuration(video: HTMLVideoElement, timeoutMs = 5000): Promise<number> {
+  if (Number.isFinite(video.duration) && video.duration > 0) {
+    return Promise.resolve(video.duration);
+  }
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (value: number) => {
+      if (settled) return;
+      settled = true;
+      video.removeEventListener("durationchange", onDurationChange);
+      clearTimeout(timer);
+      resolve(value);
+    };
+    const onDurationChange = () => {
+      if (!Number.isFinite(video.duration) || video.duration <= 0) return;
+      const resolved = video.duration;
+      // The probe seek left the playhead past the end; rewind before any
+      // caller starts walking frames.
+      try { video.currentTime = 0; } catch { /* element may not be seekable */ }
+      finish(resolved);
+    };
+    const timer = setTimeout(() => finish(video.duration), timeoutMs);
+    video.addEventListener("durationchange", onDurationChange);
+    try {
+      video.currentTime = 1e101;
+    } catch {
+      finish(video.duration);
+    }
+  });
+}
+
+/**
  * Detect whether a file contains an audio track by attempting to decode it.
  * Always closes the AudioContext (browsers cap concurrent contexts at ~6).
  */

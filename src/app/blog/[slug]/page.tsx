@@ -54,11 +54,13 @@ export async function generateMetadata({
   };
 }
 
+/** `3 MAY 2026` — the doc's stamp. UTC so the ISO day never slips a timezone. */
 const formatDate = (iso: string) =>
-  new Date(iso).toLocaleDateString("en-US", {
-    year: "numeric",
-    month: "long",
+  new Date(iso).toLocaleDateString("en-GB", {
     day: "numeric",
+    month: "short",
+    year: "numeric",
+    timeZone: "UTC",
   });
 
 export default async function BlogPostPage({
@@ -73,9 +75,17 @@ export default async function BlogPostPage({
   const { default: PostBody } = await import(`@/content/blog/${slug}.mdx`);
 
   const primaryTool = post.primaryTool ? getToolBySlug(post.primaryTool) : undefined;
+  /*
+    Four rows, and never the tool the TRY IT HERE panel already offers.
+    `relatedTools` doubles as the internal-link audit list, so it stays long in
+    the data and is trimmed here at the render site — untrimmed it put 9 rows on
+    the HEIC article and 25 on the dev-tools one.
+  */
   const relatedTools = post.relatedTools
+    .filter((slug) => slug !== post.primaryTool)
     .map((s) => getToolBySlug(s))
-    .filter((t): t is NonNullable<typeof t> => t !== undefined);
+    .filter((t): t is NonNullable<typeof t> => t !== undefined)
+    .slice(0, 4);
 
   const primaryRoute = (
     primaryTool ? (getWorkspaceTool(primaryTool.slug)?.route ?? "IN → OUT") : "IN → OUT"
@@ -107,7 +117,7 @@ export default async function BlogPostPage({
   };
 
   return (
-    <main className="mx-auto w-full max-w-[1440px] flex-1 px-4 py-11 md:px-11">
+    <main className="mx-auto w-full max-w-[1440px] flex-1 px-4 pt-13 pb-14 md:px-11">
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(articleSchema) }}
@@ -156,7 +166,7 @@ export default async function BlogPostPage({
 
           <article
             id="post-body"
-            className="prose prose-invert max-w-none prose-headings:font-display prose-headings:font-medium prose-headings:tracking-[-0.01em] prose-headings:text-text-primary prose-h2:text-[22px] prose-h2:leading-[1.25] prose-h2:scroll-mt-24 prose-p:font-body prose-p:text-[15px] prose-p:leading-[1.75] prose-p:text-neutral-400 prose-li:text-neutral-400 prose-strong:text-text-primary prose-a:text-accent prose-a:no-underline hover:prose-a:underline hover:prose-a:text-accent-400 prose-blockquote:border-l-2 prose-blockquote:border-accent prose-blockquote:pl-5.5 prose-blockquote:not-italic prose-blockquote:text-neutral-300 prose-code:rounded prose-code:bg-bg-elevated prose-code:px-1.5 prose-code:py-0.5 prose-code:font-mono prose-code:text-sm prose-code:text-accent-300 prose-code:before:content-none prose-code:after:content-none prose-pre:border prose-pre:border-border prose-pre:bg-nocturne-sunken"
+            className="prose prose-invert max-w-none prose-headings:font-display prose-headings:font-medium prose-headings:tracking-[-0.01em] prose-headings:text-text-primary prose-h2:mt-[30px] prose-h2:text-[22px] prose-h2:leading-[1.25] prose-h2:tracking-normal prose-h2:scroll-mt-24 prose-p:font-body prose-p:text-[15px] prose-p:leading-[1.75] prose-p:text-neutral-400 prose-li:text-neutral-400 prose-strong:text-text-primary prose-a:text-accent prose-a:no-underline hover:prose-a:text-accent-400 prose-a:focus-visible:outline-2 prose-a:focus-visible:outline-offset-2 prose-a:focus-visible:outline-accent prose-blockquote:my-1.5 prose-blockquote:border-l-2 prose-blockquote:border-accent prose-blockquote:py-4 prose-blockquote:pl-5.5 prose-blockquote:font-body prose-blockquote:text-base prose-blockquote:leading-[1.65] prose-blockquote:font-normal prose-blockquote:not-italic prose-blockquote:text-neutral-300 prose-code:rounded prose-code:bg-bg-elevated prose-code:px-1.5 prose-code:py-0.5 prose-code:font-mono prose-code:text-sm prose-code:text-accent-300 prose-code:before:content-none prose-code:after:content-none prose-table:my-1.5 prose-table:block prose-table:w-full prose-table:overflow-x-auto prose-table:rounded-[11px] prose-table:border prose-table:border-border prose-thead:border-b prose-thead:border-border prose-thead:bg-[color-mix(in_srgb,var(--color-text)_3%,transparent)] prose-th:px-[18px] prose-th:py-[11px] prose-th:text-left prose-th:font-mono prose-th:text-[9.5px] prose-th:leading-none prose-th:font-medium prose-th:tracking-[0.12em] prose-th:text-text-muted prose-th:uppercase prose-tr:border-b prose-tr:border-border prose-tr:last:border-0 prose-td:px-[18px] prose-td:py-3 prose-td:font-body prose-td:text-[12.5px] prose-td:leading-[1.4] prose-td:text-neutral-400 prose-pre:border prose-pre:border-border prose-pre:bg-nocturne-sunken"
           >
             <PostBody />
           </article>
@@ -175,7 +185,7 @@ export default async function BlogPostPage({
                   {primaryRoute[0]}
                 </div>
                 <div className="relative w-1 flex-none">
-                  <span className="absolute -top-[5px] -bottom-[5px] left-px w-[1.5px] animate-tm-glow bg-accent shadow-[0_0_12px_color-mix(in_srgb,var(--color-accent)_70%,transparent)]" />
+                  <span className="absolute -top-[5px] -bottom-[5px] left-px w-[1.5px] origin-center animate-tm-seam bg-accent shadow-[0_0_12px_color-mix(in_srgb,var(--color-accent)_70%,transparent)] motion-reduce:animate-none" />
                 </div>
                 <div className="flex w-[70px] flex-none items-center rounded-r-[70px] border-[1.5px] border-l-0 border-accent bg-accent/20 px-3 font-mono text-[17px] leading-none font-medium text-accent-200">
                   {primaryRoute[1]}
@@ -188,7 +198,7 @@ export default async function BlogPostPage({
 
               <Link
                 href={`/${primaryTool.slug}`}
-                className="flex h-[34px] items-center justify-center rounded-lg border border-accent font-display text-[13px] leading-none font-medium whitespace-nowrap text-accent transition-colors duration-200 hover:bg-accent/12 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                className="flex h-[34px] items-center justify-center rounded-md border border-accent font-display text-[13px] leading-none font-medium whitespace-nowrap text-accent transition-colors duration-200 hover:bg-accent/12 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
               >
                 Open {primaryTool.name}
               </Link>

@@ -4,7 +4,6 @@ import { useCallback, useState } from "react";
 import { ErrorMessage } from "@/components/tools/ErrorMessage";
 import { DropZone } from "@/components/tools/DropZone";
 import { DownloadButton } from "@/components/tools/DownloadButton";
-import { ProgressBar } from "@/components/tools/ProgressBar";
 import {
   ToolActions,
   ToolAdvanced,
@@ -16,6 +15,11 @@ import {
   ToolResetLink,
   ToolSlider,
 } from "@/components/tools/ToolAside";
+import {
+  ToolControl,
+  ToolControlGroup,
+  ToolProgress,
+} from "@/components/tools/ToolControls";
 import {
   CanvasHeader,
   CompareStage,
@@ -30,8 +34,11 @@ import { ssimFromBlobs } from "@/lib/tools/image-metrics";
 import type { ProcessedResult } from "@/hooks/useFileProcessor";
 import { useBatchProcessor } from "@/hooks/useBatchProcessor";
 import { useObjectUrl } from "@/hooks/useObjectUrl";
+import { useImageDimensions } from "@/hooks/useImageDimensions";
+import { imageMeta } from "@/lib/utils/canvas-meta";
 import { formatFileSize } from "@/lib/utils/file-helpers";
 import { downloadFilesAsZip } from "@/lib/utils/download";
+import { CANVAS_COLUMN } from "@/components/workspace/shared";
 
 interface ImageCompressorUIProps {
   acceptFormats: string;
@@ -65,10 +72,20 @@ export function ImageCompressorUI({
   const [ssimScore, setSsimScore] = useState<number | null>(null);
   const [preset, setPreset] = useState<string>("custom");
 
-  const { items, isProcessing, run, reset: resetBatch } = useBatchProcessor(compressImage);
+  const { items, isProcessing, run, cancel: cancelBatch, reset: resetBatch } =
+    useBatchProcessor(compressImage);
   const results = items.map((item) => item.result);
 
+  // Any change to the settings invalidates the blobs already produced, so the
+  // results go with them and the Compress action comes back. Otherwise the
+  // header reads "Q40" while Download still holds the Q80 file.
+  const invalidate = useCallback(() => {
+    resetBatch();
+    setSsimScore(null);
+  }, [resetBatch]);
+
   const applyPreset = useCallback((id: string) => {
+    invalidate();
     setPreset(id);
     if (id === "email") {
       setMode("target-size");
@@ -78,15 +95,19 @@ export function ImageCompressorUI({
       setQuality(id === "web" ? 0.72 : id === "print" ? 0.92 : 0.98);
     }
     // "custom" applies nothing — it just marks the controls as hand-driven.
-  }, []);
+  }, [invalidate]);
 
   // Any hand edit un-lights the preset chip, so what's lit is what runs.
-  const touch = useCallback(<T,>(setter: (v: T) => void) => {
-    return (v: T) => {
-      setPreset("custom");
-      setter(v);
-    };
-  }, []);
+  const touch = useCallback(
+    <T,>(setter: (v: T) => void) => {
+      return (v: T) => {
+        invalidate();
+        setPreset("custom");
+        setter(v);
+      };
+    },
+    [invalidate],
+  );
 
   const handleFiles = useCallback(
     (incoming: File[]) => {
@@ -133,28 +154,54 @@ export function ImageCompressorUI({
   const singleResultUrl = useObjectUrl(
     files.length === 1 && results[0] ? results[0].blob : null,
   );
+  // The doc's header reads "4032 × 3024 · 4.28 MB", not the byte size alone.
+  const sourceDims = useImageDimensions(files.length === 1 ? files[0] : null);
 
   const totalOriginal = results.reduce((sum, r) => sum + (r?.originalSize ?? 0), 0);
   const totalNew = results.reduce((sum, r) => sum + (r?.newSize ?? 0), 0);
   const successCount = results.filter((r) => r !== null).length;
   const failedCount = items.filter((item) => item.status === "failed").length;
   const firstError = items.find((item) => item.error)?.error ?? null;
+  const runningCount = items.filter((item) => item.status === "running").length;
+  // Averaged over the queue, so the footer bar tracks the whole batch rather
+  // than whichever file happens to be first.
+  const overallPct =
+    items.length > 0
+      ? Math.round(items.reduce((sum, item) => sum + (item.progress ?? 0), 0) / items.length)
+      : null;
 
   if (files.length === 0) {
     return <DropZone accept={acceptFormats} multiple onFiles={handleFiles} />;
   }
 
   const inputTotal = files.reduce((s, f) => s + f.size, 0);
+  const threads = Math.min(poolSize(), files.length);
 
   return (
     <>
       {/* ── Canvas: one file compares, many files queue ────── */}
-      <div className="min-w-0 space-y-[13px]">
-        <CanvasHeader
-          file={files.length === 1 ? files[0].name : `${files.length} files`}
-          meta={formatFileSize(inputTotal)}
-          trailing={mode === "quality" ? `Q${Math.round(quality * 100)}` : `≤ ${targetSizeKb} KB`}
-        />
+      <div className={CANVAS_COLUMN}>
+        {files.length === 1 ? (
+          <CanvasHeader
+            file={files[0].name}
+            meta={imageMeta(sourceDims, formatFileSize(inputTotal))}
+            trailing={mode === "quality" ? `Q${Math.round(quality * 100)}` : `≤ ${targetSizeKb} KB`}
+          />
+        ) : (
+          /*
+            The doc's batch branch heads the canvas with the queue itself:
+            "Queue · 6 FILES · 38.2 MB IN · 4 THREADS" on the left, the live
+            state counts on the right. Every number here is measured — the
+            thread count is the real pool size for this batch.
+          */
+          <CanvasHeader
+            file="Queue"
+            meta={`${files.length} FILES · ${formatFileSize(inputTotal)} IN · ${threads} THREADS`}
+            trailing={`${successCount} DONE · ${runningCount} RUNNING · ${
+              files.length - successCount - runningCount - failedCount
+            } QUEUED`}
+          />
+        )}
 
         {files.length === 1 ? (
           <CompareStage
@@ -186,17 +233,29 @@ export function ImageCompressorUI({
                         : ("QUEUED" as const),
               };
             })}
-            footnote={
-              // Real pool size for this batch — what actually runs in
-              // parallel, never a decorative number.
-              `${successCount} OF ${files.length} DONE · ${Math.min(poolSize(), files.length)} THREADS · RUNS ON THIS DEVICE`
-            }
+            /*
+              The doc's queue footer is ELAPSED · PEAK RSS · WORKER POOL, two
+              thirds of which a browser cannot measure. What stays is the one
+              line that was always true and is not repeated anywhere else on a
+              desktop tool page: the batch runs here.
+            */
+            footnote="RUNS ON THIS DEVICE"
           />
         )}
 
+        {/*
+          The doc's single-file strip is exactly IN · OUT · SAVED · SSIM.
+          `FILES 1` is a cell that says nothing, and carrying it pushed the
+          strip to five columns; it stays for a batch, where it is real.
+          `OUT` is deliberately not the doc's `OUT (EST.)` — this value is
+          measured off the finished blob, so calling it an estimate would
+          understate it.
+        */}
         <StatStrip
           stats={[
-            { label: "FILES", value: String(files.length), tone: "neutral" },
+            ...(files.length === 1
+              ? []
+              : [{ label: "FILES", value: String(files.length), tone: "neutral" as const }]),
             { label: "IN", value: formatFileSize(inputTotal), tone: "neutral" },
             { label: "OUT", value: successCount > 0 ? formatFileSize(totalNew) : "—" },
             {
@@ -214,13 +273,6 @@ export function ImageCompressorUI({
           ]}
         />
 
-        {isProcessing && files.length === 1 && (
-          <div className="space-y-2">
-            <ProgressBar progress={items[0]?.progress ?? null} />
-            <p className="text-sm text-text-muted text-center">Compressing...</p>
-          </div>
-        )}
-
         {firstError && (
           <ErrorMessage
             message={
@@ -234,7 +286,30 @@ export function ImageCompressorUI({
       <ToolAside
         footer={
           <>
-            {successCount > 0 ? (
+            {/* The doc pins the running readout to the rail footer, directly
+                above the button that started it. */}
+            {isProcessing && (
+              <ToolProgress
+                phase="COMPRESSING"
+                percent={overallPct}
+                label="Compressing images"
+              />
+            )}
+            {/*
+              `isProcessing` is tested FIRST. The other order let the primary
+              flip to "Download all (ZIP)" the moment the first file of a batch
+              landed, while the rest were still queued — pressing it handed
+              over a partial set under a label promising all of them, and
+              `downloadFilesAsZip` silently drops the ZIP when only one result
+              exists, so a two-file batch could yield a single bare image.
+            */}
+            {isProcessing ? (
+              // Cancel replaces the disabled primary rather than sitting next
+              // to it: a 200-file queue is the longest job here, and the files
+              // already compressed keep their blobs. The reset link stays
+              // hidden while it runs — nothing labelled Cancel drops the input.
+              <ToolActions primaryLabel="Cancel" onPrimary={cancelBatch} />
+            ) : successCount > 0 ? (
               files.length === 1 && results[0] ? (
                 <DownloadButton
                   blob={results[0].blob}
@@ -245,19 +320,17 @@ export function ImageCompressorUI({
                 <ToolActions primaryLabel="Download all (ZIP)" onPrimary={downloadAll} />
               )
             ) : (
-              <ToolActions
-                primaryLabel={isProcessing ? "Compressing…" : "Compress"}
-                onPrimary={handleCompress}
-                primaryDisabled={isProcessing}
-              />
+              <ToolActions primaryLabel="Compress" onPrimary={handleCompress} />
             )}
-            {successCount > 0 && (
+            {successCount > 0 && !isProcessing && (
               <ToolResetLink onClick={handleCompress} label="COMPRESS AGAIN" />
             )}
-            <ToolResetLink
-              onClick={handleReset}
-              label={results.length > 0 ? "START OVER" : "CLEAR"}
-            />
+            {!isProcessing && (
+              <ToolResetLink
+                onClick={handleReset}
+                label={results.length > 0 ? "START OVER" : "CLEAR"}
+              />
+            )}
           </>
         }
       >
@@ -268,64 +341,70 @@ export function ImageCompressorUI({
           disabled={isProcessing}
         />
 
-        <ToolAsideSection label="MODE">
-          <ToolChoice
-            label="Compression mode"
-            fill
-            disabled={isProcessing}
-            value={mode}
-            onChange={touch(setMode)}
-            options={[
-              { value: "quality" as const, label: "Quality" },
-              { value: "target-size" as const, label: "Target size" },
-            ]}
-          />
-        </ToolAsideSection>
-
-        {mode === "quality" ? (
-          <ToolAsideSection>
-            <ToolSlider
-              label="Quality"
-              display={`${Math.round(quality * 100)}%`}
-              hint="Lower quality means a smaller file. 80% is usually indistinguishable."
-              min={0.1}
-              max={1}
-              step={0.05}
-              value={quality}
-              onChange={touch(setQuality)}
+        {/* One bordered block for every control, as the doc draws it — the
+            per-control sections each carried their own rule and struck the
+            rail through five times. */}
+        <ToolControlGroup>
+          <ToolControl label="MODE">
+            <ToolChoice
+              label="Compression mode"
+              fill
               disabled={isProcessing}
+              value={mode}
+              onChange={touch(setMode)}
+              options={[
+                { value: "quality" as const, label: "Quality" },
+                { value: "target-size" as const, label: "Target size" },
+              ]}
             />
-          </ToolAsideSection>
-        ) : (
-          <ToolAsideSection label="TARGET SIZE">
-            <div className="flex items-center gap-2">
-              <input
-                type="number"
-                min={10}
-                max={10240}
-                value={targetSizeKb}
-                onChange={(e) => touch(setTargetSizeKb)(Number(e.target.value))}
-                aria-label="Target file size in KB"
-                className="w-24 rounded-md border border-border bg-bg-elevated px-3 py-2 text-sm text-text-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+          </ToolControl>
+
+          {mode === "quality" ? (
+            <ToolControl>
+              <ToolSlider
+                label="Quality"
+                display={`${Math.round(quality * 100)}%`}
+                hint="Lower quality means a smaller file. 80% is usually indistinguishable."
+                min={0.1}
+                max={1}
+                step={0.05}
+                value={quality}
+                onChange={touch(setQuality)}
                 disabled={isProcessing}
               />
-              <span className="text-sm text-text-muted">KB</span>
-            </div>
-            <ToolChoice
-              label="Target size preset"
-              disabled={isProcessing}
-              value={targetSizeKb}
-              onChange={touch(setTargetSizeKb)}
-              options={[50, 100, 200, 500, 1024].map((kb) => ({
-                value: kb,
-                label: kb >= 1024 ? `${kb / 1024} MB` : `${kb} KB`,
-              }))}
-            />
-            <span className="font-body text-[10.5px] leading-[1.5] text-text-muted">
-              Quality is binary-searched to land just under the ceiling.
-            </span>
-          </ToolAsideSection>
-        )}
+            </ToolControl>
+          ) : (
+            <ToolControl label="TARGET SIZE">
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  min={10}
+                  max={10240}
+                  value={targetSizeKb}
+                  onChange={(e) => touch(setTargetSizeKb)(Number(e.target.value))}
+                  aria-label="Target file size in KB"
+                  className="w-24 rounded-md border border-border bg-bg-elevated px-3 py-2 text-sm text-text-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                  disabled={isProcessing}
+                />
+                <span className="text-sm text-text-muted">KB</span>
+              </div>
+              <ToolChoice
+                label="Target size preset"
+                fill
+                disabled={isProcessing}
+                value={targetSizeKb}
+                onChange={touch(setTargetSizeKb)}
+                options={[50, 100, 200, 500, 1024].map((kb) => ({
+                  value: kb,
+                  label: kb >= 1024 ? `${kb / 1024} MB` : `${kb} KB`,
+                }))}
+              />
+              <span className="font-body text-[10.5px] leading-[1.5] text-text-muted">
+                Quality is binary-searched to land just under the ceiling.
+              </span>
+            </ToolControl>
+          )}
+        </ToolControlGroup>
 
         {/* Engine facts, all true of image-compress.ts as written. */}
         <ToolAdvanced
@@ -338,11 +417,22 @@ export function ImageCompressorUI({
         />
 
         <ToolAsideSection label="OUTPUT">
+          {/*
+            `ToolOutput` accents its SECOND row, so the measured output size
+            sits there — the doc highlights what comes out, not what went in.
+            `Dimensions` is the doc's third row and a fact the tool already
+            holds: compression re-encodes at the source size, so these are the
+            output's dimensions too.
+          */}
           <ToolOutput
             rows={[
-              ["Files", String(files.length)],
-              ["In", formatFileSize(inputTotal)],
+              files.length === 1
+                ? (["File", files[0].name] as [string, string])
+                : (["Files", String(files.length)] as [string, string]),
               ["Out", results.length > 0 ? formatFileSize(totalNew) : "—"],
+              ...(files.length === 1 && sourceDims
+                ? [["Dimensions", `${sourceDims.w} × ${sourceDims.h}`] as [string, string]]
+                : [["In", formatFileSize(inputTotal)] as [string, string]]),
               [
                 "Saved",
                 totalOriginal > totalNew

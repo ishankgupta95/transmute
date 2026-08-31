@@ -166,4 +166,100 @@ describe("useBatchProcessor", () => {
     await act(async () => second);
     expect(result.current.items.every((i) => i.status === "done")).toBe(true);
   });
+
+  /*
+    A 200-file queue was the longest job on the site and had no stop button —
+    the hook exposed only `reset`, which throws the finished blobs away too.
+  */
+  describe("cancel", () => {
+    it("stops the run, keeps finished rows, and returns un-run rows to queued", async () => {
+      let release: (() => void) | null = null;
+      const gate = new Promise<void>((r) => {
+        release = r;
+      });
+      const processFn = vi.fn(
+        async (f: File, _o: unknown, ctx: FileProcessorContext) => {
+          ctx.onProgress(10);
+          if (f.name === "fast.png") return res({ fileName: "fast.jpg" });
+          await gate;
+          return res({ fileName: "slow.jpg" });
+        },
+      );
+
+      const { result } = renderHook(() => useBatchProcessor(processFn));
+
+      let pending: Promise<unknown> | undefined;
+      await act(async () => {
+        pending = result.current.run([file("fast.png"), file("slow.png")], {});
+        // Let the fast file settle while the slow one is still gated.
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      expect(result.current.items[0].status).toBe("done");
+      expect(result.current.isProcessing).toBe(true);
+
+      act(() => {
+        result.current.cancel();
+      });
+
+      expect(result.current.isProcessing).toBe(false);
+      // The file that finished keeps its blob — cancelling should not throw
+      // away work the user already paid for.
+      expect(result.current.items[0].status).toBe("done");
+      expect(result.current.items[0].result).not.toBeNull();
+      // Nothing is left spinning against an aborted pool.
+      expect(result.current.items.some((i) => i.status === "running")).toBe(false);
+      expect(result.current.items[1]).toEqual({
+        status: "queued",
+        progress: 0,
+        result: null,
+        error: null,
+      });
+
+      release!();
+      await act(async () => {
+        await pending;
+      });
+      // The cancelled run must not write state after the fact.
+      expect(result.current.items[1].status).toBe("queued");
+      expect(result.current.isProcessing).toBe(false);
+    });
+
+    it("aborts the signal handed to the processor", async () => {
+      let seen: AbortSignal | null = null;
+      const processFn = vi.fn(
+        async (_f: File, _o: unknown, ctx: FileProcessorContext) => {
+          seen = ctx.signal;
+          await new Promise((r) => setTimeout(r, 20));
+          return res();
+        },
+      );
+      const { result } = renderHook(() => useBatchProcessor(processFn));
+
+      let pending: Promise<unknown> | undefined;
+      await act(async () => {
+        pending = result.current.run([file("a.png")], {});
+        await Promise.resolve();
+      });
+
+      act(() => {
+        result.current.cancel();
+      });
+      expect(seen!.aborted).toBe(true);
+
+      await act(async () => {
+        await pending;
+      });
+    });
+
+    it("is a no-op when nothing is running", () => {
+      const { result } = renderHook(() => useBatchProcessor(vi.fn()));
+      act(() => {
+        result.current.cancel();
+      });
+      expect(result.current.items).toEqual([]);
+      expect(result.current.isProcessing).toBe(false);
+    });
+  });
 });

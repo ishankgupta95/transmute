@@ -95,11 +95,23 @@ const WORKSHOPS: Record<string, { blurb: string; engine: string; icon: React.Rea
   Every claim here is checked against the actual engine per tool — the design
   doc's seeded table credited FFmpeg with GIF encoding (it's gifenc) and
   undersold its own download. Sizes are the files we actually serve.
+
+  Canvas 2D used to be credited with "every image conversion, compression,
+  resize and crop": resizing is pica's Lanczos3 in both the main-thread
+  (lib/tools/image-resize.ts) and worker (lib/workers/image.worker.ts) paths,
+  and HEIC and TIFF are decoded by heic2any and utif2 before Canvas ever sees a
+  bitmap — so those three have their own rows now. pdf.js did every page
+  thumbnail and every PDF→image render with no row at all; the MuPDF row is
+  the page/document operations only.
 */
 const ENGINES = [
-  { name: "Canvas 2D", handles: "Every image conversion, compression, resize and crop — plus GIF encoding via gifenc", size: "0 KB", when: "BUILT IN" },
-  { name: "MuPDF WASM", handles: "PDF rendering, page thumbnails, compression", size: "10 MB", when: "ON FIRST PDF" },
-  { name: "pdf-lib", handles: "Merge, split, rotate, page numbers", size: "320 KB", when: "ON FIRST PDF" },
+  { name: "Canvas 2D", handles: "Image conversion, compression and crop — plus the frames gifenc quantises into a GIF", size: "0 KB", when: "BUILT IN" },
+  { name: "pica", handles: "Image resizing, Lanczos3 — on the main thread and in the worker", size: "36 KB", when: "ON FIRST RESIZE" },
+  { name: "heic2any", handles: "Decoding iPhone HEIC, which Canvas cannot open", size: "1.3 MB", when: "ON FIRST HEIC" },
+  { name: "utif2", handles: "Decoding TIFF, likewise", size: "96 KB", when: "ON FIRST TIFF" },
+  { name: "MuPDF WASM", handles: "Merge, split, rotate, reorder, page numbers, compression", size: "10 MB", when: "ON FIRST PDF" },
+  { name: "pdf.js", handles: "All PDF rendering — page thumbnails, and PDF to JPG or PNG", size: "1.6 MB", when: "ON PAGE PREVIEW" },
+  { name: "pdf-lib", handles: "Building a PDF out of images", size: "320 KB", when: "ON FIRST PDF" },
   { name: "FFmpeg WASM", handles: "Lossless video trimming, MP3 extraction from video", size: "31 MB", when: "ON FIRST USE" },
   { name: "WebCodecs", handles: "Video compression and WebM→MP4, hardware H.264 encoding", size: "0 KB", when: "BUILT IN" },
   { name: "Web Audio", handles: "Decoding, trimming and merging audio; MP3 encoding via lamejs", size: "0 KB", when: "BUILT IN" },
@@ -141,12 +153,15 @@ export default function Home() {
 
       {/* ── Hero ─────────────────────────────────────────────── */}
       <section className="relative overflow-hidden px-4 pt-16 pb-16 md:px-11 md:pt-24 md:pb-19">
-        <div className="pointer-events-none absolute -top-[140px] left-[180px] h-[420px] w-[620px] animate-tm-glow rounded-full bg-[radial-gradient(circle,color-mix(in_srgb,var(--color-accent)_40%,transparent)_0%,transparent_68%)] blur-[150px]" />
+        {/* The doc's hero glow is tmGlow 11s (0.3 ↔ 0.75); the shared `animate-tm-glow`
+            token is 9s (0.35 ↔ 0.8) and has six other importers, so the duration is
+            corrected here against the same keyframe rather than by retuning the token. */}
+        <div className="pointer-events-none absolute -top-[140px] left-[180px] h-[420px] w-[620px] animate-tm-glow-home rounded-full bg-[radial-gradient(circle,color-mix(in_srgb,var(--color-accent)_40%,transparent)_0%,transparent_68%)] blur-[150px] motion-reduce:animate-none" />
         <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_1px_1px,rgba(233,233,237,.05)_1px,transparent_0)] bg-[length:26px_26px] opacity-45" />
 
         <div className="relative mx-auto grid max-w-[1440px] items-start gap-12 lg:grid-cols-[1fr_420px] lg:gap-18">
           <div className="max-w-[640px]">
-            <div className="mb-7 inline-flex items-center gap-[9px] rounded-md border border-accent/35 px-[11px] py-1.5 font-mono text-[10.5px] leading-none font-medium tracking-[0.14em] whitespace-nowrap text-accent-300">
+            <div className="mb-[30px] inline-flex items-center gap-[9px] rounded-[6px] border border-accent/35 px-[11px] py-1.5 font-mono text-[10.5px] leading-none font-medium tracking-[0.14em] whitespace-nowrap text-accent-300">
               {TOOL_COUNT} TOOLS · 0 SERVERS · 0 ACCOUNTS
             </div>
 
@@ -156,7 +171,7 @@ export default function Home() {
               Not the file&rsquo;s owner.
             </h1>
 
-            <p className="m-0 mb-9 max-w-[470px] font-body text-[17px] leading-[1.65] text-neutral-400">
+            <p className="m-0 mb-[38px] max-w-[470px] font-body text-[17px] leading-[1.65] text-neutral-400">
               Every engine runs inside your tab. There is no upload, because there is
               nowhere to upload to.
             </p>
@@ -171,9 +186,9 @@ export default function Home() {
       <div className={RULE} />
 
       {/* ── Five workshops ───────────────────────────────────── */}
-      <section className="px-4 py-14 md:px-11">
+      <section className="px-4 pt-14 pb-16 md:px-11">
         <div className="mx-auto max-w-[1440px]">
-          <div className="mb-6 flex items-baseline justify-between">
+          <div className="mb-[26px] flex items-baseline justify-between">
             <h2 className="m-0 font-display text-2xl leading-[1.2] font-medium tracking-[-0.02em] text-text-primary">
               Five workshops
             </h2>
@@ -190,10 +205,10 @@ export default function Home() {
                 <Link
                   key={cat.slug}
                   href={`/${cat.slug}`}
-                  className="group relative flex min-h-[186px] flex-col gap-3 rounded-[11px] border border-border p-[18px] pt-5 transition-colors duration-200 hover:border-accent/55 hover:bg-accent/5 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                  className="group relative flex min-h-[186px] flex-col gap-3 rounded-[11px] border border-border p-[18px] pt-5 transition-colors duration-[220ms] hover:border-accent/55 hover:bg-accent/5 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
                 >
                   <div className="flex items-center justify-between">
-                    <span className="flex size-8 items-center justify-center rounded-lg border border-accent/30 text-accent">
+                    <span className="flex size-8 items-center justify-center rounded-md border border-accent/30 text-accent">
                       <svg
                         width="17"
                         height="17"
@@ -279,6 +294,11 @@ export default function Home() {
       {/* ── Reached for most ─────────────────────────────────── */}
       <section className="px-4 py-16 md:px-11">
         <div className="mx-auto grid max-w-[1440px] items-start gap-10 lg:grid-cols-[260px_1fr] lg:gap-14">
+          {/* 74px is the shared "pin clear of the 58px navbar" offset — the
+              hubs, the blog rails and the tool aside all use it. The Home
+              Redesign doc draws this one rail at `sticky;top:82px`, but Site
+              Pages draws the same rail at 74px in all three of its instances,
+              so the docs disagree 3-to-1 and the shared offset wins. */}
           <div className="lg:sticky lg:top-[82px]">
             <h2 className="m-0 mb-3 font-display text-2xl leading-[1.2] font-medium tracking-[-0.02em] text-text-primary">
               Reached for most
@@ -294,7 +314,7 @@ export default function Home() {
               <Link
                 key={p.slug}
                 href={`/${p.slug}`}
-                className="flex items-center gap-4 border-b border-border py-[15px] transition-[padding-left] duration-200 hover:pl-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                className="flex items-center gap-4 border-b border-border py-[15px] transition-[padding-left] duration-[220ms] hover:pl-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
               >
                 <span className="w-5 flex-none font-mono text-[10.5px] leading-none text-text-muted">
                   {String(i + 1).padStart(2, "0")}
@@ -344,7 +364,7 @@ export default function Home() {
               {ENGINES.map((e) => (
                 <div
                   key={e.name}
-                  className={`${ENGINE_GRID} items-center border-b border-border px-[18px] py-3.5 last:border-b-0`}
+                  className={`${ENGINE_GRID} items-center border-b border-border px-[18px] py-3.5`}
                 >
                   <span className="font-mono text-[12.5px] leading-none font-medium text-text-primary">
                     {e.name}
@@ -371,7 +391,7 @@ export default function Home() {
 
       {/* ── Closing ──────────────────────────────────────────── */}
       <section className="px-4 pt-5 pb-22 md:px-11">
-        <div className="relative mx-auto flex max-w-[1440px] flex-col items-start justify-between gap-8 overflow-hidden rounded-[14px] border border-border p-8 md:p-12 lg:flex-row lg:items-center lg:gap-12">
+        <div className="relative mx-auto flex max-w-[1440px] flex-col items-start justify-between gap-8 overflow-hidden rounded-[14px] border border-border p-8 md:px-12 md:py-13 lg:flex-row lg:items-center lg:gap-12">
           <div className="pointer-events-none absolute -bottom-[160px] -left-[60px] h-[320px] w-[480px] rounded-full bg-[radial-gradient(circle,color-mix(in_srgb,var(--color-accent)_28%,transparent)_0%,transparent_70%)] blur-[130px]" />
           <div className="relative max-w-[600px]">
             <h2 className="m-0 mb-3.5 font-display text-[clamp(24px,4vw,32px)] leading-[1.15] font-medium tracking-[-0.025em] text-text-primary">
@@ -382,12 +402,12 @@ export default function Home() {
               link&rdquo;. Pick a tool, drop the file, take the result.
             </p>
           </div>
-          <div className="relative flex w-full flex-wrap gap-2.5 lg:w-auto lg:flex-none lg:flex-nowrap">
+          <div className="relative flex w-full flex-wrap gap-[11px] lg:w-auto lg:flex-none lg:flex-nowrap">
             <Link
               href="/image-tools"
               className="flex h-[42px] items-center rounded-[9px] border border-accent px-5.5 font-display text-sm leading-none font-medium whitespace-nowrap text-accent transition-colors duration-200 hover:bg-accent/12 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
             >
-              Browse all {TOOL_COUNT} tools
+              Browse image tools
             </Link>
             <Link
               href="/privacy"

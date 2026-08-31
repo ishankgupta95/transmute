@@ -41,6 +41,20 @@ export type ProcessingContext = Partial<FileProcessorContext>;
  * still type-checks — but a long-running one should honour the signal, since
  * `cancel()` is the only way a user can stop a 25 MB video job.
  */
+/**
+ * The analytics label for a processed file: its extension, and never more.
+ *
+ * `"board minutes".split(".").pop()` is the WHOLE STRING, so a file with no
+ * extension used to send its full name to Google Analytics — which the privacy
+ * page explicitly promises never happens. Anything that is not a short
+ * alphanumeric extension is reported as "unknown".
+ */
+export function fileExtensionLabel(name: string): string {
+  if (!name.includes(".")) return "unknown";
+  const ext = (name.split(".").pop() ?? "").toLowerCase();
+  return /^[a-z0-9]{1,5}$/.test(ext) ? ext : "unknown";
+}
+
 export function useFileProcessor<TOptions>(
   processFn: (
     file: File,
@@ -94,7 +108,7 @@ export function useFileProcessor<TOptions>(
         trackEvent({
           action: "file_processed",
           category: "conversion",
-          label: file.name.split(".").pop()?.toLowerCase() ?? "",
+          label: fileExtensionLabel(file.name),
           value: Math.round(output.newSize / 1024),
         });
       } catch (err) {

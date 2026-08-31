@@ -76,6 +76,15 @@
 | About: capabilities grid + "Built by Ishank" link | ✓ | Verified 2026-08-09: tagged capability grid + ishank.dev link present. |
 | Privacy: green shield card "Your files never leave your device." + numbered sections | ✓ | App copy is *more honest* than the doc (see cross-cutting row). |
 | 404: "Nothing converts to this." + search + five hub links | ✓ | E2E asserts branded copy; count derives. |
+| Hub row copy: doc's one-clause editorial line | ✅ | 2026-08-30: `Tool.hubLine` (optional) added and seeded verbatim from the doc's `utilities`/`converters` arrays for all 22 image tools; the hub renders `hubLine ?? description`, so the other four hubs still show the (clamped) SEO blurb until the owner commissions lines for them. One doc string corrected for honesty: the favicon generator ships **eight** assets (6 PNGs + .ico + manifest), not the doc's "Seven". |
+| Hub row names: doc's short forms | ✅ | 2026-08-30: the hub now renders `getWorkspaceTool(slug)?.name ?? tool.name`, which already carried the doc's `Resize Image` / `Crop Image` / `EXIF Viewer`. Registry names are untouched — 11 tools get a shorter hub label, matching the workspace rail. |
+| Blog index: post order, tags, index blurbs | ✅ | 2026-08-30: sort is `date, then longest read` (every post shares 2026-05-03, so the date sort alone was a no-op and numbering fell back to registry order) — reproduces the doc's exact 01–08. `BlogPost.indexBlurb` seeded from the doc; `BlogPost.tag` overrides the derived label on the two `IMAGE FORMATS` posts and the `PRIVACY` one, and `postTag()` no longer falls back to `relatedTools[0]` before the privacy keyword check. Dates are the doc's `3 MAY 2026` (UTC-pinned) and the tile is the coarser `MAY 2026`. |
+| Blog post: `ALSO MENTIONED` is four rows | ✅ | 2026-08-30: trimmed at the render site (`relatedTools` stays long — it is also the internal-link audit list). Was 9 rows on HEIC (duplicating the TRY IT HERE tool) and 25 on the dev-tools post. |
+| Blog post: `TRY IT HERE` on every post | ✅ | 2026-08-30: the three posts without a `primaryTool` got one — `modern-image-formats…` → `jpg-to-webp`, `browser-based-developer-tools` → `json-formatter`, `why-browser-based-tools-are-private` → `compress-pdf`. Owner call on which tool each headlines. |
+| Blog post: doc's bordered/rounded comparison table | ⚠ | The `prose-table-*`/`prose-th-*`/`prose-td-*` treatment is in place, but **`remark-gfm` is not installed**, so the GFM tables in `heic-vs-jpg`, `modern-image-formats…` and `video-to-gif-tradeoffs` render as raw `\| --- \| --- \|` paragraph text today. Styling is inert until the plugin lands. The doc's mono/accent value columns cannot come from Markdown at all — that needs an MDX component, flagged not faked. |
+| Focus rings on rails, prose links, about/privacy links | ✅ | 2026-08-30: DS readme's 2px accent `:focus-visible` added to `HubRail`, `ArticleRail`, `prose-a` and the two ishank.dev links. Measured live at 2px / 2px offset / #9184d9 (they transition in over 200ms — read the settled value, not the first frame). |
+| `I HAVE A…` chips are selectable in the doc | ◇ | Format filtering is not a shipped feature; the chips stay static labels rather than faking a filter. |
+| Doc's hub route typography (`HEIC→JPG`) | ◇ | The app keeps ` → ` spacing — it is load-bearing (`blog/[slug]` splits the route on `" → "` for the TRY IT HERE pair). |
 
 ## Logo doc → mark, icons, OG
 
@@ -106,8 +115,63 @@
   Download all ZIP). `resize-image` single-file compare unchanged through the worker path
   (1080×1080 out, 49.4 KB). (Workers were later moved to pre-bundled `public/workers/*.js` —
   Turbopack's PROD build ships raw `.ts` for worker URLs; see plan.md Phase 4 deviation.)
+- **2026-08-19 — the systematic sweep, automated.** All 85 routes at 1440 / 768 / 375:
+  **zero horizontal overflow, zero console errors** at every width. Now a standing spec
+  (`e2e/meta/responsive-sweep.spec.ts`), not a one-off eyeball pass, with a negative control
+  proving the detector goes red. Accessible-name / alt / heading-order probe across every page
+  archetype: clean. Theme tokens re-verified against the Nocturne design system via DesignSync —
+  `bg #161826`, `surface #232532`, `text #e9e9ed`, `accent #9184d9`, radius 8, Inter heading+body
+  all match `theme.json` exactly. **One new deviation to record:** `theme.json` specifies
+  `iconSet: "phosphor"`; the app ships `lucide-react` throughout. Kept — the six screen docs were
+  drawn with the app's own icons and swapping icon libraries app-wide buys nothing but churn.
 - 2026-08-10 (Phase 4): `/workspace` verified live — `?tool=png-to-jpg` deep link selects in
   rail, real PNG→JPG conversion + Download inside the shell, rail pick to JSON Formatter updates
   URL + remounts (stale state gone, `TOOL 43 OF 67` status), RECENT OUTPUT appears in the rail
   after a real download (`recent-test.jpg — 1.1 KB · JUST NOW`). Route load pulls no tool libs;
   picking Crop Image fetched only its own chunks (bundle-check ✓).
+- **2026-08-29 — the canvas geometry pass.** The owner's report ("the preview window is too small;
+  it does not follow the design religiously") was reproduced and measured before anything was
+  changed: with real media loaded, every media stage sat at **788×288 at 1440×900, 1920×1080 AND
+  2560×1400** while the canvas band grew 742 → 922 → 1242. The `lg:min-h-[calc(100vh-58px)]` the
+  shell reserves was decorative — `lg:justify-center` centred an intrinsically-sized surface,
+  `items-start` shrink-wrapped both rows, and all 52 tool UIs opened their canvas with `space-y-*`
+  (a block), so no child could ever consume the leftover height. Worse, crossing into `lg` made the
+  preview *smaller*: the canvas/controls split fired at 1024, the same width the 230px sibling rail
+  appears, taking the video from 702×288 at 768 to **372×279 at 1024** and PDF tiles from 99×133 to
+  **33×44**. Fixed as a system, not per tool — `TOOL_SURFACE` / `CANVAS_COLUMN` / `STAGE_GROW` /
+  `STAGE_MEDIA` in `components/workspace/shared.ts`, the split moved to `xl`, `overflow-hidden`
+  dropped from the band (it had also been silently disabling the control rail's `sticky`). Re-measured
+  at 1024 / 1440 / 1920 / 2560: video **816×685 @1920, 816×980 @2560**, json-formatter's pane
+  **192 → 963px**, PDF tiles **99×133** (103×137 at 1024), crop frame **818×500 → 816×778**, and
+  zero horizontal overflow at every width. Full detail and the 117-finding sweep it came with are in
+  `plan.md` Phase 7.
+- **2026-08-30 — Site Pages re-run against `spec-site.md`.** Worked the extractor's 34 rows end to
+  end. Landed: S-01 (hub intro copy), S-03/S-22/S-23/S-29/S-31 (focus rings), S-06/S-12 (220ms hover
+  slide), S-07 (short hub names), S-08 (22 `hubLine`s), S-11/S-13 (`3 MAY 2026`, `MAY 2026`),
+  S-14/S-15/S-16/S-17 (blurbs, order, tags), S-18/S-27/S-30 (page padding), S-19 (h2 `mt-30px`, no
+  h2 tracking), S-20 (blockquote type), S-21 (table treatment — inert, see the ⚠ row above),
+  S-24 (`animate-tm-seam`, the 2.4s keyframe the theme already defined), S-25 (three `primaryTool`s),
+  S-26 (four `ALSO MENTIONED` rows), S-33 (404 field 48px/10px/15px/11px/14px/flat — measured
+  exactly), S-34 (`Image tools`, sentence case). Already applied by the previous implementer and
+  left alone: S-02, S-04, S-32, and the hub-row/blog-row focus rings. Structural sweep of
+  `/image-tools`, `/pdf-tools`, `/blog`, two posts, `/about`, `/privacy` and the 404 at
+  **375 / 768 / 1024 / 1440 / 1920**: zero horizontal overflow, zero page errors. Gates: tsc ✓ ·
+  eslint 0 err / 2 warn · vitest 1629 ✓ 67 skipped · playwright default 228/228 ✓.
+- **2026-08-29 — a caveat on this entry and on the 2026-08-19 one above.** The 2026-08-19 sweep
+  verified theme tokens "against the Nocturne design system via DesignSync". **DesignSync was NOT
+  available on 2026-08-29** — it needs an authorization only `/design-login` can grant, and that
+  cannot run in a non-interactive session. Everything in the geometry pass was therefore checked
+  against *this file* plus live measurement, not against the six docs themselves. ⚠ OPEN: re-run the
+  geometry rows against `Transmute - All Tools.dc.html` and the `_ds` bundle once someone has run
+  `/design-login`. The measurements above are facts about the app; whether the doc asks for exactly
+  these proportions is the part that is still unverified.
+- **2026-08-30 — the docs themselves, at last.** The owner exported the Claude Design handoff
+  bundle to `~/Desktop/transmute-ui-mockups/`, so the ⚠ OPEN caveat recorded above is now
+  CLOSED: six extractors read all six `.dc.html` docs plus the `_ds` bundle end to end and
+  diffed them against the code (173 diffs; specs kept alongside this pass). The Phase 7
+  geometry survived the comparison except where the doc carried real numbers we had guessed:
+  the control rail is a flat **340px** (the `clamp(300px,24%,368px)` we shipped never exceeded
+  its 300px floor at any width up to 1920), the canvas gap is **14px**, the spec panel is a
+  **250px key/value column** beside the h1 rather than four tiles across the measure, and the
+  Nocturne **48px fade-out rule** was missing entirely. Fonts and the radius scale were already
+  exact. Full detail in `plan.md` Phase 8.

@@ -1,9 +1,8 @@
 "use client";
 
-import { useCallback, useState } from "react";
-import { md5 as md5Lib } from "js-md5";
+import { useCallback, useRef, useState } from "react";
 import { DropZone } from "@/components/tools/DropZone";
-import { copyText } from "@/lib/utils/clipboard";
+import { ProgressBar } from "@/components/tools/ProgressBar";
 import {
   ToolAside,
   ToolAsideSection,
@@ -19,48 +18,56 @@ import {
   TextPane,
   TextPanes,
 } from "@/components/tools/ToolCanvas";
+import type { Hashes } from "@/lib/tools/hash-digest";
+import { computeHashesGuarded } from "@/lib/workers/hash-client";
+import { CANVAS_COLUMN } from "@/components/workspace/shared";
+import { useCopied } from "@/hooks/useCopied";
+import { formatFileSize } from "@/lib/utils/file-helpers";
 
-async function sha(algo: string, data: ArrayBuffer): Promise<string> {
-  const hash = await crypto.subtle.digest(algo, new Uint8Array(data));
-  return Array.from(new Uint8Array(hash))
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
-}
-
-interface Hashes {
-  md5: string;
-  sha1: string;
-  sha256: string;
-  sha512: string;
-}
+const ALGOS = ["md5", "sha1", "sha256", "sha512"] as const;
 
 export function HashGeneratorUI() {
   const [mode, setMode] = useState<"text" | "file">("text");
   const [input, setInput] = useState("");
   const [fileName, setFileName] = useState("");
   const [hashes, setHashes] = useState<Hashes | null>(null);
-  const [copied, setCopied] = useState<string | null>(null);
+  const [progress, setProgress] = useState<number | null>(null);
+  const { copied, copy } = useCopied<string>();
 
-  const computeHashes = useCallback(async (data: ArrayBuffer) => {
-    const [s1, s256, s512] = await Promise.all([
-      sha("SHA-1", data),
-      sha("SHA-256", data),
-      sha("SHA-512", data),
-    ]);
-    const bytes = new Uint8Array(data);
-    const m = md5Lib(bytes);
-    setHashes({ md5: m, sha1: s1, sha256: s256, sha512: s512 });
+  /*
+    Text mode fires a run per keystroke, so an earlier, slower run can land
+    after a later one and leave digests of text the user has already replaced.
+    A monotonic id makes the last run the only one allowed to write.
+  */
+  const runIdRef = useRef(0);
+
+  const run = useCallback(async (data: ArrayBuffer) => {
+    const id = ++runIdRef.current;
+    setProgress(0);
+    try {
+      const result = await computeHashesGuarded(data, (pct) => {
+        if (runIdRef.current === id) setProgress(pct);
+      });
+      if (runIdRef.current !== id) return;
+      setHashes(result);
+    } finally {
+      if (runIdRef.current === id) setProgress(null);
+    }
   }, []);
 
   const handleTextChange = useCallback(
     async (text: string) => {
       setInput(text);
       setHashes(null);
-      if (!text) return;
-      const data = new TextEncoder().encode(text).buffer as ArrayBuffer;
-      await computeHashes(data);
+      if (!text) {
+        // Bump the id so an in-flight run cannot repopulate an empty input.
+        runIdRef.current++;
+        setProgress(null);
+        return;
+      }
+      await run(new TextEncoder().encode(text).buffer as ArrayBuffer);
     },
-    [computeHashes],
+    [run],
   );
 
   const handleFiles = useCallback(
@@ -69,28 +76,31 @@ export function HashGeneratorUI() {
       if (!f) return;
       setFileName(f.name);
       setHashes(null);
-      const data = await f.arrayBuffer();
-      await computeHashes(data);
+      await run(await f.arrayBuffer());
     },
-    [computeHashes],
+    [run],
   );
 
-  const handleCopy = useCallback((algo: string, value: string) => {
-    copyText(value).then((ok) => {
-      if (ok) {
-        setCopied(algo);
-        setTimeout(() => setCopied(null), 2000);
-      }
-    });
-  }, []);
+  const handleCopy = useCallback(
+    (algo: string, value: string) => {
+      void copy(value, algo);
+    },
+    [copy],
+  );
+
+  const hashing = progress !== null;
 
   return (
     <>
       {/* ── Canvas: the source, then every digest ──────────── */}
-      <div className="min-w-0 space-y-[13px]">
+      <div className={CANVAS_COLUMN}>
         {mode === "text" ? (
           <TextPanes columns={1}>
-            <TextPane label="Input Text" lines={lineCount(input)}>
+            <TextPane
+              label="Input Text"
+              lines={lineCount(input)}
+              size={formatFileSize(new Blob([input]).size)}
+            >
               <textarea
                 value={input}
                 onChange={(e) => handleTextChange(e.target.value)}
@@ -100,25 +110,35 @@ export function HashGeneratorUI() {
               />
             </TextPane>
           </TextPanes>
-        ) : !fileName ? (
-          <DropZone accept="*/*" onFiles={handleFiles} />
         ) : (
-          <CanvasHeader file={fileName} meta="HASHING" />
+          <>
+            {/* The zone stays mounted, as it does in the sibling Base64 tool:
+                swapping it for a header made hashing a SECOND file impossible
+                without toggling the INPUT chip to Text and back. */}
+            <DropZone accept="*/*" onFiles={handleFiles} />
+            {fileName && (
+              <CanvasHeader
+                file={fileName}
+                meta={hashing ? "HASHING…" : hashes ? "HASHED" : "WAITING"}
+                trailing={hashes ? "4 DIGESTS" : undefined}
+              />
+            )}
+          </>
         )}
+
+        {hashing && <ProgressBar progress={progress} label="Hashing" />}
 
         {hashes && (
           <>
             <GenList
-              rows={(["md5", "sha1", "sha256", "sha512"] as const).map((algo) => ({
+              rows={ALGOS.map((algo) => ({
                 value: hashes[algo],
                 meta: algo.replace("sha", "SHA-").toUpperCase(),
               }))}
               copiedIndex={
-                copied ? ["md5", "sha1", "sha256", "sha512"].indexOf(copied) : null
+                copied ? ALGOS.indexOf(copied as (typeof ALGOS)[number]) : null
               }
-              onCopy={(value, i) =>
-                handleCopy((["md5", "sha1", "sha256", "sha512"] as const)[i], value)
-              }
+              onCopy={(value, i) => handleCopy(ALGOS[i], value)}
             />
             <CanvasFootnote>COMPUTED IN THIS TAB · SUBTLECRYPTO · NOTHING UPLOADED</CanvasFootnote>
           </>
@@ -132,10 +152,12 @@ export function HashGeneratorUI() {
             fill
             value={mode}
             onChange={(m) => {
+              runIdRef.current++;
               setMode(m);
               setHashes(null);
               setInput("");
               setFileName("");
+              setProgress(null);
             }}
             options={[
               { value: "text" as const, label: "Text" },
@@ -152,7 +174,7 @@ export function HashGeneratorUI() {
             rows={[
               ["Algorithms", "4"],
               ["Source", mode === "file" ? (fileName ? "File" : "—") : input ? "Text" : "—"],
-              ["State", hashes ? "Hashed" : "Waiting"],
+              ["State", hashing ? "Hashing" : hashes ? "Hashed" : "Waiting"],
             ]}
           />
         </ToolAsideSection>

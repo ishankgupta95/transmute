@@ -142,7 +142,7 @@ test.describe("screen recorder", () => {
 
     // If the environment cannot grant display capture, the tool surfaces its
     // error state — report that rather than failing on a missing control.
-    const stop = page.getByRole("button", { name: /Stop Recording/i });
+    const stop = page.getByRole("button", { name: /Stop and save/i });
     const failed = page.locator('[role="alert"]').filter({ hasText: /\S/ }).first();
     await expect(stop.or(failed)).toBeVisible({ timeout: 60_000 });
 

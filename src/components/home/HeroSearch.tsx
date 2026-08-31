@@ -36,8 +36,11 @@ export function HeroSearch() {
       <SearchTrigger size="field">
         <span className="inline-flex items-center">
           {display || "Search tools…"}
+          {/* A caret blinks on `tmBlink 1.05s step-end` in the doc; the shared
+              `animate-tm-blink` token is a 3.2s ease-in-out status pulse, which
+              reads as a fading line rather than a cursor. */}
           {!reduced && (
-            <span className="ml-px animate-tm-blink border-l-[1.5px] border-accent">
+            <span className="ml-px animate-[tm-blink-deep_1.05s_step-end_infinite] border-l-[1.5px] border-accent">
               &nbsp;
             </span>
           )}

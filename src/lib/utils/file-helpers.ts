@@ -1,3 +1,18 @@
+/**
+ * The size change between input and output as one mono token — `−86%`, `+12%`,
+ * `±0%` — for the stat strips. Signed on purpose: a converted file that GREW
+ * has to say so, which is why this is not a "saved" percentage.
+ *
+ * It lives here because the same six lines were copied into two tool UIs and
+ * had already drifted apart (one said `0%` where the other said `±0%`).
+ */
+export function formatDelta(original: number, converted: number): string {
+  if (!Number.isFinite(original) || !Number.isFinite(converted) || original <= 0) return "—";
+  const pct = Math.round(((original - converted) / original) * 100);
+  if (pct === 0) return "±0%";
+  return pct > 0 ? `−${pct}%` : `+${Math.abs(pct)}%`;
+}
+
 export function formatFileSize(bytes: number): string {
   // Garbage in (NaN from a failed probe, negative deltas) must not render
   // as "NaN undefined" in a stat tile.

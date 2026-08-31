@@ -2,15 +2,16 @@
 
 import { useCallback, useState } from "react";
 import { ErrorMessage } from "@/components/tools/ErrorMessage";
-import { copyText } from "@/lib/utils/clipboard";
 import {
   ToolActions,
   ToolAside,
-  ToolAsideSection,
   ToolChoice,
   ToolSlider,
 } from "@/components/tools/ToolAside";
 import { CanvasFootnote, GenList } from "@/components/tools/ToolCanvas";
+import { ToolControl, ToolControlGroup } from "@/components/tools/ToolControls";
+import { CANVAS_COLUMN } from "@/components/workspace/shared";
+import { useCopied } from "@/hooks/useCopied";
 
 interface Options {
   length: number;
@@ -94,7 +95,7 @@ export function PasswordGeneratorUI() {
   });
   const [count, setCount] = useState(1);
   const [passwords, setPasswords] = useState<string[]>([]);
-  const [copied, setCopied] = useState<number | null>(null);
+  const { copied, copy } = useCopied<number>();
   const [error, setError] = useState("");
 
   const handleGenerate = useCallback(() => {
@@ -108,14 +109,9 @@ export function PasswordGeneratorUI() {
 
   const handleCopy = useCallback(
     (i: number) => {
-      copyText(passwords[i]).then((ok) => {
-        if (ok) {
-          setCopied(i);
-          setTimeout(() => setCopied(null), 2000);
-        }
-      });
+      void copy(passwords[i], i);
     },
-    [passwords],
+    [copy, passwords],
   );
 
   const strength = passwords.length > 0 ? calcStrength(passwords[0]) : null;
@@ -123,7 +119,7 @@ export function PasswordGeneratorUI() {
   return (
     <>
       {/* ── Canvas: the doc's numbered value list ──────────── */}
-      <div className="min-w-0 space-y-[13px]">
+      <div className={CANVAS_COLUMN}>
         {error && <ErrorMessage message={error} />}
 
         {strength && (
@@ -153,7 +149,7 @@ export function PasswordGeneratorUI() {
             </CanvasFootnote>
           </>
         ) : (
-          <p className="py-10 text-center font-body text-sm text-text-muted">
+          <p className="py-10 text-center font-body text-[12.5px] leading-[1.5] text-text-muted">
             Set the length and character types, then generate.
           </p>
         )}
@@ -162,7 +158,9 @@ export function PasswordGeneratorUI() {
       <ToolAside
         footer={<ToolActions primaryLabel="Generate" onPrimary={handleGenerate} />}
       >
-        <ToolAsideSection>
+        {/* One bordered block for the whole control set — the doc gives its
+            own rule only to START FROM, ADVANCED and OUTPUT. */}
+        <ToolControlGroup>
           <ToolSlider
             label="Length"
             display={String(options.length)}
@@ -175,42 +173,42 @@ export function PasswordGeneratorUI() {
               setPasswords([]); // stale results would misstate the options
             }}
           />
-        </ToolAsideSection>
 
-        <ToolAsideSection label="INCLUDE">
-          <div className="flex flex-col gap-2">
-            {(["uppercase", "lowercase", "numbers", "symbols"] as const).map((key) => (
-              <label
-                key={key}
-                className="flex cursor-pointer items-center gap-2.5 font-body text-[12.5px] text-neutral-300"
-              >
-                <input
-                  type="checkbox"
-                  checked={options[key]}
-                  onChange={(e) => {
-                    setOptions((o) => ({ ...o, [key]: e.target.checked }));
-                    setPasswords([]);
-                  }}
-                  className="size-4 rounded border-border accent-accent"
-                />
-                {key.charAt(0).toUpperCase() + key.slice(1)}
-              </label>
-            ))}
-          </div>
-        </ToolAsideSection>
+          <ToolControl label="INCLUDE">
+            <div className="flex flex-col gap-2">
+              {(["uppercase", "lowercase", "numbers", "symbols"] as const).map((key) => (
+                <label
+                  key={key}
+                  className="flex cursor-pointer items-center gap-2.5 font-body text-[12.5px] text-neutral-300"
+                >
+                  <input
+                    type="checkbox"
+                    checked={options[key]}
+                    onChange={(e) => {
+                      setOptions((o) => ({ ...o, [key]: e.target.checked }));
+                      setPasswords([]);
+                    }}
+                    className="size-4 rounded-sm border-border accent-accent"
+                  />
+                  {key.charAt(0).toUpperCase() + key.slice(1)}
+                </label>
+              ))}
+            </div>
+          </ToolControl>
 
-        <ToolAsideSection label="HOW MANY">
-          <ToolChoice
-            label="Number of passwords"
-            fill
-            value={count}
-            onChange={(n) => {
-              setCount(n);
-              setPasswords([]);
-            }}
-            options={[1, 5, 10, 20].map((n) => ({ value: n, label: String(n) }))}
-          />
-        </ToolAsideSection>
+          <ToolControl label="HOW MANY">
+            <ToolChoice
+              label="Number of passwords"
+              fill
+              value={count}
+              onChange={(n) => {
+                setCount(n);
+                setPasswords([]);
+              }}
+              options={[1, 5, 10, 20].map((n) => ({ value: n, label: String(n) }))}
+            />
+          </ToolControl>
+        </ToolControlGroup>
       </ToolAside>
     </>
   );

@@ -6,6 +6,8 @@ import { DropZone } from "@/components/tools/DropZone";
 import { DownloadButton } from "@/components/tools/DownloadButton";
 import { readExifData, stripExifData, type ExifEntry } from "@/lib/tools/exif-viewer";
 import type { ProcessedResult } from "@/hooks/useFileProcessor";
+import { useImageDimensions } from "@/hooks/useImageDimensions";
+import { imageMeta } from "@/lib/utils/canvas-meta";
 import { formatFileSize } from "@/lib/utils/file-helpers";
 import {
   ToolActions,
@@ -19,6 +21,8 @@ import {
   CanvasHeader,
   TagGrid,
 } from "@/components/tools/ToolCanvas";
+import { CANVAS_COLUMN } from "@/components/workspace/shared";
+import { StatusMessage } from "@/components/tools/StatusMessage";
 
 interface ExifViewerUIProps {
   acceptFormats: string;
@@ -31,6 +35,8 @@ export function ExifViewerUI({ acceptFormats }: ExifViewerUIProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [isStripping, setIsStripping] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // The doc's image readout is dimensions AND size, not the size alone.
+  const sourceDims = useImageDimensions(file);
 
   const handleFiles = useCallback(async (files: File[]) => {
     const f = files[0];
@@ -94,17 +100,21 @@ export function ExifViewerUI({ acceptFormats }: ExifViewerUIProps) {
   return (
     <>
       {/* ── Canvas: what you look at ─────────────────────────── */}
-      <div className="min-w-0 space-y-[13px]">
+      <div className={CANVAS_COLUMN}>
         {/* File info */}
         <CanvasHeader
           file={file.name}
-          meta={formatFileSize(file.size)}
-          trailing={`${entries.length} METADATA ${entries.length === 1 ? "FIELD" : "FIELDS"}`}
+          meta={imageMeta(sourceDims, formatFileSize(file.size))}
+          trailing={
+            cleanResult
+              ? "METADATA REMOVED"
+              : `${entries.length} METADATA ${entries.length === 1 ? "FIELD" : "FIELDS"}`
+          }
         />
 
         {/* Loading */}
         {isLoading && (
-          <p className="text-sm text-text-muted text-center">Reading metadata...</p>
+          <StatusMessage>Reading metadata...</StatusMessage>
         )}
 
         {/* Error */}
@@ -120,12 +130,20 @@ export function ExifViewerUI({ acceptFormats }: ExifViewerUIProps) {
           </div>
         )}
 
+        {/* Once a cleaned copy exists the listing below is history, not the
+            current state of the file the user is about to download. */}
+        {cleanResult && entries.length > 0 && (
+          <p className="font-mono text-[9.5px] leading-none font-medium tracking-[0.12em] uppercase text-text-muted">
+            Original file — these tags are gone from the cleaned copy
+          </p>
+        )}
+
         {/* Metadata, grouped, in the doc's two-column tag grid */}
         {Object.entries(groupedEntries).map(([group, groupEntries]) => (
           <div key={group} className="space-y-2">
             <h3 className="flex items-baseline gap-2 font-mono text-[9.5px] leading-none font-medium tracking-[0.12em] uppercase text-text-muted">
               {groupLabels[group] ?? group.toUpperCase()}
-              {group === "gps" && (
+              {group === "gps" && !cleanResult && (
                 <span className="text-warning">⚠ Contains location data</span>
               )}
             </h3>
@@ -155,7 +173,9 @@ export function ExifViewerUI({ acceptFormats }: ExifViewerUIProps) {
               />
             ) : (
               <ToolActions
-                primaryLabel={isStripping ? "Stripping..." : "Remove EXIF & Download"}
+                // Not "& Download": this only produces the cleaned copy — the
+                // Download button that replaces this button is the download.
+                primaryLabel={isStripping ? "Stripping…" : "Remove EXIF"}
                 onPrimary={handleStrip}
                 primaryDisabled={isStripping || entries.length === 0}
               />
@@ -173,9 +193,11 @@ export function ExifViewerUI({ acceptFormats }: ExifViewerUIProps) {
             ]}
           />
           <span className="font-body text-[10.5px] leading-[1.5] text-text-muted">
-            {hasGps
-              ? "This image carries GPS coordinates — strip it before sharing."
-              : "Stripping re-encodes the image with every metadata block dropped."}
+            {cleanResult
+              ? "The cleaned copy is ready to download — every metadata block was dropped."
+              : hasGps
+                ? "This image carries GPS coordinates — strip it before sharing."
+                : "Stripping re-encodes the image with every metadata block dropped."}
           </span>
         </ToolAsideSection>
       </ToolAside>

@@ -61,6 +61,12 @@
   /* Grounds — the shell's panes, each a step of the base mixed toward black. */
   --color-nocturne-page: #0f111c;
   --color-nocturne-chrome: color-mix(in srgb, #161826 92%, #000);
+  /*
+   * The sticky site navbar. Site Pages states 94% three times and owns the site
+   * chrome; Home Redesign says 88% once. Taking Site Pages, and opaque — the
+   * redesign never makes this bar translucent.
+   */
+  --color-nocturne-navbar: color-mix(in srgb, #161826 94%, #000);
   --color-nocturne-rail: color-mix(in srgb, #161826 96%, #000);
   --color-nocturne-canvas: color-mix(in srgb, #161826 78%, #000);
   --color-nocturne-status: color-mix(in srgb, #161826 88%, #000);
@@ -91,12 +97,41 @@
   --color-nocturne-accent-800: #423a6a;
   --color-nocturne-accent-900: #2b2741;
 
+  /*
+   * Elevation — derived from the ground. On a dark page elevation is a hairline
+   * edge plus ambient darkness, never a light-theme drop shadow; without these
+   * three, Tailwind's own light-theme defaults occupy the names.
+   */
+  --shadow-sm: 0 0 0 1px #3f424d;
+  --shadow-md: 0 0 0 1px #595d6c, 0 6px 18px rgba(0, 0, 0, 0.55);
+  --shadow-lg: 0 0 0 1px #9397ab, 0 16px 40px rgba(0, 0, 0, 0.65);
+
   --animate-tm-rise: tm-rise 0.3s cubic-bezier(0.2, 0.7, 0.3, 1);
   --animate-tm-drawer: tm-drawer 0.22s cubic-bezier(0.2, 0.7, 0.3, 1);
   --animate-tm-blink: tm-blink 3.2s ease-in-out infinite;
   --animate-tm-glow: tm-glow 9s ease-in-out infinite;
   --animate-tm-pulse: tm-glow 2.4s ease-in-out infinite;
   --animate-tm-sweep: tm-sweep 1.5s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  /* The seam's own pulse — the brand mark's gap, breathing. */
+  --animate-tm-seam: tm-seam 2.4s ease-in-out infinite;
+
+  /*
+    Home/Site variants. The docs are not in conflict here — they specify
+    different values per surface, and the shared tokens above already match
+    Tool Redesign and All Tools exactly:
+
+      keyframe   Tool Redesign / All Tools   Home Redesign   Site Pages
+      tmBlink    .25                         .2              .2
+      tmGlow     .35 -> .8                   .3 -> .75       .3 -> .7
+      rise       translateY(8px)             tmSlide, 6px    --
+
+    So the tool pages keep `tm-blink` / `tm-glow` / `tm-rise`, and the homepage
+    reaches for these instead. Retuning the shared keyframes would have moved
+    every tool page off its own doc to satisfy the homepage.
+  */
+  --animate-tm-blink-deep: tm-blink-deep 3.2s ease-in-out infinite;
+  --animate-tm-glow-home: tm-glow-home 11s ease-in-out infinite;
+  --animate-tm-slide: tm-slide 0.45s cubic-bezier(0.2, 0.7, 0.3, 1);
 
   @keyframes tm-rise {
     from {
@@ -135,6 +170,49 @@
     }
     50% {
       opacity: 0.8;
+    }
+  }
+  /* Home Redesign: `@keyframes tmBlink{0%,45%{opacity:1}50%,95%{opacity:.2}}` */
+  @keyframes tm-blink-deep {
+    0%,
+    45% {
+      opacity: 1;
+    }
+    50%,
+    95% {
+      opacity: 0.2;
+    }
+  }
+  /* Home Redesign: `@keyframes tmGlow{0%,100%{opacity:.3}50%{opacity:.75}}` */
+  @keyframes tm-glow-home {
+    0%,
+    100% {
+      opacity: 0.3;
+    }
+    50% {
+      opacity: 0.75;
+    }
+  }
+  /* Home Redesign draws its own `tmSlide` — 6px of travel, not tmRise's 8px. */
+  @keyframes tm-slide {
+    from {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+  @keyframes tm-seam {
+    0%,
+    100% {
+      opacity: 0.4;
+      transform: scaleY(0.9);
+    }
+    50% {
+      opacity: 1;
+      transform: scaleY(1);
     }
   }
   @keyframes tm-sweep {

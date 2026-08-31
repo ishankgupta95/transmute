@@ -3,7 +3,6 @@
 import { useCallback, useMemo, useState } from "react";
 import { useIsClient } from "@/hooks/useIsClient";
 
-import { copyText } from "@/lib/utils/clipboard";
 import {
   ToolActions,
   ToolAside,
@@ -15,6 +14,17 @@ import {
   TextPanes,
 } from "@/components/tools/ToolCanvas";
 import { cn } from "@/lib/utils/cn";
+import { CANVAS_COLUMN } from "@/components/workspace/shared";
+import { useCopied } from "@/hooks/useCopied";
+
+/**
+ * The doc's one field box, from the RANGE strip:
+ * `height:30px;border-radius:7px;background:var(--color-surface);border:1px
+ * solid var(--color-divider);font:400 12px/1 'IBM Plex Mono';padding:0 10px`.
+ * The same shape `RangeField` and the regex pattern input already wear.
+ */
+const FIELD_CLASS =
+  "h-[30px] rounded-[7px] border border-border bg-bg-elevated px-2.5 font-mono text-xs leading-none text-text-primary focus:border-accent focus:outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent";
 
 const MINUTES = ["*", ...Array.from({ length: 60 }, (_, i) => String(i))];
 const HOURS = ["*", ...Array.from({ length: 24 }, (_, i) => String(i))];
@@ -219,9 +229,18 @@ export function CronExpressionGeneratorUI() {
   const [month, setMonth] = useState("*");
   const [weekday, setWeekday] = useState("1");
   const [manualInput, setManualInput] = useState("");
-  const [copied, setCopied] = useState(false);
+  /*
+    Ownership of the field, tracked separately from its content. `manualInput ||
+    builderExpression` meant clearing the field fell back to the builder — which
+    `handleManualChange` had just synced to the very value being deleted — so
+    select-all-delete visibly did nothing.
+  */
+  const [manualActive, setManualActive] = useState(false);
+  const { copied, copy } = useCopied();
 
-  const expression = manualInput || `${minute} ${hour} ${day} ${month} ${weekday}`;
+  const expression = manualActive
+    ? manualInput
+    : `${minute} ${hour} ${day} ${month} ${weekday}`;
   const parts = expression.trim().split(/\s+/);
   const isValid = parts.length === 5;
 
@@ -239,15 +258,11 @@ export function CronExpressionGeneratorUI() {
   );
 
   const handleCopy = useCallback(() => {
-    copyText(expression).then((ok) => {
-      if (ok) {
-        setCopied(true);
-        setTimeout(() => setCopied(false), 2000);
-      }
-    });
-  }, [expression]);
+    void copy(expression);
+  }, [copy, expression]);
 
   const handleManualChange = useCallback((val: string) => {
+    setManualActive(true);
     setManualInput(val);
     const p = val.trim().split(/\s+/);
     if (p.length === 5) {
@@ -262,12 +277,12 @@ export function CronExpressionGeneratorUI() {
   return (
     <>
       {/* ── Canvas: the expression and what it will actually do ─ */}
-      <div className="min-w-0 space-y-[13px]">
+      <div className={CANVAS_COLUMN}>
         <TextPanes columns={nextRuns.length > 0 ? 2 : 1}>
           <TextPane label="Cron Expression" lines={1}>
             <input
               type="text"
-              value={manualInput || expression}
+              value={expression}
               onChange={(e) => handleManualChange(e.target.value)}
               placeholder="0 9 * * 1"
               aria-label="Cron expression"
@@ -302,19 +317,23 @@ export function CronExpressionGeneratorUI() {
           {/* Minute alone has 61 choices, so these stay selects rather than chips. */}
           <div className="flex flex-col gap-2">
             {[
-              { label: "Minute", value: minute, options: MINUTES, set: (v: string) => { setMinute(v); setManualInput(""); } },
-              { label: "Hour", value: hour, options: HOURS, set: (v: string) => { setHour(v); setManualInput(""); } },
-              { label: "Day", value: day, options: DAYS, set: (v: string) => { setDay(v); setManualInput(""); } },
-              { label: "Month", value: month, options: MONTHS, set: (v: string) => { setMonth(v); setManualInput(""); } },
-              { label: "Weekday", value: weekday, options: WEEKDAYS, set: (v: string) => { setWeekday(v); setManualInput(""); } },
+              { label: "Minute", value: minute, options: MINUTES, set: (v: string) => { setMinute(v); setManualInput(""); setManualActive(false); } },
+              { label: "Hour", value: hour, options: HOURS, set: (v: string) => { setHour(v); setManualInput(""); setManualActive(false); } },
+              { label: "Day", value: day, options: DAYS, set: (v: string) => { setDay(v); setManualInput(""); setManualActive(false); } },
+              { label: "Month", value: month, options: MONTHS, set: (v: string) => { setMonth(v); setManualInput(""); setManualActive(false); } },
+              { label: "Weekday", value: weekday, options: WEEKDAYS, set: (v: string) => { setWeekday(v); setManualInput(""); setManualActive(false); } },
             ].map((field) => (
               <div key={field.label} className="flex items-center gap-2">
-                <label className="w-16 shrink-0 text-xs text-text-muted">{field.label}</label>
+                {/* The doc's control label row: `font:400 12.5px/1.2;
+                    color:var(--color-neutral-300)`. */}
+                <label className="w-16 shrink-0 font-body text-[12.5px] leading-[1.2] text-neutral-300">
+                  {field.label}
+                </label>
                 <select
                   value={field.value}
                   onChange={(e) => field.set(e.target.value)}
                   aria-label={field.label}
-                  className="min-w-0 flex-1 rounded-md border border-border bg-bg-elevated px-2 py-2 text-sm text-text-primary"
+                  className={cn(FIELD_CLASS, "min-w-0 flex-1")}
                 >
                   {field.options.map((o) => {
                     let label = o;

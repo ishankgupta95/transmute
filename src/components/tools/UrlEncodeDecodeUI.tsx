@@ -2,7 +2,6 @@
 
 import { useCallback, useState } from "react";
 import { ErrorMessage } from "@/components/tools/ErrorMessage";
-import { copyText } from "@/lib/utils/clipboard";
 import {
   ToolActions,
   ToolAside,
@@ -15,13 +14,16 @@ import {
   TextPane,
   TextPanes,
 } from "@/components/tools/ToolCanvas";
+import { CANVAS_COLUMN } from "@/components/workspace/shared";
+import { useCopied } from "@/hooks/useCopied";
+import { formatFileSize } from "@/lib/utils/file-helpers";
 
 export function UrlEncodeDecodeUI() {
   const [mode, setMode] = useState<"encode" | "decode">("encode");
   const [input, setInput] = useState("");
   const [output, setOutput] = useState("");
   const [error, setError] = useState("");
-  const [copied, setCopied] = useState(false);
+  const { copied, copy } = useCopied();
 
   const handleConvert = useCallback(
     (text: string, m: "encode" | "decode") => {
@@ -47,22 +49,18 @@ export function UrlEncodeDecodeUI() {
   );
 
   const handleCopy = useCallback(() => {
-    copyText(output).then((ok) => {
-      if (ok) {
-        setCopied(true);
-        setTimeout(() => setCopied(false), 2000);
-      }
-    });
-  }, [output]);
+    void copy(output);
+  }, [copy, output]);
 
   return (
     <>
       {/* ── Canvas: the doc's two-up IN / OUT panes ──────────── */}
-      <div className="min-w-0 space-y-[13px]">
+      <div className={CANVAS_COLUMN}>
         <TextPanes columns={output ? 2 : 1}>
           <TextPane
             label={mode === "encode" ? "Text to Encode" : "URL-Encoded String"}
             lines={lineCount(input)}
+            size={formatFileSize(new Blob([input]).size)}
           >
             <textarea
               value={input}
@@ -78,6 +76,7 @@ export function UrlEncodeDecodeUI() {
               tone="out"
               label="Output"
               lines={lineCount(output)}
+              size={formatFileSize(new Blob([output]).size)}
               action={
                 <button
                   onClick={handleCopy}

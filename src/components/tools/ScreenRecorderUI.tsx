@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ErrorMessage } from "@/components/tools/ErrorMessage";
 import { DownloadButton } from "@/components/tools/DownloadButton";
+import { videoMeta, type Dimensions } from "@/lib/utils/canvas-meta";
 import { formatFileSize } from "@/lib/utils/file-helpers";
 import { Monitor } from "lucide-react";
 import {
@@ -13,6 +14,8 @@ import {
   ToolResetLink,
 } from "@/components/tools/ToolAside";
 import { CanvasHeader, CanvasStage, RecordStage } from "@/components/tools/ToolCanvas";
+import { CANVAS_COLUMN, STAGE_GROW, STAGE_MEDIA } from "@/components/workspace/shared";
+import { cn } from "@/lib/utils/cn";
 
 type Status = "idle" | "recording" | "paused" | "done" | "error";
 
@@ -24,6 +27,10 @@ export function ScreenRecorderUI() {
   const [elapsed, setElapsed] = useState(0);
   const [level, setLevel] = useState<number | null>(null);
   const [meta, setMeta] = useState<string[]>([]);
+  /* The doc's video readout leads with the frame size. The capture's own
+     track settings are the authority here — the played-back WebM declares no
+     duration, so the elapsed counter supplies the clip length instead. */
+  const [captureDims, setCaptureDims] = useState<Dimensions | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const streamRef = useRef<MediaStream | null>(null);
@@ -141,6 +148,9 @@ export function ScreenRecorderUI() {
       const videoTrack = displayStream.getVideoTracks()[0];
       const settings = videoTrack?.getSettings() ?? {};
       const micOn = combinedStream.getAudioTracks().length > 0;
+      setCaptureDims(
+        settings.width && settings.height ? { w: settings.width, h: settings.height } : null,
+      );
       setMeta([
         settings.width && settings.height
           ? `${videoTrack.label || "SCREEN"} · ${settings.width}×${settings.height}`
@@ -244,7 +254,7 @@ export function ScreenRecorderUI() {
   return (
     <>
       {/* ── Canvas: the capture, live and then played back ───── */}
-      <div className="min-w-0 space-y-6">
+      <div className={CANVAS_COLUMN}>
         {status === "idle" && !recording && (
           <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed border-border bg-bg-secondary px-6 py-16 text-center">
             <Monitor size={28} className="text-text-muted" aria-hidden="true" />
@@ -272,10 +282,10 @@ export function ScreenRecorderUI() {
           <>
             <CanvasHeader
               file="Recording"
-              meta={`${formatFileSize(recording.blob.size)} · ${formatElapsed(elapsed)}`}
+              meta={videoMeta(captureDims, formatElapsed(elapsed), formatFileSize(recording.blob.size))}
             />
-            <CanvasStage className="bg-black">
-              <video src={recording.url} controls className="max-h-80 w-full bg-black" />
+            <CanvasStage className={cn(STAGE_GROW, "flex items-center justify-center bg-black")}>
+              <video src={recording.url} controls className={cn(STAGE_MEDIA, "bg-black")} />
             </CanvasStage>
           </>
         )}
@@ -286,11 +296,20 @@ export function ScreenRecorderUI() {
         footer={
           isLive ? (
             <>
-              <ToolActions primaryLabel="Stop Recording" onPrimary={stopRecording} />
-              <ToolResetLink
+              {/*
+                The doc draws Pause as a bordered 36px button beside the
+                primary, not as the quiet mono link this was — it is a real,
+                reversible action on the recorder (`MediaRecorder.pause()` /
+                `.resume()`), and it deserves a target the size of one.
+              */}
+              <button
+                type="button"
                 onClick={status === "recording" ? pauseRecording : resumeRecording}
-                label={status === "recording" ? "PAUSE" : "RESUME"}
-              />
+                className="h-9 w-full cursor-pointer rounded-md border border-border bg-transparent font-display text-[13px] leading-none font-medium text-text-primary transition-colors duration-200 hover:border-accent/40 hover:text-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+              >
+                {status === "recording" ? "Pause" : "Resume"}
+              </button>
+              <ToolActions primaryLabel="Stop and save" onPrimary={stopRecording} />
             </>
           ) : status === "done" && recording ? (
             <>

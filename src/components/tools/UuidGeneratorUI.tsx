@@ -2,14 +2,15 @@
 
 import { useCallback, useState } from "react";
 
-import { copyText } from "@/lib/utils/clipboard";
 import {
   ToolActions,
   ToolAside,
-  ToolAsideSection,
   ToolChoice,
 } from "@/components/tools/ToolAside";
-import { CanvasFootnote, GenList } from "@/components/tools/ToolCanvas";
+import { CanvasFootnote, CanvasHeader, GenList } from "@/components/tools/ToolCanvas";
+import { ToolControl, ToolControlGroup } from "@/components/tools/ToolControls";
+import { CANVAS_COLUMN } from "@/components/workspace/shared";
+import { useCopied } from "@/hooks/useCopied";
 
 function generateUUIDv4(): string {
   return crypto.randomUUID();
@@ -43,7 +44,7 @@ export function UuidGeneratorUI() {
   const [version, setVersion] = useState<"v4" | "v7">("v4");
   const [count, setCount] = useState(1);
   const [uuids, setUuids] = useState<string[]>([]);
-  const [copied, setCopied] = useState<number | "all" | null>(null);
+  const { copied, copy, clear: clearCopied } = useCopied<number | "all">();
 
   // Option changes clear the list — v4 UUIDs sitting under a lit "v7" chip
   // would be a claim the controls no longer back (same rule as presets).
@@ -59,41 +60,31 @@ export function UuidGeneratorUI() {
   const handleGenerate = useCallback(() => {
     const gen = version === "v4" ? generateUUIDv4 : generateUUIDv7;
     setUuids(Array.from({ length: count }, () => gen()));
-    setCopied(null);
-  }, [version, count]);
+    clearCopied();
+  }, [clearCopied, version, count]);
 
   const handleCopyOne = useCallback((i: number) => {
-    copyText(uuids[i]).then((ok) => {
-      if (ok) {
-        setCopied(i);
-        setTimeout(() => setCopied(null), 2000);
-      }
-    });
-  }, [uuids]);
+    void copy(uuids[i], i);
+  }, [copy, uuids]);
 
   const handleCopyAll = useCallback(() => {
-    copyText(uuids.join("\n")).then((ok) => {
-      if (ok) {
-        setCopied("all");
-        setTimeout(() => setCopied(null), 2000);
-      }
-    });
-  }, [uuids]);
+    void copy(uuids.join("\n"), "all");
+  }, [copy, uuids]);
 
   return (
     <>
       {/* ── Canvas: the doc's numbered value list ──────────── */}
-      <div className="min-w-0 space-y-[13px]">
+      <div className={CANVAS_COLUMN}>
         {uuids.length === 0 ? (
-          <p className="py-10 text-center font-body text-sm text-text-muted">
+          <p className="py-10 text-center font-body text-[12.5px] leading-[1.5] text-text-muted">
             Pick a version and a count, then generate.
           </p>
         ) : (
           <>
-            <div className="flex items-baseline gap-3">
-              <span className="font-display text-[13px] leading-none font-medium text-text-primary">
-                {uuids.length} UUID{uuids.length > 1 ? "s" : ""}
-              </span>
+            {/* The right-hand slot here is a button, not a stat, so the header
+                sits in a row beside it rather than carrying it as `trailing`. */}
+            <div className="flex flex-wrap items-baseline gap-3">
+              <CanvasHeader file={`${uuids.length} UUID${uuids.length > 1 ? "s" : ""}`} />
               {uuids.length > 1 && (
                 <button
                   onClick={handleCopyAll}
@@ -119,30 +110,35 @@ export function UuidGeneratorUI() {
       </div>
 
       <ToolAside footer={<ToolActions primaryLabel="Generate" onPrimary={handleGenerate} />}>
-        <ToolAsideSection label="VERSION">
-          <ToolChoice
-            label="UUID version"
-            fill
-            value={version}
-            onChange={changeVersion}
-            options={[
-              { value: "v4" as const, label: "UUID v4" },
-              { value: "v7" as const, label: "UUID v7" },
-            ]}
-          />
-          <span className="font-body text-[10.5px] leading-[1.5] text-text-muted">
-            v4 is random. v7 embeds a timestamp, so IDs sort by creation time.
-          </span>
-        </ToolAsideSection>
+        {/* One bordered block for the whole control set — the doc gives its
+            own rule only to START FROM, ADVANCED and OUTPUT. */}
+        <ToolControlGroup>
+          <ToolControl label="VERSION">
+            <ToolChoice
+              label="UUID version"
+              fill
+              value={version}
+              onChange={changeVersion}
+              options={[
+                { value: "v4" as const, label: "UUID v4" },
+                { value: "v7" as const, label: "UUID v7" },
+              ]}
+            />
+            <span className="font-body text-[10.5px] leading-[1.5] text-text-muted">
+              v4 is random. v7 embeds a timestamp, so IDs sort by creation time.
+            </span>
+          </ToolControl>
 
-        <ToolAsideSection label="HOW MANY">
-          <ToolChoice
-            label="Number of UUIDs"
-            value={count}
-            onChange={changeCount}
-            options={[1, 5, 10, 25, 50, 100].map((n) => ({ value: n, label: String(n) }))}
-          />
-        </ToolAsideSection>
+          <ToolControl label="HOW MANY">
+            <ToolChoice
+              label="Number of UUIDs"
+              fill
+              value={count}
+              onChange={changeCount}
+              options={[1, 5, 10, 25, 50, 100].map((n) => ({ value: n, label: String(n) }))}
+            />
+          </ToolControl>
+        </ToolControlGroup>
       </ToolAside>
     </>
   );

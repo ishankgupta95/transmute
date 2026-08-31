@@ -29,19 +29,25 @@ export function Navbar() {
   ];
 
   return (
-    <nav className="sticky top-0 z-50 h-[58px] border-b border-border bg-bg-secondary/90 backdrop-blur-xl backdrop-saturate-150">
+    <nav className="sticky top-0 z-50 h-[58px] border-b border-border bg-[color-mix(in_srgb,var(--color-nocturne-bg)_94%,#000)] backdrop-blur-[14px]">
       <div className="mx-auto flex h-full max-w-[1440px] items-center gap-5 px-4 md:px-11">
         <Link
           href="/"
           className="flex-none rounded-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
           aria-label="Transmute — home"
         >
-          <Logo size={21} />
+          <Logo size={21} wordmarkClassName="text-[15px]" />
         </Link>
 
         <div className="ml-3.5 hidden items-center gap-0.5 lg:flex">
           {links.map((l) => {
-            const active = pathname === l.href;
+            // Sub-routes count: /blog/heic-vs-jpg is still "Blog". Safe for the
+            // hubs — tool routes are top-level slugs (/compress-image), never
+            // nested under a category — so only /blog/* changes behaviour.
+            const active =
+              l.href === "/"
+                ? pathname === "/"
+                : pathname === l.href || pathname.startsWith(`${l.href}/`);
             return (
               <Link
                 key={l.href}
@@ -63,7 +69,7 @@ export function Navbar() {
 
         <div className="ml-auto flex items-center gap-3.5">
           <span className="hidden items-center gap-[7px] font-mono text-[10.5px] leading-none tracking-[0.05em] whitespace-nowrap text-text-muted xl:flex">
-            <span className="size-[5px] animate-tm-blink rounded-full bg-success shadow-[0_0_8px_rgba(126,224,168,.7)]" />
+            <span className="size-[5px] animate-tm-blink rounded-full bg-success shadow-[0_0_8px_rgba(126,224,168,.7)] motion-reduce:animate-none" />
             NOTHING LEAVES THIS TAB
           </span>
           <SearchTrigger className="hidden sm:flex" />

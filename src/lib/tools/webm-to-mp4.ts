@@ -6,6 +6,7 @@ import {
   waitForReady,
   decodeAudio,
   playAndExtractFrames,
+  resolveDuration,
   assertWebCodecsSupported,
   pickH264Config,
 } from "./video-utils";
@@ -28,7 +29,11 @@ export async function webmToMp4(
     const video = createVideo(videoUrl);
     await waitForReady(video);
 
-    const { videoWidth, videoHeight, duration } = video;
+    const { videoWidth, videoHeight } = video;
+    // Not `video.duration`: a MediaRecorder WebM (every browser screen
+    // recording, this site's own included) declares none, so the element
+    // reports Infinity until the demuxer is forced to resolve it.
+    const duration = await resolveDuration(video);
     if (!Number.isFinite(duration) || duration <= 0 || !videoWidth || !videoHeight) {
       throw new Error(
         "Couldn't read this video — its codec or container may not be supported in-browser. Try an MP4 or WebM.",

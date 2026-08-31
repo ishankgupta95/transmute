@@ -41,7 +41,7 @@ export function TopBar({ category, toolName, filter, onFilterChange }: TopBarPro
         </div>
 
         <div className="ml-3 flex flex-none items-center gap-[7px]">
-          <span className="size-1.5 animate-tm-blink rounded-full bg-nocturne-ok" />
+          <span className="size-1.5 animate-tm-blink rounded-full bg-nocturne-ok motion-reduce:animate-none" />
           <span className="font-nocturne-mono text-[10.5px] leading-none tracking-[0.04em] whitespace-nowrap text-nocturne-neutral-500">
             LOCAL
           </span>

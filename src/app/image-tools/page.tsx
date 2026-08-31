@@ -33,7 +33,7 @@ export default function ImageToolsPage() {
       breadcrumbName="Image Tools"
       breadcrumbHref="/image-tools"
       title="Image tools"
-      intro="Convert between image formats, compress file sizes, resize, crop, and transform images — all entirely in your browser. No files are uploaded to any server."
+      intro="Convert between formats, compress to an exact size, resize, crop and inspect — all in this tab. No file is uploaded to any server."
       sections={[
         { title: "Utilities", caption: "CHANGE THE FILE, KEEP THE FORMAT", tools: utilities },
         { title: "Format converters", caption: "ONE FORMAT IN, ANOTHER OUT", tools: converters },

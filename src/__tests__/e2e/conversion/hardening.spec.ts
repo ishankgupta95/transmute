@@ -59,7 +59,15 @@ test.describe("conversion hardening — fidelity", () => {
 
     // MP3 tops out at 48 kHz — an unresampled 96 kHz buffer made lamejs emit
     // a stream with half the real duration.
-    assertMp3(bytes);
+    const mp3 = assertMp3(bytes);
+    /*
+      The assertion that actually pins the ceiling. Duration and peak cannot:
+      handing lamejs an unresampled 96 kHz buffer still yields ~2 s of audible
+      output, so both stay in range (verified by mutation — deleting the
+      resample left this test green). The frame header is where the truth is:
+      MP3 has no 96 kHz rate, so a correct fold MUST declare 48 kHz.
+    */
+    expect(mp3.sampleRate, "MP3 must be folded to a legal rate").toBe(48000);
     const decoded = await decodeAudioInPage(page, bytes);
     expect(decoded.duration).toBeGreaterThan(1.6);
     expect(decoded.duration).toBeLessThan(2.4);
@@ -105,6 +113,18 @@ test.describe("conversion hardening — fidelity", () => {
     // Real per-frame delays: total playback must track the selected second.
     expect(gif.durationMs).toBeGreaterThan(600);
     expect(gif.durationMs).toBeLessThan(1500);
+    /*
+      The total alone cannot catch the regression this test is named for. The
+      constant-delay bug stamped every frame with round(1000/fps) = 100 ms, and
+      11 frames x 100 ms = 1100 ms — comfortably inside the window above. What
+      separates a real capture from a constant is the SPREAD: rVFC delivers on
+      display refresh, so measured gaps come back varied (observed 80-130 ms
+      across runs, 4-5 distinct values), while the bug produces exactly one.
+    */
+    expect(
+      new Set(gif.delaysMs).size,
+      `frame delays should vary with real capture gaps, got ${JSON.stringify(gif.delaysMs)}`,
+    ).toBeGreaterThan(1);
   });
 
   test("5.1 WAV keeps all six channels through a WAV trim", async ({ page }) => {

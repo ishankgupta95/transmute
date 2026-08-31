@@ -26,7 +26,7 @@ const RULE =
 
 export default function AboutPage() {
   return (
-    <main className="mx-auto w-full max-w-[700px] flex-1 px-4 py-11 md:px-8">
+    <main className="mx-auto w-full max-w-[700px] flex-1 px-4 pt-11 pb-10 md:px-8">
       <div className="flex flex-col gap-6.5">
         <h1 className="m-0 font-display text-[clamp(28px,5vw,36px)] leading-[1.14] font-medium tracking-[-0.028em] text-text-primary">
           About Transmute
@@ -88,7 +88,7 @@ export default function AboutPage() {
               href="https://ishank.dev"
               target="_blank"
               rel="noopener noreferrer"
-              className="text-accent underline underline-offset-[3px] transition-colors duration-200 hover:text-accent-400"
+              className="rounded-sm text-accent underline underline-offset-[3px] transition-colors duration-200 hover:text-accent-400 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
             >
               Ishank
             </a>

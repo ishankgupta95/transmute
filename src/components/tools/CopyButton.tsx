@@ -1,7 +1,8 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback } from "react";
 import { Check, Copy } from "lucide-react";
+import { useCopied } from "@/hooks/useCopied";
 import { cn } from "@/lib/utils/cn";
 
 interface CopyButtonProps {
@@ -21,7 +22,8 @@ interface CopyButtonProps {
 /**
  * Standardized copy-to-clipboard button. Honors a 44×44px minimum touch
  * target by default and exposes an `aria-label` so icon-only variants
- * remain accessible.
+ * remain accessible. Shares `useCopied` with the tools that render their own
+ * copy affordance, so the confirmation timing cannot drift between them.
  */
 export function CopyButton({
   value,
@@ -31,20 +33,14 @@ export function CopyButton({
   className,
   disabled,
 }: CopyButtonProps) {
-  const [copied, setCopied] = useState(false);
-  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const { copied, copy } = useCopied();
 
-  const handleClick = useCallback(async () => {
+  const handleClick = useCallback(() => {
     if (disabled) return;
-    try {
-      await navigator.clipboard.writeText(value);
-      setCopied(true);
-      if (timeoutRef.current) clearTimeout(timeoutRef.current);
-      timeoutRef.current = setTimeout(() => setCopied(false), 1800);
-    } catch {
-      // Clipboard write can fail on insecure contexts; silently no-op.
-    }
-  }, [value, disabled]);
+    // `copy` resolves false on an insecure context or a denied permission and
+    // leaves the label alone, so the button never claims a copy that failed.
+    void copy(value);
+  }, [copy, value, disabled]);
 
   return (
     <button

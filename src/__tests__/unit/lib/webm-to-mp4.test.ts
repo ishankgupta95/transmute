@@ -5,6 +5,7 @@ const {
   mockPlayAndExtractFrames,
   mockCreateVideo,
   mockWaitForReady,
+  mockResolveDuration,
   mockDecodeAudio,
   mockAssertWebCodecsSupported,
   mockPickH264Config,
@@ -12,6 +13,9 @@ const {
   mockPlayAndExtractFrames: vi.fn().mockResolvedValue(undefined),
   mockCreateVideo: vi.fn(),
   mockWaitForReady: vi.fn().mockResolvedValue(undefined),
+  // The real helper returns `video.duration` when the container declares
+  // one, and only probes by seeking when it is Infinity.
+  mockResolveDuration: vi.fn((video: { duration: number }) => Promise.resolve(video.duration)),
   mockDecodeAudio: vi.fn().mockResolvedValue(null),
   mockAssertWebCodecsSupported: vi.fn(),
   mockPickH264Config: vi.fn((base: Record<string, unknown>) =>
@@ -37,6 +41,7 @@ const {
 vi.mock("@/lib/tools/video-utils", () => ({
   createVideo: mockCreateVideo,
   waitForReady: mockWaitForReady,
+  resolveDuration: mockResolveDuration,
   decodeAudio: mockDecodeAudio,
   assertWebCodecsSupported: mockAssertWebCodecsSupported,
   pickH264Config: mockPickH264Config,
@@ -122,6 +127,9 @@ import { webmToMp4 } from "@/lib/tools/webm-to-mp4";
 describe("webmToMp4", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockResolveDuration.mockImplementation((video: { duration: number }) =>
+      Promise.resolve(video.duration),
+    );
     mockDecodeAudio.mockResolvedValue(null);
     mockPickH264Config.mockImplementation((base: Record<string, unknown>) =>
       Promise.resolve({ codec: "avc1.640034", ...base }),

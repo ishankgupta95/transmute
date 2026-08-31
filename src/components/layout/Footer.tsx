@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { categories } from "@/data/categories";
 import { Logo } from "./Logo";
+import { Year } from "./Year";
 
 const SHORT_LABEL: Record<string, string> = {
   "image-tools": "Image",
@@ -21,11 +22,11 @@ const linkClass =
 
 export function Footer() {
   return (
-    <footer className="border-t border-border px-4 pt-11 pb-8 md:px-11">
+    <footer className="border-t border-border px-4 pt-11 pb-[34px] md:px-11">
       <div className="mx-auto max-w-[1440px]">
         <div className="mb-9 flex flex-col justify-between gap-10 md:flex-row md:gap-15">
           <div className="max-w-[300px]">
-            <Logo size={19} className="mb-3" />
+            <Logo size={19} className="mb-3" wordmarkClassName="text-[14px]" />
             <p className="m-0 font-body text-[12.5px] leading-[1.6] text-text-muted">
               Browser-based file tools. Free, private, and open about how they work.
             </p>
@@ -56,9 +57,9 @@ export function Footer() {
           </div>
         </div>
 
-        <div className="flex flex-col gap-3 border-t border-border pt-5 font-mono text-[11px] leading-none text-text-muted sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-col gap-3 border-t border-border pt-5.5 font-mono text-[11px] leading-none text-text-muted sm:flex-row sm:items-center sm:justify-between">
           <span>
-            © {new Date().getFullYear()} TRANSMUTE · BUILT BY{" "}
+            © <Year /> TRANSMUTE · BUILT BY{" "}
             <a
               href="https://ishank.dev"
               target="_blank"

@@ -21,6 +21,7 @@ const hoisted = vi.hoisted(() => {
   }
 
   function createMockDocument(pageCount = 3) {
+    const loadedPages: { getBounds: unknown; destroy: ReturnType<typeof vi.fn> }[] = [];
     const pages = Array.from({ length: pageCount }, () =>
       createMockPdfObj({
         get: vi.fn().mockImplementation((key: string) => {
@@ -35,13 +36,33 @@ const hoisted = vi.hoisted(() => {
       }),
     );
 
+    // The trailer carries /Info; split/merge/reorder must graft it across.
+    const info = createMockPdfObj({ _tag: "Info" });
+    const trailer = createMockPdfObj({
+      get: vi.fn().mockImplementation((key: string) =>
+        key === "Info" ? info : createMockPdfObj(),
+      ),
+    });
+
     return {
       countPages: vi.fn().mockReturnValue(pageCount),
       findPage: vi.fn().mockImplementation((idx: number) => pages[idx]),
-      loadPage: vi.fn().mockImplementation(() => ({
-        getBounds: vi.fn().mockReturnValue([0, 0, 595, 842]),
-      })),
-      newGraftMap: vi.fn().mockReturnValue({ graftPage: vi.fn() }),
+      // Every Page handed out is recorded on `_loadedPages` so tests can
+      // assert the caller released it — an undestroyed Page is a live
+      // allocation in the MuPDF WASM heap that the JS GC never reclaims.
+      loadPage: vi.fn().mockImplementation(() => {
+        const page = {
+          getBounds: vi.fn().mockReturnValue([0, 0, 595, 842]),
+          destroy: vi.fn(),
+        };
+        loadedPages.push(page);
+        return page;
+      }),
+      getTrailer: vi.fn().mockReturnValue(trailer),
+      newGraftMap: vi.fn().mockReturnValue({
+        graftPage: vi.fn(),
+        graftObject: vi.fn().mockImplementation((o: unknown) => o),
+      }),
       newInteger: vi.fn().mockImplementation((n: number) => n),
       newDictionary: vi.fn().mockImplementation(() => createMockPdfObj()),
       newArray: vi.fn().mockImplementation(() => {
@@ -56,6 +77,9 @@ const hoisted = vi.hoisted(() => {
       saveToBuffer: vi.fn().mockReturnValue(createMockBuffer()),
       destroy: vi.fn(),
       _pages: pages,
+      _loadedPages: loadedPages,
+      _trailer: trailer,
+      _info: info,
     };
   }
 
@@ -79,10 +103,12 @@ const hoisted = vi.hoisted(() => {
   const mockPdfjsPage = {
     getViewport: vi.fn().mockReturnValue({ width: 800, height: 600 }),
     render: vi.fn().mockReturnValue(mockRenderTask),
+    cleanup: vi.fn(),
   };
   const mockPdfjsDoc = {
     numPages: 2,
     getPage: vi.fn().mockResolvedValue(mockPdfjsPage),
+    destroy: vi.fn().mockResolvedValue(undefined),
   };
 
   return {
@@ -208,6 +234,7 @@ describe("pdf-engine", () => {
     mockPdfDoc.save.mockResolvedValue(new Uint8Array([37, 80, 68, 70]));
     mockEmbedded.scale.mockReturnValue({ width: 200, height: 150 });
     mockPdfjsDoc.getPage.mockResolvedValue(mockPdfjsPage);
+    mockPdfjsDoc.destroy.mockResolvedValue(undefined);
     mockPdfjsPage.getViewport.mockReturnValue({ width: 800, height: 600 });
     mockPdfjsPage.render.mockReturnValue(mockRenderTask);
   });
@@ -258,6 +285,16 @@ describe("pdf-engine", () => {
       expect(result).toBeInstanceOf(Uint8Array);
       const outDoc = mockDocuments[0];
       expect(outDoc.saveToBuffer).toHaveBeenCalledWith("compress");
+    });
+
+    it("copies the FIRST source's /Info onto the merged document", async () => {
+      await mergePdfs([fakePdfData.buffer.slice(0), fakePdfData.buffer.slice(0)]);
+      const outDoc = mockDocuments[0];
+      const first = mockDocuments[1];
+      const second = mockDocuments[2];
+      expect(outDoc._trailer.put).toHaveBeenCalledTimes(1);
+      expect(outDoc._trailer.put).toHaveBeenCalledWith("Info", first._info);
+      expect(outDoc._trailer.put).not.toHaveBeenCalledWith("Info", second._info);
     });
 
     it("destroys source documents after merging", async () => {
@@ -317,6 +354,17 @@ describe("pdf-engine", () => {
       expect(outDoc.saveToBuffer).toHaveBeenCalledWith("compress");
     });
 
+    it("copies the source /Info onto the extracted document", async () => {
+      // The output is a fresh PDFDocument, so title/author would otherwise be
+      // dropped — which the split-pdf FAQ explicitly promises does not happen.
+      await splitPdf(fakePdfData, [0]);
+      const src = mockDocuments[0];
+      const outDoc = mockDocuments[1];
+      const graftMap = outDoc.newGraftMap.mock.results[0].value;
+      expect(graftMap.graftObject).toHaveBeenCalledWith(src._info);
+      expect(outDoc._trailer.put).toHaveBeenCalledWith("Info", src._info);
+    });
+
     it("handles extracting all pages", async () => {
       await splitPdf(fakePdfData, [0, 1, 2]);
       const outDoc = mockDocuments[1];
@@ -357,6 +405,54 @@ describe("pdf-engine", () => {
       await rotatePdfPages(fakePdfData, [0], 180);
       const doc = mockDocuments[0];
       expect(doc.newInteger).toHaveBeenCalledWith(90);
+    });
+
+    it("resolves an INHERITED /Rotate from the page tree before adding to it", async () => {
+      // Regression: /Rotate is inheritable, so a value living on the /Pages
+      // node reads as null on the raw page dict returned by findPage(). The
+      // old `?? 0` therefore wrote 0+angle and the rotation silently no-opped
+      // on every already-rotated document.
+      const mupdf = await import("mupdf");
+      vi.mocked(mupdf.PDFDocument).mockImplementationOnce(function () {
+        const doc = createMockDocument(1);
+        const parent = createMockPdfObj({
+          get: vi.fn().mockImplementation((key: string) => {
+            if (key === "Rotate")
+              return createMockPdfObj({ asNumber: vi.fn().mockReturnValue(90) });
+            if (key === "Parent")
+              return createMockPdfObj({ isNull: vi.fn().mockReturnValue(true) });
+            return createMockPdfObj();
+          }),
+        });
+        doc._pages[0].get = vi.fn().mockImplementation((key: string) => {
+          if (key === "Rotate")
+            return createMockPdfObj({ isNull: vi.fn().mockReturnValue(true) });
+          if (key === "Parent") return parent;
+          return createMockPdfObj();
+        });
+        mockDocuments.push(doc);
+        return doc as never;
+      });
+
+      await rotatePdfPages(fakePdfData, [0], 90);
+      expect(mockDocuments[0].newInteger).toHaveBeenCalledWith(180);
+    });
+
+    it("normalises a negative resulting angle into 0-359", async () => {
+      const mupdf = await import("mupdf");
+      vi.mocked(mupdf.PDFDocument).mockImplementationOnce(function () {
+        const doc = createMockDocument(1);
+        doc._pages[0].get = vi.fn().mockImplementation((key: string) => {
+          if (key === "Rotate")
+            return createMockPdfObj({ asNumber: vi.fn().mockReturnValue(0) });
+          return createMockPdfObj();
+        });
+        mockDocuments.push(doc);
+        return doc as never;
+      });
+
+      await rotatePdfPages(fakePdfData, [0], -90);
+      expect(mockDocuments[0].newInteger).toHaveBeenCalledWith(270);
     });
 
     it("skips out-of-range page indices", async () => {
@@ -411,6 +507,13 @@ describe("pdf-engine", () => {
       expect(graftMap.graftPage).toHaveBeenCalledWith(0, mockDocuments[0], 2);
       expect(graftMap.graftPage).toHaveBeenCalledWith(1, mockDocuments[0], 1);
       expect(graftMap.graftPage).toHaveBeenCalledWith(2, mockDocuments[0], 0);
+    });
+
+    it("copies the source /Info onto the reordered document", async () => {
+      await reorderPdfPages(fakePdfData, [0, 1, 2]);
+      const src = mockDocuments[0];
+      const outDoc = mockDocuments[1];
+      expect(outDoc._trailer.put).toHaveBeenCalledWith("Info", src._info);
     });
 
     it("destroys both source and output documents", async () => {
@@ -485,6 +588,68 @@ describe("pdf-engine", () => {
       const doc = mockDocuments[0];
       const stream = doc.addStream.mock.calls[0][0] as string;
       expect(stream).toContain("20 Td");
+    });
+
+    it("destroys every Page it loads", async () => {
+      // The loop only needs getBounds()'s number[], but the Page behind it is
+      // a WASM allocation the JS GC never reclaims. Leaving it undestroyed
+      // grew the MuPDF heap by one live Page per page of the document.
+      const mupdf = await import("mupdf");
+      vi.mocked(mupdf.PDFDocument).mockImplementationOnce(function () {
+        const doc = createMockDocument(40);
+        mockDocuments.push(doc);
+        return doc as never;
+      });
+
+      await addPageNumbers(fakePdfData, "bottom-center");
+
+      const loaded = mockDocuments[0]._loadedPages;
+      expect(loaded).toHaveLength(40);
+      for (const page of loaded) expect(page.destroy).toHaveBeenCalledTimes(1);
+    });
+
+    it("counter-rotates the stamp on a rotated page", async () => {
+      // loadPage().getBounds() is the VISUAL rect (/Rotate applied) but the
+      // stream is appended to UNROTATED content space. Without the inverse
+      // matrix the number landed off the media box and drawn sideways.
+      const mupdf = await import("mupdf");
+      vi.mocked(mupdf.PDFDocument).mockImplementationOnce(function () {
+        const doc = createMockDocument(1);
+        // A 595x842 page carrying /Rotate 90 displays as 842x595.
+        doc.loadPage = vi.fn().mockImplementation(() => {
+          const page = {
+            getBounds: vi.fn().mockReturnValue([0, 0, 842, 595]),
+            destroy: vi.fn(),
+          };
+          doc._loadedPages.push(page);
+          return page;
+        });
+        doc._pages[0].get = vi.fn().mockImplementation((key: string) => {
+          if (key === "Rotate")
+            return createMockPdfObj({ asNumber: vi.fn().mockReturnValue(90) });
+          if (key === "Resources")
+            return createMockPdfObj({ isNull: vi.fn().mockReturnValue(true) });
+          if (key === "Contents")
+            return createMockPdfObj({ isNull: vi.fn().mockReturnValue(true) });
+          return createMockPdfObj();
+        });
+        mockDocuments.push(doc);
+        return doc as never;
+      });
+
+      await addPageNumbers(fakePdfData, "bottom-center");
+      const stream = mockDocuments[0].addStream.mock.calls[0][0] as string;
+      // w = the UNROTATED width (595), i.e. the visual height.
+      expect(stream).toContain("0 1 -1 0 595 0 cm");
+      // Still centred in the visual frame: (842 - textWidth) / 2.
+      expect(stream).toContain("418.5 20 Td");
+    });
+
+    it("emits no matrix for an unrotated page", async () => {
+      await addPageNumbers(fakePdfData, "bottom-center");
+      const stream = mockDocuments[0].addStream.mock.calls[0][0] as string;
+      expect(stream).not.toContain("cm");
+      expect(stream).toMatch(/^q BT /);
     });
 
     it("creates a Helvetica font", async () => {
@@ -696,6 +861,24 @@ describe("pdf-engine", () => {
       expect(mockPdfjsDoc.getPage).toHaveBeenCalledWith(2);
     });
 
+    it("destroys the pdfjs document once every page is encoded", async () => {
+      // pdf.js pins the parsed document in its worker until destroy() — a
+      // leak of the whole document per conversion otherwise.
+      await pdfToImages(fakePdfData);
+      expect(mockPdfjsDoc.destroy).toHaveBeenCalledTimes(1);
+    });
+
+    it("destroys the document even when a page fails to render", async () => {
+      mockPdfjsPage.render.mockReturnValue({ promise: Promise.reject(new Error("boom")) });
+      await expect(pdfToImages(fakePdfData)).rejects.toThrow("boom");
+      expect(mockPdfjsDoc.destroy).toHaveBeenCalledTimes(1);
+    });
+
+    it("releases each page's operator list after rendering", async () => {
+      await pdfToImages(fakePdfData);
+      expect(mockPdfjsPage.cleanup).toHaveBeenCalledTimes(2);
+    });
+
     it("renders with canvas and viewport", async () => {
       await pdfToImages(fakePdfData);
       expect(mockPdfjsPage.render).toHaveBeenCalledWith(
@@ -738,6 +921,11 @@ describe("pdf-engine", () => {
       expect(canvas).toBeDefined();
     });
 
+    it("cleans the page up after rendering", async () => {
+      await renderPageFromDoc(mockPdfjsDoc as never, 1, 0.5);
+      expect(mockPdfjsPage.cleanup).toHaveBeenCalled();
+    });
+
     it("uses provided scale", async () => {
       await renderPageFromDoc(mockPdfjsDoc as never, 1, 1.5);
       expect(mockPdfjsPage.getViewport).toHaveBeenCalledWith({ scale: 1.5 });
@@ -767,6 +955,11 @@ describe("pdf-engine", () => {
     it("defaults to 0.5 scale", async () => {
       await renderPageToCanvas(fakePdfData, 1);
       expect(mockPdfjsPage.getViewport).toHaveBeenCalledWith({ scale: 0.5 });
+    });
+
+    it("destroys the document it opened", async () => {
+      await renderPageToCanvas(fakePdfData, 1);
+      expect(mockPdfjsDoc.destroy).toHaveBeenCalledTimes(1);
     });
 
     it("creates a new document internally", async () => {

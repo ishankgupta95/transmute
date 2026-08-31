@@ -31,6 +31,19 @@ function chooseOutput(file: File, img: HTMLImageElement): { mime: string; ext: s
  * In "target-size" mode, uses binary search to find the quality
  * that produces a file at or under the target size.
  */
+/**
+ * A "compressor" must never hand back a bigger file. Re-encoding an
+ * already-optimised JPEG can grow it (Safari's canvas encoder does this at
+ * moderate quality) — in that case the original, unchanged, IS the smallest
+ * faithful result.
+ */
+function neverGrow(file: File, blob: Blob, fileName: string): ProcessedResult {
+  if (blob.size >= file.size) {
+    return { blob: file, fileName: file.name, originalSize: file.size, newSize: file.size };
+  }
+  return { blob, fileName, originalSize: file.size, newSize: blob.size };
+}
+
 export async function compressImage(
   file: File,
   options: ImageCompressOptions,
@@ -42,7 +55,7 @@ export async function compressImage(
 
   if (options.mode === "quality") {
     const blob = await encodeImage(img, mime, options.quality);
-    return { blob, fileName, originalSize: file.size, newSize: blob.size };
+    return neverGrow(file, blob, fileName);
   }
 
   // Target-size mode: binary search for optimal quality
@@ -53,7 +66,7 @@ export async function compressImage(
 
   // If max quality is already under target, just return it
   if (bestBlob.size <= targetBytes) {
-    return { blob: bestBlob, fileName, originalSize: file.size, newSize: bestBlob.size };
+    return neverGrow(file, bestBlob, fileName);
   }
 
   // Track the smallest blob we've seen (fallback if we never get under target)
@@ -88,7 +101,7 @@ export async function compressImage(
     bestBlob = smallestBlob;
   }
 
-  return { blob: bestBlob, fileName, originalSize: file.size, newSize: bestBlob.size };
+  return neverGrow(file, bestBlob, fileName);
 }
 
 function encodeImage(img: HTMLImageElement, mime: string, quality: number): Promise<Blob> {

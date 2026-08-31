@@ -140,7 +140,7 @@ const HOW_TO_STEPS_BY_TOOL_TYPE: Record<ToolType, string[]> = {
   ],
   "video-trimmer": [
     "Upload your video by dragging it into the drop zone or clicking to browse.",
-    "Drag the start and end handles to set the trim range.",
+    "Set the clip start and end times, then click Trim.",
     "Click Download to save the trimmed video.",
   ],
   "mp4-to-mp3": [
@@ -150,12 +150,12 @@ const HOW_TO_STEPS_BY_TOOL_TYPE: Record<ToolType, string[]> = {
   ],
   "webm-to-mp4": [
     "Upload your WebM video by dragging it into the drop zone or clicking to browse.",
-    "Click Convert to remux the file as MP4 — no quality loss.",
+    "Click Convert to MP4 — the video is re-encoded to H.264 so it plays anywhere.",
     "Click Download to save your MP4.",
   ],
   "compress-video": [
     "Upload your video by dragging it into the drop zone or clicking to browse.",
-    "Adjust the quality slider to balance file size and visual fidelity.",
+    "Pick a preset — WhatsApp, Email, or Web — then click Compress.",
     "Click Download to save your compressed video.",
   ],
   "screen-recorder": [
@@ -309,11 +309,13 @@ export function getToolMetadata(slug: string): Metadata {
   return {
     // Plain string — the root layout's title.template adds " | Transmute".
     // Returning "... | Transmute" here produced a doubled "| Transmute | Transmute".
-    title: tool.h1,
+    title: tool.titleTag ?? tool.h1,
     description: tool.description,
     keywords: tool.keywords,
     alternates: {
-      canonical: `${BASE_URL}/${tool.slug}`,
+      // Relative on purpose — layout.tsx's metadataBase absolutises it, same
+      // as every other page (verified in the export: full https URLs).
+      canonical: `/${tool.slug}`,
     },
     openGraph: {
       title: `${tool.name} | Transmute`,

@@ -9,7 +9,7 @@ describe("RegexTesterUI", () => {
 
   it("renders pattern input, flag buttons, and test string textarea", () => {
     render(<RegexTesterUI />);
-    expect(screen.getByText("Regex Pattern")).toBeInTheDocument();
+    expect(screen.getByText("PATTERN")).toBeInTheDocument();
     expect(screen.getByText("Test String")).toBeInTheDocument();
     // Flag buttons
     ["g", "i", "m", "s", "u"].forEach((f) => {
@@ -111,9 +111,12 @@ describe("RegexTesterUI", () => {
       target: { value: "user@example" },
     });
 
-    expect(screen.getByText("Capture Groups")).toBeInTheDocument();
-    expect(screen.getByText(/Group 1:/)).toBeInTheDocument();
-    expect(screen.getByText(/Group 2:/)).toBeInTheDocument();
+    // Groups render as GenList rows: the captured value, tagged M<match>·G<group>.
+    expect(screen.getByText("CAPTURE GROUPS")).toBeInTheDocument();
+    expect(screen.getByText("M1 · G1")).toBeInTheDocument();
+    expect(screen.getByText("M1 · G2")).toBeInTheDocument();
+    expect(screen.getByText("user")).toBeInTheDocument();
+    expect(screen.getByText("example")).toBeInTheDocument();
   });
 
   it("shows error for invalid regex", () => {
@@ -147,12 +150,10 @@ describe("RegexTesterUI", () => {
       target: { value: "<script>alert('xss')</script> test" },
     });
 
-    // The highlighted output div is the one with whitespace-pre-wrap class inside Matches section
-    const highlighted = document.querySelector(".whitespace-pre-wrap");
-    expect(highlighted).not.toBeNull();
+    const highlighted = screen.getByTestId("regex-highlight");
     // The raw HTML should contain escaped script tags, not actual script elements
-    expect(highlighted!.innerHTML).toContain("&lt;script&gt;");
-    expect(highlighted!.innerHTML).not.toContain("<script>");
+    expect(highlighted.innerHTML).toContain("&lt;script&gt;");
+    expect(highlighted.innerHTML).not.toContain("<script>");
   });
 
   it("does not show matches section when no pattern entered", () => {
@@ -203,9 +204,8 @@ describe("RegexTesterUI", () => {
     fireEvent.change(patternInput, { target: { value: "world" } });
     fireEvent.change(testInput, { target: { value: "hello world" } });
 
-    const highlighted = document.querySelector(".whitespace-pre-wrap");
-    expect(highlighted).not.toBeNull();
-    expect(highlighted!.innerHTML).toContain("<mark");
-    expect(highlighted!.innerHTML).toContain("world");
+    const highlighted = screen.getByTestId("regex-highlight");
+    expect(highlighted.innerHTML).toContain("<mark");
+    expect(highlighted.innerHTML).toContain("world");
   });
 });

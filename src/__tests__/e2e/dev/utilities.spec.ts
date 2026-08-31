@@ -105,10 +105,13 @@ test.describe("dev utilities", () => {
 
     // Stat tiles render value + label; assert by looking up the value next to
     // each label. Words = 8, characters = 45, sentences = 3, paragraphs = 1.
-    await expect(page.getByText("Words").locator("..").locator(".font-mono")).toHaveText("8");
-    await expect(page.getByText("Characters", { exact: true }).locator("..").locator(".font-mono")).toHaveText("45");
-    await expect(
-      page.getByText("Sentences").locator("..").locator(".font-mono"),
-    ).toHaveText("3");
+    // Each stat card is `<div><p>{label}</p><p class="text-2xl">{value}</p></div>`.
+    // Match the label exactly, then step up to the card — an inexact match or a
+    // bare `.font-mono` picks up every other tile (and the reading-time card).
+    const stat = (label: string) =>
+      page.getByText(label, { exact: true }).locator("..").locator("p.text-2xl");
+    await expect(stat("Words")).toHaveText("8");
+    await expect(stat("Characters")).toHaveText("45");
+    await expect(stat("Sentences")).toHaveText("3");
   });
 });

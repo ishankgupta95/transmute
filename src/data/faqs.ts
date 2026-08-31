@@ -387,13 +387,13 @@ export const faqs: ToolFAQs = {
   // ── PDF Tools ──────────────────────────────────────────────────────
   "merge-pdf": [
     { question: "Is there a limit to how many PDFs I can merge?", answer: "There is no hard limit. The tool processes everything in your browser, so the practical limit depends on your device's memory. Merging dozens of average-sized PDFs should work fine." },
-    { question: "Will the merged PDF keep bookmarks and links?", answer: "Yes. The merge operation copies pages as-is, preserving internal links, annotations, and other page-level features." },
+    { question: "Will the merged PDF keep bookmarks and links?", answer: "Page-level features — internal links, annotations, form fields — are copied with their pages, and the first file's document title and author are carried over. Document bookmarks (the outline tree) are not merged: the pages are grafted into a fresh document, so the combined file starts with no outline." },
     { question: "Can I reorder the files before merging?", answer: "Yes. Drag and drop the files in the list to set the order before you click merge." },
   ],
   "split-pdf": [
     { question: "How do I specify which pages to extract?", answer: "Click individual page thumbnails to select them, or type a range like '1-3, 5, 8-10' in the text input. Selected pages are extracted into a new PDF." },
     { question: "Can I split a PDF into individual pages?", answer: "Yes. Select all pages and each will be included. For truly separate files per page, you can run the tool multiple times or select one page at a time." },
-    { question: "Are bookmarks and metadata preserved?", answer: "Document-level metadata (title, author) is preserved. Bookmarks that point to extracted pages are kept; bookmarks pointing to discarded pages are dropped automatically since their targets no longer exist." },
+    { question: "Are bookmarks and metadata preserved?", answer: "The extracted file keeps the document title and author. Bookmarks are not carried over — the pages are copied into a fresh document, so the outline tree is rebuilt empty. Page-level links and annotations travel with their pages." },
   ],
   "compress-pdf": [
     { question: "How much smaller will my PDF get?", answer: "Results vary. PDFs with lots of metadata or redundant internal objects see the biggest reduction. Heavily optimized PDFs may not shrink much. The tool shows the before and after file sizes." },
@@ -403,7 +403,7 @@ export const faqs: ToolFAQs = {
   "pdf-to-jpg": [
     { question: "What resolution are the output images?", answer: "By default, pages are rendered at 2× scale for crisp output. You can adjust the scale to get higher or lower resolution images." },
     { question: "Can I choose PNG instead of JPG?", answer: "Yes. Toggle between JPG and PNG output. PNG is lossless and larger; JPG is smaller with adjustable quality." },
-    { question: "How do I convert just one page?", answer: "Use the page selector to pick the page or page range you want — for example, 5 or 3-7. Only those pages are rendered to images, and the result downloads as a single image or a small ZIP." },
+    { question: "How do I convert just one page?", answer: "Every page is rendered. The deck shows one tile per page — click a tile to save that page on its own, or use Download all (ZIP) to take the whole set. There is no page-range filter on this tool; to work with a subset, run Split PDF first and convert the extracted file." },
   ],
   "images-to-pdf": [
     { question: "What image formats are supported?", answer: "JPG/JPEG and PNG images are supported. Other formats should be converted to JPG or PNG first using our image converter tools." },
@@ -418,7 +418,7 @@ export const faqs: ToolFAQs = {
   "add-page-numbers": [
     { question: "Where can I place page numbers?", answer: "You can place numbers at the top or bottom of each page, aligned to the left, center, or right. Six positions in total." },
     { question: "Can I start numbering from a number other than 1?", answer: "Yes. Set the starting number to any value. This is useful when your PDF is part of a larger document." },
-    { question: "Can I skip the first few pages — like a cover or title?", answer: "Yes. Set the starting page to skip the cover and title pages so numbering begins on the first body page. The starting number is independent, so you can begin at any value." },
+    { question: "Can I skip the first few pages — like a cover or title?", answer: "No. Numbering always begins on page one and every page in the file gets a number; the only control over the sequence is the starting number. To leave a cover unnumbered, split it off with Split PDF, number the rest, then merge the two files back together." },
   ],
   "pdf-page-reorder": [
     { question: "How do I reorder pages?", answer: "After uploading your PDF, you'll see thumbnail previews of every page. Drag and drop the thumbnails into your desired order, then click download." },
@@ -463,9 +463,9 @@ export const faqs: ToolFAQs = {
 
   // ── Video Tools ──────────────────────────────────────────────────
   "video-to-gif": [
-    { question: "What video formats are supported?", answer: "MP4, WebM, MOV, AVI, and MKV. The tool uses FFmpeg.wasm which supports a wide range of video codecs." },
-    { question: "Why is my GIF so large?", answer: "GIFs are inherently large because they use lossless frame-by-frame encoding. Reduce the width, lower the frame rate (10-15 fps is usually smooth enough), and keep clips short to minimize file size." },
-    { question: "How do I get the best GIF quality?", answer: "This tool uses FFmpeg's palettegen filter which analyzes your video to create an optimal 256-color palette, producing much better quality than simple color quantization." },
+    { question: "What video formats are supported?", answer: "MP4, WebM, and MOV — whatever your browser can play back natively, since the tool decodes frames straight from a video element rather than shipping its own decoder." },
+    { question: "Why is my GIF so large?", answer: "GIF stores every frame in full — there is no compression between frames the way there is in a video codec. Reduce the width, lower the frame rate (10-15 fps is usually smooth enough), and keep clips short to minimize file size." },
+    { question: "How do I get the best GIF quality?", answer: "Each frame gets its own 256-color palette, computed from that frame's actual colors, which holds up far better than a single fixed palette across the whole clip. Lowering the width helps quality too, since fewer pixels means less to quantize." },
     { question: "Is there a duration limit?", answer: "No hard limit, but GIFs longer than 10-15 seconds become very large. For longer clips, consider keeping the video format and using lower resolution." },
   ],
   "video-trimmer": [
@@ -480,13 +480,13 @@ export const faqs: ToolFAQs = {
   ],
   "webm-to-mp4": [
     { question: "Why convert WebM to MP4?", answer: "WebM is great for web playback but has limited support on iOS, some Android apps, and many video editors. MP4 (H.264/AAC) is the most universally compatible video format." },
-    { question: "Will the quality change?", answer: "There will be minimal quality difference. The tool uses CRF 23 which provides a good balance between file size and visual quality. The output may be slightly larger or smaller depending on the content." },
-    { question: "How long does conversion take?", answer: "It depends on the video length and your device. A 1-minute WebM typically converts in 30-60 seconds on a modern computer. The FFmpeg.wasm engine runs in your browser using WebAssembly." },
+    { question: "Will the quality change?", answer: "Yes — the video is fully re-encoded from VP8/VP9 to H.264, so this is not a lossless remux. The target is 5 Mbps, high enough that the difference is hard to see on typical screen recordings. The output may be larger or smaller than the original depending on the content." },
+    { question: "How long does conversion take?", answer: "It depends on the video length and your device. Encoding runs through the browser's built-in WebCodecs API, which uses your hardware encoder where one is available, so a 1-minute clip is usually well under a minute. This needs Chrome or Edge — Firefox and older Safari don't expose the encoder." },
   ],
   "compress-video": [
     { question: "Which preset should I choose?", answer: "WhatsApp: optimized for mobile sharing (720p, ~1 Mbps). Email: small enough for email attachments (480p, ~500 kbps). Web: balanced quality for websites and social media (original resolution, higher bitrate)." },
     { question: "How much smaller will my video get?", answer: "Results vary by content. Typical reductions: WhatsApp preset 60-80% smaller, Email preset 70-90% smaller, Web preset 30-60% smaller than the original." },
-    { question: "Is there a file size limit?", answer: "The tool accepts files up to 100 MB. Larger files may cause the browser tab to run out of memory since all processing happens locally." },
+    { question: "Is there a file size limit?", answer: "No limit is enforced, but everything runs in your browser tab, so files much beyond ~100 MB risk exhausting its memory. Trimming the clip first is usually the better route for very long recordings." },
   ],
   "screen-recorder": [
     { question: "Do I need to install anything?", answer: "No. This tool uses the browser's built-in Screen Capture API (getDisplayMedia). It works in Chrome, Edge, Firefox, and other modern browsers without any extensions." },

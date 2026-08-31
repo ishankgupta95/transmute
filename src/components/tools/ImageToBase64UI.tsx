@@ -2,8 +2,27 @@
 
 import { useCallback, useState } from "react";
 import { DropZone } from "@/components/tools/DropZone";
+import { useImageDimensions } from "@/hooks/useImageDimensions";
+import { imageMeta } from "@/lib/utils/canvas-meta";
 import { formatFileSize } from "@/lib/utils/file-helpers";
-import { copyText } from "@/lib/utils/clipboard";
+import {
+  ToolActions,
+  ToolAside,
+  ToolAsideSection,
+  ToolChoice,
+  ToolOutput,
+} from "@/components/tools/ToolAside";
+import { ToolControl, ToolControlGroup } from "@/components/tools/ToolControls";
+import {
+  CanvasHeader,
+  CodeBlock,
+  lineCount,
+  TEXT_PANE_BODY,
+  TextPane,
+  TextPanes,
+} from "@/components/tools/ToolCanvas";
+import { CANVAS_COLUMN } from "@/components/workspace/shared";
+import { useCopied } from "@/hooks/useCopied";
 
 interface ImageToBase64UIProps {
   acceptFormats: string;
@@ -13,14 +32,16 @@ export function ImageToBase64UI({ acceptFormats }: ImageToBase64UIProps) {
   const [file, setFile] = useState<File | null>(null);
   const [base64, setBase64] = useState<string>("");
   const [dataUri, setDataUri] = useState<string>("");
-  const [copied, setCopied] = useState(false);
+  const { copied, copy, clear: clearCopied } = useCopied();
   const [outputMode, setOutputMode] = useState<"datauri" | "raw">("datauri");
+  // The doc's image readout is dimensions AND size, not the size alone.
+  const sourceDims = useImageDimensions(file);
 
   const handleFiles = useCallback((files: File[]) => {
     const f = files[0];
     if (!f) return;
     setFile(f);
-    setCopied(false);
+    clearCopied();
 
     const reader = new FileReader();
     reader.onload = () => {
@@ -31,107 +52,110 @@ export function ImageToBase64UI({ acceptFormats }: ImageToBase64UIProps) {
       setBase64(raw);
     };
     reader.readAsDataURL(f);
-  }, []);
+  }, [clearCopied]);
 
   const handleCopy = useCallback(() => {
     const text = outputMode === "datauri" ? dataUri : base64;
-    copyText(text).then((ok) => {
-      if (ok) {
-        setCopied(true);
-        setTimeout(() => setCopied(false), 2000);
-      }
-    });
-  }, [outputMode, dataUri, base64]);
+    void copy(text);
+  }, [copy, outputMode, dataUri, base64]);
 
   const handleReset = useCallback(() => {
     setFile(null);
     setBase64("");
     setDataUri("");
-    setCopied(false);
-  }, []);
+    clearCopied();
+  }, [clearCopied]);
 
   const output = outputMode === "datauri" ? dataUri : base64;
 
+  if (!file) {
+    return <DropZone accept={acceptFormats} onFiles={handleFiles} />;
+  }
+
+  const growth = file.size > 0 ? Math.round((output.length / file.size - 1) * 100) : 0;
+
   return (
-    <div className="space-y-6">
-      {!file ? (
-        <DropZone accept={acceptFormats} onFiles={handleFiles} />
-      ) : (
-        <>
-          {/* File info */}
-          <div className="flex items-center justify-between rounded-lg border border-border bg-bg-secondary p-4">
-            <div>
-              <p className="text-sm text-text-primary font-medium">{file.name}</p>
-              <p className="text-xs text-text-muted">
-                {formatFileSize(file.size)} · Base64: {formatFileSize(base64.length)}
-              </p>
-            </div>
-            {dataUri && (
-              <img src={dataUri} alt="Preview" className="h-12 w-12 rounded object-cover" />
-            )}
-          </div>
+    <>
+      {/* ── Canvas: what you look at ─────────────────────────── */}
+      <div className={CANVAS_COLUMN}>
+        <CanvasHeader
+          file={file.name}
+          meta={imageMeta(sourceDims, formatFileSize(file.size))}
+          trailing={outputMode === "datauri" ? "DATA URI" : "BASE64"}
+        />
 
-          {/* Mode toggle */}
-          <div className="flex items-center justify-center gap-2">
-            <button
-              onClick={() => setOutputMode("datauri")}
-              className={`rounded-md px-4 py-2 text-sm font-medium transition-colors ${
-                outputMode === "datauri"
-                  ? "bg-accent text-bg-primary"
-                  : "bg-bg-elevated text-text-secondary hover:bg-bg-hover"
-              }`}
-            >
-              Data URI
-            </button>
-            <button
-              onClick={() => setOutputMode("raw")}
-              className={`rounded-md px-4 py-2 text-sm font-medium transition-colors ${
-                outputMode === "raw"
-                  ? "bg-accent text-bg-primary"
-                  : "bg-bg-elevated text-text-secondary hover:bg-bg-hover"
-              }`}
-            >
-              Raw Base64
-            </button>
-          </div>
-
-          {/* Output */}
-          <div className="relative">
+        <TextPanes columns={1}>
+          <TextPane
+            tone="out"
+            label={outputMode === "datauri" ? "Data URI" : "Raw Base64"}
+            lines={lineCount(output)}
+            action={
+              <button
+                onClick={handleCopy}
+                className="cursor-pointer text-accent transition-colors hover:text-accent-hover"
+              >
+                {copied ? "Copied!" : "Copy"}
+              </button>
+            }
+          >
             <textarea
               readOnly
               value={output}
-              rows={8}
-              className="w-full rounded-lg border border-border bg-bg-elevated p-3 text-xs text-text-secondary font-mono resize-none"
+              aria-label={outputMode === "datauri" ? "Data URI output" : "Raw Base64 output"}
+              className={TEXT_PANE_BODY}
             />
-          </div>
+          </TextPane>
+        </TextPanes>
 
-          {/* Actions */}
-          <div className="flex items-center justify-center gap-3">
-            <button
-              onClick={handleCopy}
-              className="inline-flex items-center gap-2 rounded-md bg-accent px-6 py-2.5 text-sm font-medium text-bg-primary hover:bg-accent-hover transition-colors"
-            >
-              {copied ? "Copied!" : "Copy to Clipboard"}
-            </button>
-            <button
-              onClick={handleReset}
-              className="rounded-md border border-border px-4 py-2.5 text-sm text-text-secondary hover:bg-bg-hover transition-colors"
-            >
-              Convert another
-            </button>
-          </div>
+        {outputMode === "datauri" && dataUri && (
+          <CodeBlock label="Usage in HTML">
+            {`<img src="${dataUri.slice(0, 60)}…" />`}
+          </CodeBlock>
+        )}
+      </div>
 
-          {/* Usage hint */}
-          {outputMode === "datauri" && (
-            <div className="rounded-lg border border-border bg-bg-secondary p-4">
-              <p className="text-xs text-text-muted mb-2">Usage in HTML:</p>
-              <code className="text-xs text-accent break-all">
-                {`<img src="${dataUri.slice(0, 60)}..." />`}
-              </code>
-            </div>
-          )}
-        </>
-      )}
-    </div>
+      {/* ── Controls: the doc's right-hand rail / bottom sheet ── */}
+      <ToolAside
+        footer={
+          <ToolActions
+            primaryLabel={copied ? "Copied to clipboard" : "Copy to Clipboard"}
+            onPrimary={handleCopy}
+            primaryDisabled={!output}
+            onReset={handleReset}
+            resetLabel="CONVERT ANOTHER"
+          />
+        }
+      >
+        <ToolControlGroup>
+          <ToolControl label="FORMAT">
+            <ToolChoice
+              label="Output format"
+              fill
+              value={outputMode}
+              onChange={setOutputMode}
+              options={[
+                { value: "datauri" as const, label: "Data URI" },
+                { value: "raw" as const, label: "Raw Base64" },
+              ]}
+            />
+            <span className="font-body text-[10.5px] leading-[1.5] text-text-muted">
+              {outputMode === "datauri"
+                ? "Carries the MIME type, so it drops straight into src or url()."
+                : "Payload only — for JSON bodies and APIs that add their own prefix."}
+            </span>
+          </ToolControl>
+        </ToolControlGroup>
+
+        <ToolAsideSection label="OUTPUT">
+          <ToolOutput
+            rows={[
+              ["File", formatFileSize(file.size)],
+              ["Encoded", output ? formatFileSize(output.length) : "—"],
+              ["Overhead", output ? `+${growth}%` : "—"],
+            ]}
+          />
+        </ToolAsideSection>
+      </ToolAside>
+    </>
   );
 }

@@ -1,9 +1,41 @@
 import { render, screen, fireEvent } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { PasswordGeneratorUI } from "@/components/tools/PasswordGeneratorUI";
+import { PasswordGeneratorUI, generatePassword } from "@/components/tools/PasswordGeneratorUI";
 
 Object.assign(navigator, {
   clipboard: { writeText: vi.fn().mockResolvedValue(undefined) },
+});
+
+describe("generatePassword", () => {
+  it("includes every selected character class — not just probably", () => {
+    // 8 chars × 4 classes: without the guarantee, misses are common enough
+    // that 50 runs would catch a regression with near-certainty.
+    for (let i = 0; i < 50; i++) {
+      const pw = generatePassword({
+        length: 8,
+        uppercase: true,
+        lowercase: true,
+        numbers: true,
+        symbols: true,
+      });
+      expect(pw).toHaveLength(8);
+      expect(pw).toMatch(/[A-Z]/);
+      expect(pw).toMatch(/[a-z]/);
+      expect(pw).toMatch(/[0-9]/);
+      expect(pw).toMatch(/[^A-Za-z0-9]/);
+    }
+  });
+
+  it("caps guaranteed classes at the password length", () => {
+    const pw = generatePassword({
+      length: 2,
+      uppercase: true,
+      lowercase: true,
+      numbers: true,
+      symbols: true,
+    });
+    expect(pw).toHaveLength(2);
+  });
 });
 
 describe("PasswordGeneratorUI", () => {
@@ -102,7 +134,7 @@ describe("PasswordGeneratorUI", () => {
 
   it("generates multiple passwords when count is set", () => {
     render(<PasswordGeneratorUI />);
-    fireEvent.change(screen.getByRole("combobox"), { target: { value: "5" } });
+    fireEvent.click(screen.getByRole("button", { name: "5" }));
     fireEvent.click(screen.getByText("Generate"));
     const codes = document.querySelectorAll("code");
     expect(codes).toHaveLength(5);
@@ -117,9 +149,7 @@ describe("PasswordGeneratorUI", () => {
 
   it("all generated passwords are unique", () => {
     render(<PasswordGeneratorUI />);
-    fireEvent.change(screen.getByRole("combobox"), {
-      target: { value: "20" },
-    });
+    fireEvent.click(screen.getByRole("button", { name: "20" }));
     fireEvent.click(screen.getByText("Generate"));
     const codes = document.querySelectorAll("code");
     const passwords = Array.from(codes).map((c) => c.textContent);

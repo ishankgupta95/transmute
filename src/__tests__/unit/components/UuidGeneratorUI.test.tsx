@@ -57,7 +57,7 @@ describe("UuidGeneratorUI", () => {
   it("generates the requested count of UUIDs", () => {
     render(<UuidGeneratorUI />);
     // Select 5 UUIDs
-    fireEvent.change(screen.getByRole("combobox"), { target: { value: "5" } });
+    fireEvent.click(screen.getByRole("button", { name: "5" }));
     fireEvent.click(screen.getByText("Generate"));
     const codes = document.querySelectorAll("code");
     expect(codes).toHaveLength(5);
@@ -65,9 +65,7 @@ describe("UuidGeneratorUI", () => {
 
   it("generates 10 UUIDs when selected", () => {
     render(<UuidGeneratorUI />);
-    fireEvent.change(screen.getByRole("combobox"), {
-      target: { value: "10" },
-    });
+    fireEvent.click(screen.getByRole("button", { name: "10" }));
     fireEvent.click(screen.getByText("Generate"));
     const codes = document.querySelectorAll("code");
     expect(codes).toHaveLength(10);
@@ -75,7 +73,7 @@ describe("UuidGeneratorUI", () => {
 
   it("shows Copy all button when multiple UUIDs generated", () => {
     render(<UuidGeneratorUI />);
-    fireEvent.change(screen.getByRole("combobox"), { target: { value: "5" } });
+    fireEvent.click(screen.getByRole("button", { name: "5" }));
     fireEvent.click(screen.getByText("Generate"));
     expect(screen.getByText("Copy all")).toBeInTheDocument();
   });
@@ -94,7 +92,7 @@ describe("UuidGeneratorUI", () => {
 
   it("copies all UUIDs to clipboard separated by newline", () => {
     render(<UuidGeneratorUI />);
-    fireEvent.change(screen.getByRole("combobox"), { target: { value: "5" } });
+    fireEvent.click(screen.getByRole("button", { name: "5" }));
     fireEvent.click(screen.getByText("Generate"));
     fireEvent.click(screen.getByText("Copy all"));
     expect(navigator.clipboard.writeText).toHaveBeenCalledTimes(1);
@@ -106,19 +104,15 @@ describe("UuidGeneratorUI", () => {
 
   it("shows label with UUID count", () => {
     render(<UuidGeneratorUI />);
-    fireEvent.change(screen.getByRole("combobox"), { target: { value: "5" } });
+    fireEvent.click(screen.getByRole("button", { name: "5" }));
     fireEvent.click(screen.getByText("Generate"));
-    // The label element shows "5 UUIDs"
-    const label = document.querySelector("label.text-sm.font-medium");
-    expect(label).not.toBeNull();
-    expect(label!.textContent).toContain("5 UUID");
+    // The canvas header names the count.
+    expect(screen.getByText("5 UUIDs")).toBeInTheDocument();
   });
 
   it("all generated UUIDs are unique", () => {
     render(<UuidGeneratorUI />);
-    fireEvent.change(screen.getByRole("combobox"), {
-      target: { value: "50" },
-    });
+    fireEvent.click(screen.getByRole("button", { name: "50" }));
     fireEvent.click(screen.getByText("Generate"));
     const codes = document.querySelectorAll("code");
     const uuids = Array.from(codes).map((c) => c.textContent);
@@ -129,7 +123,7 @@ describe("UuidGeneratorUI", () => {
   it("v7 UUIDs generated in sequence have increasing timestamp prefix", () => {
     render(<UuidGeneratorUI />);
     fireEvent.click(screen.getByText("UUID v7"));
-    fireEvent.change(screen.getByRole("combobox"), { target: { value: "5" } });
+    fireEvent.click(screen.getByRole("button", { name: "5" }));
     fireEvent.click(screen.getByText("Generate"));
     const codes = document.querySelectorAll("code");
     const uuids = Array.from(codes).map((c) => c.textContent!);

@@ -2,8 +2,23 @@
 
 import { useCallback, useState } from "react";
 import { ErrorMessage } from "@/components/tools/ErrorMessage";
-import { copyText } from "@/lib/utils/clipboard";
 import { triggerDownload } from "@/lib/utils/download";
+import {
+  ToolActions,
+  ToolAside,
+  ToolAsideSection,
+  ToolOutput,
+  ToolResetLink,
+} from "@/components/tools/ToolAside";
+import {
+  lineCount,
+  TEXT_PANE_BODY,
+  TextPane,
+  TextPanes,
+} from "@/components/tools/ToolCanvas";
+import { CANVAS_COLUMN } from "@/components/workspace/shared";
+import { useCopied } from "@/hooks/useCopied";
+import { formatFileSize } from "@/lib/utils/file-helpers";
 
 /** Flatten nested objects into dot-notation keys (address.city, etc.). */
 function flatten(
@@ -22,7 +37,14 @@ function flatten(
   return out;
 }
 
-function jsonToCsv(jsonStr: string): string {
+/** The rail's OUTPUT readout wants the shape, so the conversion reports it. */
+interface CsvResult {
+  csv: string;
+  rows: number;
+  cols: number;
+}
+
+function jsonToCsv(jsonStr: string): CsvResult {
   const data = JSON.parse(jsonStr);
   if (!Array.isArray(data) || data.length === 0) throw new Error("Input must be a non-empty JSON array");
 
@@ -50,34 +72,33 @@ function jsonToCsv(jsonStr: string): string {
   for (const flat of flatRows) {
     lines.push(cols.map((c) => escape(flat[c])).join(","));
   }
-  return lines.join("\n");
+  return { csv: lines.join("\n"), rows: flatRows.length, cols: cols.length };
 }
 
 export function JsonToCsvUI() {
   const [input, setInput] = useState("");
   const [output, setOutput] = useState("");
+  const [shape, setShape] = useState<{ rows: number; cols: number } | null>(null);
   const [error, setError] = useState("");
-  const [copied, setCopied] = useState(false);
+  const { copied, copy } = useCopied();
 
   const handleConvert = useCallback(() => {
     setError("");
     setOutput("");
+    setShape(null);
     if (!input.trim()) return;
     try {
-      setOutput(jsonToCsv(input));
+      const result = jsonToCsv(input);
+      setOutput(result.csv);
+      setShape({ rows: result.rows, cols: result.cols });
     } catch (e) {
       setError(e instanceof Error ? e.message : "Invalid input");
     }
   }, [input]);
 
   const handleCopy = useCallback(() => {
-    copyText(output).then((ok) => {
-      if (ok) {
-        setCopied(true);
-        setTimeout(() => setCopied(false), 2000);
-      }
-    });
-  }, [output]);
+    void copy(output);
+  }, [copy, output]);
 
   const handleDownload = useCallback(() => {
     const blob = new Blob([output], { type: "text/csv" });
@@ -85,49 +106,76 @@ export function JsonToCsvUI() {
   }, [output]);
 
   return (
-    <div className="space-y-4">
-      <div>
-        <label className="block text-sm font-medium text-text-secondary mb-1">Input JSON Array</label>
-        <textarea
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          placeholder='[{"name": "Alice", "age": 30}, {"name": "Bob", "age": 25}]'
-          rows={8}
-          className="w-full rounded-lg border border-border bg-bg-elevated p-3 text-sm text-text-primary font-mono resize-y placeholder:text-text-muted"
-        />
+    <>
+      {/* ── Canvas: the doc's two-up IN / OUT panes ────────── */}
+      <div className={CANVAS_COLUMN}>
+        <TextPanes columns={output ? 2 : 1}>
+          <TextPane
+            label="Input JSON Array"
+            lines={lineCount(input)}
+            size={formatFileSize(new Blob([input]).size)}
+          >
+            <textarea
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              placeholder='[{"name": "Alice", "age": 30}, {"name": "Bob", "age": 25}]'
+              aria-label="Input JSON array"
+              className={TEXT_PANE_BODY}
+            />
+          </TextPane>
+
+          {output && (
+            <TextPane
+              tone="out"
+              label="CSV Output"
+              lines={lineCount(output)}
+              size={formatFileSize(new Blob([output]).size)}
+              action={
+                <>
+                  <button onClick={handleCopy} className="cursor-pointer text-accent transition-colors hover:text-accent-hover">
+                    {copied ? "Copied!" : "Copy"}
+                  </button>
+                  <button onClick={handleDownload} className="cursor-pointer text-accent transition-colors hover:text-accent-hover">
+                    Download
+                  </button>
+                </>
+              }
+            >
+              <pre className={TEXT_PANE_BODY} aria-label="CSV output">{output}</pre>
+            </TextPane>
+          )}
+        </TextPanes>
+
+        {error && (
+          <ErrorMessage message={error} />
+        )}
       </div>
 
-      <div className="flex justify-center">
-        <button
-          onClick={handleConvert}
-          className="rounded-md bg-accent px-6 py-2.5 text-sm font-medium text-bg-primary hover:bg-accent-hover transition-colors"
-        >
-          Convert to CSV
-        </button>
-      </div>
-
-      {error && (
-        <ErrorMessage message={error} />
-      )}
-
-      {output && (
-        <div>
-          <div className="flex items-center justify-between mb-1">
-            <label className="text-sm font-medium text-text-secondary">CSV Output</label>
-            <div className="flex gap-2">
-              <button onClick={handleCopy} className="text-xs text-accent hover:text-accent-hover transition-colors">
-                {copied ? "Copied!" : "Copy"}
-              </button>
-              <button onClick={handleDownload} className="text-xs text-accent hover:text-accent-hover transition-colors">
-                Download
-              </button>
-            </div>
-          </div>
-          <pre className="w-full rounded-lg border border-border bg-bg-elevated p-3 text-sm text-text-primary font-mono overflow-x-auto whitespace-pre-wrap max-h-96 overflow-y-auto">
-            {output}
-          </pre>
-        </div>
-      )}
-    </div>
+      {/* ── Controls: the doc's right-hand rail / bottom sheet ── */}
+      <ToolAside
+        footer={
+          <>
+            <ToolActions
+              primaryLabel="Convert to CSV"
+              onPrimary={handleConvert}
+              primaryDisabled={!input.trim()}
+            />
+            {output && <ToolResetLink onClick={handleDownload} label="SAVE data.csv" />}
+          </>
+        }
+      >
+        <ToolAsideSection label="OUTPUT">
+          <ToolOutput
+            rows={[
+              ["Rows", shape ? String(shape.rows) : "—"],
+              ["Columns", shape ? String(shape.cols) : "—"],
+            ]}
+          />
+          <span className="font-body text-[10.5px] leading-[1.5] text-text-muted">
+            Nested objects flatten to dot-notation columns; arrays are kept as JSON in the cell.
+          </span>
+        </ToolAsideSection>
+      </ToolAside>
+    </>
   );
 }

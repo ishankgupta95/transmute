@@ -4,10 +4,23 @@ import { useCallback, useState } from "react";
 import { ErrorMessage } from "@/components/tools/ErrorMessage";
 import { DropZone } from "@/components/tools/DropZone";
 import { DownloadButton } from "@/components/tools/DownloadButton";
-import { ProgressBar } from "@/components/tools/ProgressBar";
 import { encodeIcoAsync } from "@/lib/tools/ico-encode";
 import { loadImage } from "@/lib/tools/canvas-utils";
+import { drawContained } from "@/lib/tools/image-draw";
+import { useObjectUrl } from "@/hooks/useObjectUrl";
+import { useImageDimensions } from "@/hooks/useImageDimensions";
+import { imageMeta } from "@/lib/utils/canvas-meta";
 import { formatFileSize } from "@/lib/utils/file-helpers";
+import {
+  ToolActions,
+  ToolAside,
+  ToolAsideSection,
+  ToolOutput,
+  ToolResetLink,
+} from "@/components/tools/ToolAside";
+import { ToolProgress } from "@/components/tools/ToolControls";
+import { CanvasHeader, IconSizes } from "@/components/tools/ToolCanvas";
+import { CANVAS_COLUMN } from "@/components/workspace/shared";
 
 const ICO_SIZES = [16, 32, 48];
 
@@ -20,6 +33,10 @@ export function PngToIcoUI({ acceptFormats }: PngToIcoUIProps) {
   const [result, setResult] = useState<{ blob: Blob; fileName: string } | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const previewUrl = useObjectUrl(file);
+  // The doc's icon readout is "1024 × 1024 · 84 KB" — the source dimensions
+  // matter here, since anything under 48px is upscaled into the .ico.
+  const sourceDims = useImageDimensions(file);
 
   const handleFiles = useCallback((files: File[]) => {
     const f = files[0];
@@ -42,7 +59,7 @@ export function PngToIcoUI({ acceptFormats }: PngToIcoUIProps) {
         canvas.height = size;
         const ctx = canvas.getContext("2d");
         if (!ctx) throw new Error("Canvas 2D context not available");
-        ctx.drawImage(img, 0, 0, size, size);
+        drawContained(ctx, img, size);
         return { canvas, size };
       });
 
@@ -61,61 +78,75 @@ export function PngToIcoUI({ acceptFormats }: PngToIcoUIProps) {
     setError(null);
   }, []);
 
+  if (!file) {
+    return <DropZone accept={acceptFormats} onFiles={handleFiles} />;
+  }
+
   return (
-    <div className="space-y-6">
-      {!file ? (
-        <DropZone accept={acceptFormats} onFiles={handleFiles} />
-      ) : (
-        <>
-          {/* File info */}
-          <div className="rounded-lg border border-border bg-bg-secondary p-4 text-center">
-            <p className="text-sm text-text-primary font-medium">{file.name}</p>
-            <p className="text-xs text-text-muted">{formatFileSize(file.size)}</p>
-            <p className="text-xs text-text-muted mt-2">
-              Will generate ICO with sizes: {ICO_SIZES.join("×, ")}×{ICO_SIZES[ICO_SIZES.length - 1]} px
-            </p>
-          </div>
+    <>
+      {/* ── Canvas: the icon, at the sizes it will actually ship ─ */}
+      <div className={CANVAS_COLUMN}>
+        <CanvasHeader
+          file={file.name}
+          meta={imageMeta(sourceDims, formatFileSize(file.size))}
+          trailing="ICO"
+        />
 
-          {/* Progress */}
-          {isProcessing && (
-            <div className="space-y-2">
-              <ProgressBar progress={null} />
-              <p className="text-sm text-text-muted text-center">Converting...</p>
-            </div>
-          )}
+        <IconSizes
+          previewUrl={previewUrl}
+          sizes={[
+            [16, "Browser tab", 16],
+            [32, "Browser tab", 24],
+            [48, "Windows", 34],
+          ]}
+        />
 
-          {error && <ErrorMessage message={error} />}
+        {error && <ErrorMessage message={error} />}
+      </div>
 
-          {result && (
-            <div className="rounded-lg border border-border bg-bg-secondary p-4 text-center">
-              <p className="text-sm text-text-muted">
-                ICO file ready · {formatFileSize(result.blob.size)}
-              </p>
-            </div>
-          )}
-
-          {/* Actions */}
-          <div className="flex items-center justify-center gap-3">
-            {!result && !isProcessing && (
-              <button
-                onClick={handleConvert}
-                className="inline-flex items-center gap-2 rounded-md bg-accent px-6 py-2.5 text-sm font-medium text-bg-primary hover:bg-accent-hover transition-colors"
-              >
-                Convert to ICO
-              </button>
+      {/* ── Controls: the doc's right-hand rail / bottom sheet ── */}
+      <ToolAside
+        footer={
+          <>
+            {/* The doc pins the running readout to the rail footer. The three
+                canvas draws report no progress, so the bar is indeterminate. */}
+            {isProcessing && (
+              <ToolProgress phase="ENCODING ICO" percent={null} label="Encoding ICO" />
             )}
-            {result && (
-              <DownloadButton blob={result.blob} fileName={result.fileName} />
+            {result ? (
+              <DownloadButton
+                blob={result.blob}
+                fileName={result.fileName}
+                className="w-full justify-center"
+              />
+            ) : (
+              <ToolActions
+                primaryLabel={isProcessing ? "Converting…" : "Convert to ICO"}
+                onPrimary={handleConvert}
+                primaryDisabled={isProcessing}
+              />
             )}
-            <button
+            <ToolResetLink
               onClick={handleReset}
-              className="rounded-md border border-border px-4 py-2.5 text-sm text-text-secondary hover:bg-bg-hover transition-colors"
-            >
-              {result ? "Convert another" : "Cancel"}
-            </button>
-          </div>
-        </>
-      )}
-    </div>
+              label={result ? "CONVERT ANOTHER" : "CANCEL"}
+            />
+          </>
+        }
+      >
+        <ToolAsideSection label="OUTPUT">
+          <ToolOutput
+            rows={[
+              ["Source", formatFileSize(file.size)],
+              ["Sizes", ICO_SIZES.map((s) => `${s}`).join(" · ")],
+              ["ICO", result ? formatFileSize(result.blob.size) : "—"],
+            ]}
+          />
+          <span className="font-body text-[10.5px] leading-[1.5] text-text-muted">
+            One .ico containing all three sizes — Windows and older browsers pick the one they
+            need.
+          </span>
+        </ToolAsideSection>
+      </ToolAside>
+    </>
   );
 }

@@ -4,9 +4,20 @@ import { useCallback, useState, useEffect, useRef } from "react";
 import { ErrorMessage } from "@/components/tools/ErrorMessage";
 import { DropZone } from "@/components/tools/DropZone";
 import { DownloadButton } from "@/components/tools/DownloadButton";
-import { ProgressBar } from "@/components/tools/ProgressBar";
 import { RotateCw } from "lucide-react";
 import { rotatePdfPages, getPageCount, loadPdfjsDocument, renderPageFromDoc } from "@/lib/tools/pdf-engine";
+import {
+  ToolActions,
+  ToolAside,
+  ToolChoice,
+  ToolDone,
+  ToolOutput,
+  ToolResetLink,
+} from "@/components/tools/ToolAside";
+import { CanvasHeader, PageDeck, PageTile } from "@/components/tools/ToolCanvas";
+import { ToolControl, ToolControlGroup, ToolProgress } from "@/components/tools/ToolControls";
+import { formatFileSize } from "@/lib/utils/file-helpers";
+import { CANVAS_COLUMN } from "@/components/workspace/shared";
 
 export function RotatePdfUI() {
   const [file, setFile] = useState<File | null>(null);
@@ -18,6 +29,9 @@ export function RotatePdfUI() {
   const [result, setResult] = useState<Blob | null>(null);
   const [error, setError] = useState<string | null>(null);
   const thumbsLoadedRef = useRef(false);
+  // The doc pins a "Done in 1.4 s" card above the primary once a run
+  // finishes. Timed for real; cleared the moment the inputs change.
+  const [elapsed, setElapsed] = useState<string | null>(null);
 
   const handleFiles = useCallback(async (files: File[]) => {
     const f = files[0];
@@ -45,23 +59,52 @@ export function RotatePdfUI() {
     if (!file || pageCount === 0 || thumbsLoadedRef.current) return;
     thumbsLoadedRef.current = true;
     let cancelled = false;
+    let doc: Awaited<ReturnType<typeof loadPdfjsDocument>> | null = null;
     (async () => {
       const freshBuf = await file.arrayBuffer();
-      const doc = await loadPdfjsDocument(freshBuf);
+      doc = await loadPdfjsDocument(freshBuf);
       const thumbs: string[] = [];
-      for (let i = 1; i <= Math.min(pageCount, 50); i++) {
-        if (cancelled) return;
-        try {
-          const canvas = await renderPageFromDoc(doc, i, 0.3);
-          thumbs.push(canvas.toDataURL("image/jpeg", 0.6));
-        } catch {
-          thumbs.push("");
+      try {
+        for (let i = 1; i <= Math.min(pageCount, 50); i++) {
+          // `break`, not `return` — the finally below has to run or the pdfjs
+          // document stays pinned in its worker for the tab's lifetime.
+          if (cancelled) break;
+          try {
+            const canvas = await renderPageFromDoc(doc, i, 0.3);
+            thumbs.push(canvas.toDataURL("image/jpeg", 0.6));
+          } catch {
+            thumbs.push("");
+          }
+          // Publish in batches so the deck fills in as it renders rather than
+          // staying blank for several seconds — same as the reorder deck.
+          if (!cancelled && i % 5 === 0) setThumbnails([...thumbs]);
         }
+        if (!cancelled) setThumbnails(thumbs);
+      } finally {
+        await doc.destroy();
+        doc = null;
       }
-      if (!cancelled) setThumbnails(thumbs);
     })();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+      // Cleared on teardown, not only in handleFiles / handleReset — see the
+      // note on the identical effect in SplitPdfUI.
+      thumbsLoadedRef.current = false;
+      void doc?.destroy();
+    };
   }, [file, pageCount]);
+
+  /*
+    Anything that changes what a run would produce also drops the finished
+    one. The footer swaps the primary action out for a Download the moment
+    `result` is set, so leaving it in place would offer a file built from the
+    previous selection with no way to re-run short of re-uploading.
+  */
+  const invalidate = useCallback(() => {
+    setResult(null);
+    setElapsed(null);
+    setStatus((s) => (s === "done" ? "idle" : s));
+  }, []);
 
   const togglePage = useCallback((idx: number) => {
     setSelectedPages((prev) => {
@@ -70,25 +113,34 @@ export function RotatePdfUI() {
       else next.add(idx);
       return next;
     });
-  }, []);
+    invalidate();
+  }, [invalidate]);
 
   const selectAll = useCallback(() => {
     setSelectedPages(new Set(Array.from({ length: pageCount }, (_, i) => i)));
-  }, [pageCount]);
+    invalidate();
+  }, [pageCount, invalidate]);
 
   const selectNone = useCallback(() => {
     setSelectedPages(new Set());
-  }, []);
+    invalidate();
+  }, [invalidate]);
 
   const handleRotate = useCallback(async () => {
     if (!file || selectedPages.size === 0) return;
     setStatus("processing");
     setError(null);
+    setElapsed(null);
+    const startedAt = performance.now();
     try {
       const freshData = new Uint8Array(await file.arrayBuffer());
       const indices = Array.from(selectedPages).sort((a, b) => a - b);
       const bytes = await rotatePdfPages(freshData, indices, angle);
       setResult(new Blob([bytes as BlobPart], { type: "application/pdf" }));
+      // A tiny PDF finishes in tens of milliseconds; "Done in 0.0 s" reads
+      // like a stopwatch that never started. Sub-second runs report ms.
+      const ms = performance.now() - startedAt;
+      setElapsed(ms < 950 ? `${Math.round(ms)} ms` : `${(ms / 1000).toFixed(1)} s`);
       setStatus("done");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to rotate PDF");
@@ -103,6 +155,7 @@ export function RotatePdfUI() {
     setThumbnails([]);
     thumbsLoadedRef.current = false;
     setResult(null);
+    setElapsed(null);
     setStatus("idle");
     setError(null);
   }, []);
@@ -110,86 +163,132 @@ export function RotatePdfUI() {
   if (!file) return <DropZone accept=".pdf" onFiles={handleFiles} />;
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <p className="text-sm text-text-secondary">
-          {file.name} — {pageCount} page{pageCount !== 1 ? "s" : ""}
-        </p>
-        <button onClick={handleReset} className="text-sm text-text-muted hover:text-text-secondary transition-colors">
-          Change file
-        </button>
-      </div>
+    <>
+      <div className={CANVAS_COLUMN}>
+        <CanvasHeader
+          file={file.name}
+          // The doc's document-branch readout is a technical line, not prose:
+          // "24 PAGES · 12.4 MB". The size was the fact the header was missing.
+          meta={`${pageCount} PAGE${pageCount !== 1 ? "S" : ""} · ${formatFileSize(file.size)}`}
+          trailing={`${selectedPages.size} PAGES SELECTED`}
+        />
 
-      <div className="flex flex-wrap items-center gap-4">
-        <div>
-          <label className="block text-xs text-text-muted mb-1">Rotation</label>
-          <select
-            value={angle}
-            onChange={(e) => setAngle(Number(e.target.value))}
-            className="rounded-md border border-border bg-bg-secondary px-3 py-2 text-sm text-text-primary focus:border-accent focus:outline-none"
-          >
-            <option value={90}>90° clockwise</option>
-            <option value={180}>180°</option>
-            <option value={270}>270° (90° counter-clockwise)</option>
-          </select>
-        </div>
-        <div className="flex gap-2 self-end">
-          <button onClick={selectAll} className="text-xs text-accent hover:text-accent-hover transition-colors">Select all</button>
-          <button onClick={selectNone} className="text-xs text-text-muted hover:text-text-secondary transition-colors">Deselect all</button>
-        </div>
-      </div>
-
-      {thumbnails.length > 0 && (
-        <div className="grid grid-cols-4 sm:grid-cols-6 lg:grid-cols-8 gap-3">
-          {thumbnails.map((thumb, idx) => (
-            <button
+        <PageDeck>
+          {Array.from({ length: pageCount }, (_, idx) => (
+            <PageTile
               key={idx}
+              number={idx + 1}
+              thumb={thumbnails[idx] || undefined}
+              selected={selectedPages.has(idx)}
+              // Same rule as the split deck: dimming means "left out of the
+              // selection", which says nothing when the selection is empty.
+              // Rotate opens with every page selected, but `Deselect all`
+              // reaches the same all-grey state a split deck opens in.
+              dimUnselected={selectedPages.size > 0}
               onClick={() => togglePage(idx)}
-              className={`relative rounded-md border-2 overflow-hidden transition-colors ${
-                selectedPages.has(idx) ? "border-accent" : "border-border hover:border-border-hover"
-              }`}
-            >
-              {thumb ? (
-                <img src={thumb} alt={`Page ${idx + 1}`} className="w-full" />
-              ) : (
-                <div className="aspect-[3/4] bg-bg-elevated flex items-center justify-center text-xs text-text-muted">
-                  {idx + 1}
-                </div>
-              )}
-              <span className="absolute bottom-0 left-0 right-0 bg-bg-primary/80 text-center text-xs text-text-secondary py-0.5">
-                {idx + 1}
-              </span>
-              {selectedPages.has(idx) && (
-                <div className="absolute top-1 right-1">
-                  <RotateCw size={12} className="text-accent" />
-                </div>
-              )}
-            </button>
+              badge={
+                selectedPages.has(idx) ? (
+                  <span className="absolute top-1 right-1 rounded-sm bg-[rgba(12,14,23,.72)] p-0.5">
+                    <RotateCw size={11} className="text-accent" aria-hidden="true" />
+                  </span>
+                ) : undefined
+              }
+            />
           ))}
-        </div>
-      )}
-
-      {(status === "loading" || status === "processing") && <ProgressBar progress={null} />}
-      {error && <ErrorMessage message={error} />}
-
-      <div className="flex items-center gap-3">
-        {selectedPages.size > 0 && status !== "done" && (
-          <button
-            onClick={handleRotate}
-            disabled={status === "processing"}
-            className="inline-flex items-center gap-2 rounded-md bg-accent px-5 py-2.5 text-sm font-medium text-bg-primary hover:bg-accent-hover transition-colors disabled:opacity-50"
-          >
-            <RotateCw size={14} />
-            {status === "processing" ? "Rotating…" : `Rotate ${selectedPages.size} page${selectedPages.size !== 1 ? "s" : ""}`}
-          </button>
+        </PageDeck>
+        {pageCount > 50 && (
+          <p className="m-0 font-mono text-[9.5px] leading-none tracking-[0.06em] text-text-muted">
+            THUMBNAILS RENDERED FOR THE FIRST 50 OF {pageCount} PAGES — EVERY PAGE STAYS SELECTABLE
+          </p>
         )}
-        {result && (
-          <DownloadButton
-            blob={result}
-            fileName={file.name.replace(/\.pdf$/i, "-rotated.pdf")}
-          />
-        )}
+
+        {error && <ErrorMessage message={error} />}
       </div>
-    </div>
+
+      <ToolAside
+        footer={
+          <>
+            {(status === "loading" || status === "processing") && (
+              <ToolProgress
+                phase={status === "loading" ? "READING PAGES" : "ROTATING"}
+                percent={null}
+                label={status === "loading" ? "Reading pages" : "Rotating pages"}
+              />
+            )}
+            {elapsed && <ToolDone elapsed={elapsed} />}
+            {result ? (
+              <DownloadButton
+                blob={result}
+                fileName={file.name.replace(/\.pdf$/i, "-rotated.pdf")}
+                className="w-full justify-center"
+              />
+            ) : (
+              <ToolActions
+                primaryLabel={
+                  status === "processing"
+                    ? "Rotating…"
+                    : `Rotate ${selectedPages.size} page${selectedPages.size !== 1 ? "s" : ""}`
+                }
+                onPrimary={handleRotate}
+                primaryDisabled={selectedPages.size === 0 || status === "processing"}
+              />
+            )}
+            <ToolResetLink onClick={handleReset} label="CHANGE FILE" />
+          </>
+        }
+      >
+        {/* One bordered block for the whole control set — the doc gives its
+            own rule only to START FROM, ADVANCED and OUTPUT. */}
+        <ToolControlGroup>
+          <ToolControl label="ROTATION">
+            <ToolChoice
+              label="Rotation angle"
+              fill
+              value={angle}
+              onChange={(v: number) => {
+                setAngle(v);
+                invalidate();
+              }}
+              options={[
+                { value: 90, label: "90°" },
+                { value: 180, label: "180°" },
+                { value: 270, label: "270°" },
+              ]}
+            />
+            <span className="font-body text-[10.5px] leading-[1.5] text-text-muted">
+              Clockwise. 270° is the same as 90° counter-clockwise.
+            </span>
+          </ToolControl>
+
+          <ToolControl label="PAGES">
+            <div className="flex gap-2">
+              {/* Before the page count is read, `Select all` can only build an
+                  empty set — it looked live but silently cleared the auto
+                  selection. */}
+              <button
+                onClick={selectAll}
+                disabled={pageCount === 0}
+                className="cursor-pointer text-xs text-accent transition-colors hover:text-accent-hover disabled:cursor-not-allowed disabled:text-text-muted"
+              >
+                Select all
+              </button>
+              <button
+                onClick={selectNone}
+                disabled={pageCount === 0}
+                className="cursor-pointer text-xs text-text-muted transition-colors hover:text-text-secondary disabled:cursor-not-allowed"
+              >
+                Deselect all
+              </button>
+            </div>
+            <ToolOutput
+              rows={[
+                ["Selected", `${selectedPages.size} of ${pageCount}`],
+                ["Angle", `${angle}°`],
+              ]}
+            />
+          </ToolControl>
+        </ToolControlGroup>
+      </ToolAside>
+    </>
   );
 }

@@ -100,7 +100,10 @@ function setupImageErrorMock() {
 }
 
 function makeFile(name: string, size?: number): File {
-  const data = size ? new Uint8Array(size) : new Uint8Array([1, 2, 3, 4, 5]);
+  // Default well above any mocked encode: compressImage never returns a
+  // result bigger than its input, so a tiny input would (correctly) make
+  // every test get the original file back instead of the encode under test.
+  const data = new Uint8Array(size ?? 10 * 1024 * 1024);
   return new File([data], name, { type: "image/jpeg" });
 }
 
@@ -321,5 +324,25 @@ describe("compressImage", () => {
     const file = makeFile("photo.jpg");
     const opts: ImageCompressOptions = { mode: "quality", quality: 0.8, targetSizeKb: 0 };
     await expect(compressImage(file, opts)).rejects.toThrow("Canvas export failed");
+  });
+});
+
+describe("never-grow guard", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    setupCanvasMock();
+    setupImageMock();
+  });
+
+  it("returns the original file, untouched, when the encode is bigger", async () => {
+    // Safari's canvas encoder can inflate an already-optimised JPEG; a
+    // "compressor" must hand back the original in that case.
+    setupCanvasMock({ fixedSize: 50 });
+    const file = makeFile("optimised.jpg", 10); // smaller than every encode
+    const result = await compressImage(file, { mode: "quality", quality: 0.8, targetSizeKb: 0 });
+
+    expect(result.blob).toBe(file);
+    expect(result.fileName).toBe("optimised.jpg");
+    expect(result.newSize).toBe(file.size);
   });
 });

@@ -37,7 +37,7 @@ export function mimeSupportsAlpha(mimeType: string): boolean {
 
 /**
  * Paint an opaque background. Call this BEFORE drawImage whenever the output
- * format has no alpha channel (JPEG/BMP), otherwise transparent pixels are
+ * format has no alpha channel (JPEG), otherwise transparent pixels are
  * flattened to black instead of the expected white.
  */
 export function fillBackground(

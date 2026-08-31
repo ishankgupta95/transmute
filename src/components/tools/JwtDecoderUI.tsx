@@ -2,7 +2,22 @@
 
 import { useCallback, useState } from "react";
 import { ErrorMessage } from "@/components/tools/ErrorMessage";
-import { copyText } from "@/lib/utils/clipboard";
+import {
+  ToolActions,
+  ToolAside,
+  ToolAsideSection,
+  ToolOutput,
+} from "@/components/tools/ToolAside";
+import {
+  lineCount,
+  TEXT_PANE_BODY,
+  TextPane,
+  TextPanes,
+} from "@/components/tools/ToolCanvas";
+import { cn } from "@/lib/utils/cn";
+import { CANVAS_COLUMN } from "@/components/workspace/shared";
+import { useCopied } from "@/hooks/useCopied";
+import { formatFileSize } from "@/lib/utils/file-helpers";
 
 interface JwtParts {
   header: Record<string, unknown>;
@@ -44,6 +59,7 @@ export function JwtDecoderUI() {
   const [input, setInput] = useState("");
   const [result, setResult] = useState<JwtParts | null>(null);
   const [error, setError] = useState("");
+  const { copied, copy } = useCopied();
 
   const handleDecode = useCallback((text: string) => {
     setInput(text);
@@ -58,82 +74,140 @@ export function JwtDecoderUI() {
   }, []);
 
   const copySection = (data: unknown) => {
-    copyText(JSON.stringify(data, null, 2));
+    void copy(JSON.stringify(data, null, 2));
   };
 
+  // The rail's readout pulls the two claims people actually scan for.
+  const alg = typeof result?.header.alg === "string" ? result.header.alg : "—";
+  const typ = typeof result?.header.typ === "string" ? result.header.typ : "—";
+  const expiryLabel = !result
+    ? "—"
+    : result.expiresAt === null
+      ? "none"
+      : result.isExpired
+        ? "expired"
+        : "valid";
+
   return (
-    <div className="space-y-4">
-      <div>
-        <label className="block text-sm font-medium text-text-secondary mb-1">JWT Token</label>
-        <textarea
-          value={input}
-          onChange={(e) => handleDecode(e.target.value)}
-          placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c"
-          rows={4}
-          className="w-full rounded-lg border border-border bg-bg-elevated p-3 text-sm text-text-primary font-mono resize-y placeholder:text-text-muted"
-        />
+    <>
+      {/* ── Canvas: the token, then its decoded halves ─────── */}
+      <div className={CANVAS_COLUMN}>
+        <TextPanes columns={1}>
+          <TextPane
+            label="JWT Token"
+            lines={lineCount(input)}
+            size={formatFileSize(new Blob([input]).size)}
+          >
+            <textarea
+              value={input}
+              onChange={(e) => handleDecode(e.target.value)}
+              placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c"
+              aria-label="JWT token"
+              className={TEXT_PANE_BODY}
+            />
+          </TextPane>
+        </TextPanes>
+
+        {error && (
+          <ErrorMessage message={error} />
+        )}
+
+        {result && (
+          <>
+            {/* Expiry warning */}
+            {result.expiresAt && (
+              <div
+                /*
+                  The doc's status card: `padding:10px 12px;border-radius:8px;
+                  border:1px solid rgba(126,224,168,.3);
+                  background:rgba(126,224,168,.07)`, text `font:400 12px/1.35`.
+                  Was `rounded-lg`, which is 14px in this codebase, at 10% tint.
+                */
+                className={`rounded-md border px-3 py-2.5 font-body text-xs leading-[1.35] ${
+                  result.isExpired
+                    ? "border-error/30 bg-error/7 text-error"
+                    : "border-success/30 bg-success/7 text-success"
+                }`}
+              >
+                {result.isExpired ? "Token is expired" : "Token is valid"} — Expires: {result.expiresAt}
+              </div>
+            )}
+
+            <TextPanes>
+              <TextPane
+                label="Header"
+                lines={lineCount(JSON.stringify(result.header, null, 2))}
+                size={formatFileSize(
+                  new Blob([JSON.stringify(result.header, null, 2)]).size,
+                )}
+                action={
+                  <button
+                    onClick={() => copySection(result.header)}
+                    className="cursor-pointer text-accent transition-colors hover:text-accent-hover"
+                  >
+                    Copy
+                  </button>
+                }
+              >
+                <pre className={TEXT_PANE_BODY}>{JSON.stringify(result.header, null, 2)}</pre>
+              </TextPane>
+
+              <TextPane
+                tone="out"
+                label="Payload"
+                lines={lineCount(JSON.stringify(result.payload, null, 2))}
+                size={formatFileSize(
+                  new Blob([JSON.stringify(result.payload, null, 2)]).size,
+                )}
+                action={
+                  <button
+                    onClick={() => copySection(result.payload)}
+                    className="cursor-pointer text-accent transition-colors hover:text-accent-hover"
+                  >
+                    Copy
+                  </button>
+                }
+              >
+                <pre className={TEXT_PANE_BODY}>{JSON.stringify(result.payload, null, 2)}</pre>
+              </TextPane>
+            </TextPanes>
+
+            <TextPanes columns={1}>
+              <TextPane label="Signature">
+                <code className={cn(TEXT_PANE_BODY, "block break-all text-text-muted")}>
+                  {result.signature}
+                </code>
+              </TextPane>
+            </TextPanes>
+          </>
+        )}
       </div>
 
-      {error && (
-        <ErrorMessage message={error} />
-      )}
-
-      {result && (
-        <div className="space-y-4">
-          {/* Expiry warning */}
-          {result.expiresAt && (
-            <div
-              className={`rounded-lg border p-3 text-sm ${
-                result.isExpired
-                  ? "border-error/30 bg-error/10 text-error"
-                  : "border-success/30 bg-success/10 text-success"
-              }`}
-            >
-              {result.isExpired ? "Token is expired" : "Token is valid"} — Expires: {result.expiresAt}
-            </div>
-          )}
-
-          {/* Header */}
-          <div>
-            <div className="flex items-center justify-between mb-1">
-              <label className="text-sm font-medium text-text-secondary">Header</label>
-              <button
-                onClick={() => copySection(result.header)}
-                className="text-xs text-accent hover:text-accent-hover transition-colors"
-              >
-                Copy
-              </button>
-            </div>
-            <pre className="w-full rounded-lg border border-border bg-bg-elevated p-3 text-sm text-text-primary font-mono overflow-x-auto whitespace-pre-wrap">
-              {JSON.stringify(result.header, null, 2)}
-            </pre>
-          </div>
-
-          {/* Payload */}
-          <div>
-            <div className="flex items-center justify-between mb-1">
-              <label className="text-sm font-medium text-text-secondary">Payload</label>
-              <button
-                onClick={() => copySection(result.payload)}
-                className="text-xs text-accent hover:text-accent-hover transition-colors"
-              >
-                Copy
-              </button>
-            </div>
-            <pre className="w-full rounded-lg border border-border bg-bg-elevated p-3 text-sm text-text-primary font-mono overflow-x-auto whitespace-pre-wrap">
-              {JSON.stringify(result.payload, null, 2)}
-            </pre>
-          </div>
-
-          {/* Signature */}
-          <div>
-            <label className="text-sm font-medium text-text-secondary mb-1 block">Signature</label>
-            <code className="block rounded-lg border border-border bg-bg-elevated p-3 text-sm text-text-muted font-mono break-all">
-              {result.signature}
-            </code>
-          </div>
-        </div>
-      )}
-    </div>
+      {/* ── Controls: the doc's right-hand rail / bottom sheet ── */}
+      <ToolAside
+        footer={
+          result ? (
+            <ToolActions
+              primaryLabel={copied ? "Copied to clipboard" : "Copy payload"}
+              onPrimary={() => copySection(result.payload)}
+            />
+          ) : undefined
+        }
+      >
+        <ToolAsideSection label="CLAIMS">
+          <ToolOutput
+            rows={[
+              ["Algorithm", alg],
+              ["Type", typ],
+              ["Claims", result ? String(Object.keys(result.payload).length) : "—"],
+              ["Expiry", expiryLabel],
+            ]}
+          />
+          <span className="font-body text-[10.5px] leading-[1.5] text-text-muted">
+            Decoding only — the signature is never verified, so never trust an unverified token.
+          </span>
+        </ToolAsideSection>
+      </ToolAside>
+    </>
   );
 }

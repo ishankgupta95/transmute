@@ -3,9 +3,13 @@ import type { FixtureFile } from "./helpers";
 
 /**
  * Programmatic fixture builders. Anything that can be constructed in pure JS
- * (PNG, JPG, WAV, BMP, plain text formats) lives here so tests don't depend on
- * checked-in binary blobs. Heavier formats (HEIC, TIFF, AVIF, real MP3, MP4)
- * fall back to checked-in samples under `fixtures/samples/`; see helpers.
+ * (PNG, JPG, WAV, BMP, TIFF, plain text formats) lives here so tests don't
+ * depend on checked-in binary blobs. Heavier formats (HEIC, AVIF, real MP3,
+ * MP4) fall back to checked-in samples under `fixtures/samples/`; see helpers.
+ *
+ * TIFF used to be in that second list. It isn't: `utif2` is already a
+ * dependency and ships an encoder, so a real TIFF costs nothing to build and
+ * `tiff-to-jpg` gets a genuine conversion test instead of a page smoke.
  */
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -149,6 +153,35 @@ export function tinyBmp(): FixtureFile {
 /**
  * Tiny SVG — perfectly valid, parses everywhere.
  */
+/**
+ * A real, decodable TIFF built with the same `utif2` the app decodes with.
+ *
+ * Deliberately non-square and two-toned: a square fixture makes an
+ * aspect-ratio bug invisible, and a single flat colour makes "we decoded the
+ * pixels" indistinguishable from "we emitted an empty canvas".
+ */
+export function tinyTiff(width = 40, height = 30): FixtureFile {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const UTIF = require("utif2") as typeof import("utif2");
+  const rgba = new Uint8Array(width * height * 4);
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const i = (y * width + x) * 4;
+      const left = x < width / 2;
+      rgba[i] = left ? 210 : 40;
+      rgba[i + 1] = left ? 60 : 90;
+      rgba[i + 2] = left ? 40 : 200;
+      rgba[i + 3] = 255;
+    }
+  }
+  const encoded = UTIF.encodeImage(rgba, width, height);
+  return {
+    name: `sample-${width}x${height}.tiff`,
+    mimeType: "image/tiff",
+    buffer: Buffer.from(encoded),
+  };
+}
+
 export function tinySvg(): FixtureFile {
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32"><rect width="32" height="32" fill="#56b8e6"/></svg>`;
   return { name: "sample.svg", mimeType: "image/svg+xml", buffer: Buffer.from(svg, "utf8") };

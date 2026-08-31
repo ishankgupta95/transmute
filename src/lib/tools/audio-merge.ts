@@ -1,4 +1,4 @@
-import type { ProcessedResult } from "@/hooks/useFileProcessor";
+import type { ProcessedResult, ProcessingContext } from "@/hooks/useFileProcessor";
 
 export interface AudioMergeOptions {
   outputFormat: "wav" | "mp3";
@@ -9,16 +9,19 @@ export interface AudioMergeOptions {
  * Merge multiple audio files into a single file by concatenating their AudioBuffers.
  * All files are resampled to the highest sample rate among inputs.
  * Output channel count matches the maximum among inputs.
+ * Decode/resample stay on the main thread (Web Audio); the encode runs in
+ * the audio worker pool.
  */
 export async function mergeAudio(
   files: File[],
   options: AudioMergeOptions,
+  ctx: ProcessingContext = {},
 ): Promise<ProcessedResult> {
   if (files.length < 2) throw new Error("At least 2 files required for merging");
 
   const { decodeAudioFile } = await import("./audio-decode");
 
-  const buffers = await Promise.all(files.map((f) => decodeAudioFile(f)));
+  const buffers = await Promise.all(files.map((f) => decodeAudioFile(f, ctx)));
 
   const maxSampleRate = Math.max(...buffers.map((b) => b.sampleRate));
   const maxChannels = Math.max(...buffers.map((b) => b.numberOfChannels));
@@ -53,12 +56,13 @@ export async function mergeAudio(
   let fileName: string;
 
   if (options.outputFormat === "mp3") {
-    const { encodeToMp3 } = await import("./audio-encode-mp3");
-    blob = encodeToMp3(mergedBuffer, options.bitrate ?? 192);
+    const { resampleForMp3 } = await import("./audio-encode-mp3");
+    const { encodeMp3 } = await import("@/lib/workers/audio-client");
+    blob = await encodeMp3(await resampleForMp3(mergedBuffer), options.bitrate ?? 192, ctx);
     fileName = "merged.mp3";
   } else {
-    const { encodeToWav } = await import("./audio-encode-wav");
-    blob = encodeToWav(mergedBuffer);
+    const { encodeWav } = await import("@/lib/workers/audio-client");
+    blob = await encodeWav(mergedBuffer, ctx);
     fileName = "merged.wav";
   }
 

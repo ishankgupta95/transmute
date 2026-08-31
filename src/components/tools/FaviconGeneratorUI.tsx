@@ -5,11 +5,28 @@ import { ErrorMessage } from "@/components/tools/ErrorMessage";
 import JSZip from "jszip";
 import { DropZone } from "@/components/tools/DropZone";
 import { DownloadButton } from "@/components/tools/DownloadButton";
-import { ProgressBar } from "@/components/tools/ProgressBar";
 import { encodeIcoAsync } from "@/lib/tools/ico-encode";
 import { canvasToBlob, loadImage } from "@/lib/tools/canvas-utils";
+import { drawContained } from "@/lib/tools/image-draw";
+import { useObjectUrl } from "@/hooks/useObjectUrl";
+import { useImageDimensions } from "@/hooks/useImageDimensions";
+import { imageMeta } from "@/lib/utils/canvas-meta";
 import { formatFileSize } from "@/lib/utils/file-helpers";
-import { copyText } from "@/lib/utils/clipboard";
+import {
+  ToolActions,
+  ToolAside,
+  ToolAsideSection,
+  ToolOutput,
+  ToolResetLink,
+} from "@/components/tools/ToolAside";
+import { ToolProgress } from "@/components/tools/ToolControls";
+import {
+  CanvasHeader,
+  CodeBlock,
+  IconSizes,
+} from "@/components/tools/ToolCanvas";
+import { CANVAS_COLUMN } from "@/components/workspace/shared";
+import { useCopied } from "@/hooks/useCopied";
 
 const FAVICON_SIZES = [
   { size: 16, name: "favicon-16x16.png", label: "16×16 (Browser tab)" },
@@ -20,13 +37,43 @@ const FAVICON_SIZES = [
   { size: 512, name: "android-chrome-512x512.png", label: "512×512 (PWA)" },
 ];
 
+/*
+  The head snippet links a manifest, so the ZIP has to contain one — a snippet
+  that points at a file the download does not carry is a broken instruction.
+  It names the two android-chrome PNGs above, which are otherwise referenced by
+  nothing. `name`/`short_name` are left blank deliberately: this tool never
+  learns the site's name, and inventing one would be worse than an empty field
+  the user fills in.
+*/
+const WEB_MANIFEST = JSON.stringify(
+  {
+    name: "",
+    short_name: "",
+    icons: [
+      { src: "/android-chrome-192x192.png", sizes: "192x192", type: "image/png" },
+      { src: "/android-chrome-512x512.png", sizes: "512x512", type: "image/png" },
+    ],
+    display: "standalone",
+  },
+  null,
+  2,
+);
+
+/** PNGs + the .ico + the manifest — what the ZIP actually contains. */
+const ASSET_COUNT = FAVICON_SIZES.length + 2;
+
 export function FaviconGeneratorUI({ acceptFormats }: { acceptFormats: string }) {
   const [file, setFile] = useState<File | null>(null);
   const [result, setResult] = useState<{ blob: Blob } | null>(null);
   const [htmlSnippet, setHtmlSnippet] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
+  const { copied, copy } = useCopied();
+  const previewUrl = useObjectUrl(file);
+  // The doc's icon readout is "1024 × 1024 · 84 KB" — the source dimensions
+  // matter here, since every size below the source is a downscale and every
+  // size above it is an upscale.
+  const sourceDims = useImageDimensions(file);
 
   const handleFiles = useCallback((files: File[]) => {
     const f = files[0];
@@ -52,7 +99,7 @@ export function FaviconGeneratorUI({ acceptFormats }: { acceptFormats: string })
         canvas.height = size;
         const ctx = canvas.getContext("2d");
         if (!ctx) throw new Error("Canvas 2D context not available");
-        ctx.drawImage(img, 0, 0, size, size);
+        drawContained(ctx, img, size);
         const blob = await canvasToBlob(canvas, "image/png");
         zip.file(name, blob);
       }
@@ -65,11 +112,12 @@ export function FaviconGeneratorUI({ acceptFormats }: { acceptFormats: string })
         canvas.height = size;
         const ctx = canvas.getContext("2d");
         if (!ctx) throw new Error("Canvas 2D context not available");
-        ctx.drawImage(img, 0, 0, size, size);
+        drawContained(ctx, img, size);
         return { canvas, size };
       });
       const icoBlob = await encodeIcoAsync(icoImages);
       zip.file("favicon.ico", icoBlob);
+      zip.file("site.webmanifest", WEB_MANIFEST);
 
       const zipBlob = await zip.generateAsync({ type: "blob" });
       setResult({ blob: zipBlob });
@@ -88,13 +136,8 @@ export function FaviconGeneratorUI({ acceptFormats }: { acceptFormats: string })
   }, [file]);
 
   const handleCopySnippet = useCallback(() => {
-    copyText(htmlSnippet).then((ok) => {
-      if (ok) {
-        setCopied(true);
-        setTimeout(() => setCopied(false), 2000);
-      }
-    });
-  }, [htmlSnippet]);
+    void copy(htmlSnippet);
+  }, [copy, htmlSnippet]);
 
   const handleReset = useCallback(() => {
     setFile(null);
@@ -103,86 +146,98 @@ export function FaviconGeneratorUI({ acceptFormats }: { acceptFormats: string })
     setHtmlSnippet("");
   }, []);
 
+  if (!file) {
+    return <DropZone accept={acceptFormats} onFiles={handleFiles} />;
+  }
+
   return (
-    <div className="space-y-6">
-      {!file ? (
-        <DropZone accept={acceptFormats} onFiles={handleFiles} />
-      ) : (
-        <>
-          {/* File info */}
-          <div className="rounded-lg border border-border bg-bg-secondary p-4 text-center">
-            <p className="text-sm text-text-primary font-medium">{file.name}</p>
-            <p className="text-xs text-text-muted">{formatFileSize(file.size)}</p>
-          </div>
+    <>
+      {/* ── Canvas: the source mark and every size it becomes ── */}
+      <div className={CANVAS_COLUMN}>
+        <CanvasHeader
+          file={file.name}
+          meta={imageMeta(sourceDims, formatFileSize(file.size))}
+          trailing={`${ASSET_COUNT} ASSETS → favicons.zip`}
+        />
 
-          {/* Sizes to generate */}
-          {!result && (
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-              {FAVICON_SIZES.map(({ label }) => (
-                <div
-                  key={label}
-                  className="rounded-md border border-border bg-bg-secondary px-3 py-2 text-xs text-text-muted"
-                >
-                  {label}
-                </div>
-              ))}
-              <div className="rounded-md border border-border bg-bg-secondary px-3 py-2 text-xs text-text-muted">
-                favicon.ico (multi-size)
-              </div>
-            </div>
-          )}
+        <IconSizes
+          previewUrl={previewUrl}
+          sizes={[
+            [16, "Browser tab", 16],
+            [32, "Browser tab", 24],
+            [48, "Windows", 34],
+            [180, "Apple touch", 52],
+            [192, "PWA", 64],
+            [512, "PWA splash", 84],
+          ]}
+        />
 
-          {/* Progress */}
-          {isProcessing && (
-            <div className="space-y-2">
-              <ProgressBar progress={null} />
-              <p className="text-sm text-text-muted text-center">Generating favicons...</p>
-            </div>
-          )}
-          {error && <ErrorMessage message={error} />}
+        {error && <ErrorMessage message={error} />}
 
-          {/* HTML snippet */}
-          {htmlSnippet && (
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-sm text-text-secondary">
-                  Add this to your {"<head>"}:
-                </span>
-                <button
-                  onClick={handleCopySnippet}
-                  className="text-xs text-accent hover:text-accent-hover transition-colors"
-                >
-                  {copied ? "Copied!" : "Copy"}
-                </button>
-              </div>
-              <pre className="rounded-lg border border-border bg-bg-elevated p-3 text-xs text-text-secondary font-mono overflow-x-auto">
-                {htmlSnippet}
-              </pre>
-            </div>
-          )}
-
-          {/* Actions */}
-          <div className="flex items-center justify-center gap-3">
-            {!result && !isProcessing && (
+        {/* The doc gives this block a bordered Copy button, not bare link
+            text — `CodeBlock` already draws the label/action row. */}
+        {htmlSnippet && (
+          <CodeBlock
+            label="HEAD SNIPPET"
+            action={
               <button
-                onClick={handleGenerate}
-                className="inline-flex items-center gap-2 rounded-md bg-accent px-6 py-2.5 text-sm font-medium text-bg-primary hover:bg-accent-hover transition-colors"
+                type="button"
+                onClick={handleCopySnippet}
+                className="h-6 cursor-pointer rounded-[6px] border border-border px-[9px] font-body text-[11px] leading-none font-medium text-accent transition-colors hover:border-accent/40 hover:text-accent-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
               >
-                Generate All Favicons
+                {copied ? "Copied!" : "Copy"}
               </button>
+            }
+          >
+            {htmlSnippet}
+          </CodeBlock>
+        )}
+      </div>
+
+      {/* ── Controls: the doc's right-hand rail / bottom sheet ── */}
+      <ToolAside
+        footer={
+          <>
+            {/* The doc pins the running readout to the rail footer. The canvas
+                draws report no progress, so the bar is indeterminate. */}
+            {isProcessing && (
+              <ToolProgress phase="GENERATING" percent={null} label="Generating favicons" />
             )}
-            {result && (
-              <DownloadButton blob={result.blob} fileName="favicons.zip" />
+            {result ? (
+              <DownloadButton
+                blob={result.blob}
+                fileName="favicons.zip"
+                className="w-full justify-center"
+              />
+            ) : (
+              <ToolActions
+                // The doc's primary names the work with its count.
+                primaryLabel={isProcessing ? "Generating…" : `Generate ${ASSET_COUNT} assets`}
+                onPrimary={handleGenerate}
+                primaryDisabled={isProcessing}
+              />
             )}
-            <button
+            <ToolResetLink
               onClick={handleReset}
-              className="rounded-md border border-border px-4 py-2.5 text-sm text-text-secondary hover:bg-bg-hover transition-colors"
-            >
-              {result ? "Generate for another" : "Cancel"}
-            </button>
-          </div>
-        </>
-      )}
-    </div>
+              label={result ? "GENERATE FOR ANOTHER" : "CANCEL"}
+            />
+          </>
+        }
+      >
+        <ToolAsideSection label="OUTPUT">
+          <ToolOutput
+            rows={[
+              ["Source", formatFileSize(file.size)],
+              ["ZIP", result ? formatFileSize(result.blob.size) : "—"],
+              ["Files", String(ASSET_COUNT)],
+            ]}
+          />
+          <span className="font-body text-[10.5px] leading-[1.5] text-text-muted">
+            Every size is drawn from your original, fitted inside a square with transparent
+            padding — start from a square image at 512px or larger for edge-to-edge icons.
+          </span>
+        </ToolAsideSection>
+      </ToolAside>
+    </>
   );
 }

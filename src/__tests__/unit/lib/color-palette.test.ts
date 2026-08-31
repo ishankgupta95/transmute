@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-import { extractColorPalette, type ColorInfo } from "@/lib/tools/color-palette";
+import { extractColorPalette } from "@/lib/tools/color-palette";
 
 let mockCtx: Record<string, ReturnType<typeof vi.fn>>;
 let mockCanvas: Record<string, unknown>;

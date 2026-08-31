@@ -1,5 +1,6 @@
 import { GIFEncoder, quantize, applyPalette } from "gifenc";
-import type { ProcessedResult } from "@/hooks/useFileProcessor";
+import type { ProcessedResult, ProcessingContext } from "@/hooks/useFileProcessor";
+import { throwIfAborted } from "@/lib/utils/abort";
 import { createVideo, waitForReady, playAndExtractFrames } from "./video-utils";
 
 export interface VideoToGifOptions {
@@ -16,66 +17,91 @@ export interface VideoToGifOptions {
 export async function videoToGif(
   file: File,
   options: VideoToGifOptions,
-  onProgress?: (progress: number) => void,
+  ctx: ProcessingContext = {},
 ): Promise<ProcessedResult> {
+  const { onProgress, signal } = ctx;
   const { startTime, endTime, fps, width } = options;
   const frameInterval = 1 / fps;
 
   const videoUrl = URL.createObjectURL(file);
-  const video = createVideo(videoUrl);
-  await waitForReady(video);
 
-  const scale = width / video.videoWidth;
-  const height = Math.round(video.videoHeight * scale);
+  try {
+    throwIfAborted(signal);
+    const video = createVideo(videoUrl);
+    await waitForReady(video);
 
-  const canvas = document.createElement("canvas");
-  canvas.width = width;
-  canvas.height = height;
-  const ctx = canvas.getContext("2d", { willReadFrequently: true })!;
+    // A zero-length selection used to walk zero frames and still "succeed",
+    // handing the user a 1-byte file named *.gif.
+    if (!(endTime - startTime > 0)) {
+      throw new Error("Select a clip longer than zero seconds.");
+    }
 
-  const gif = GIFEncoder();
-  const delayMs = Math.round(1000 / fps);
+    const scale = width / video.videoWidth;
+    const height = Math.round(video.videoHeight * scale);
 
-  let lastCapturedTime = -Infinity;
-  let isFirst = true;
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const canvasCtx = canvas.getContext("2d", { willReadFrequently: true })!;
 
-  await playAndExtractFrames(
-    video,
-    startTime,
-    endTime,
-    async (vid, _timestampUs) => {
-      // Only capture frames at the requested FPS interval
-      const currentTime = vid.currentTime;
-      if (currentTime - lastCapturedTime < frameInterval * 0.8) return;
-      lastCapturedTime = currentTime;
+    const gif = GIFEncoder();
+    const delayMs = Math.round(1000 / fps);
 
-      ctx.drawImage(vid, 0, 0, width, height);
-      const imageData = ctx.getImageData(0, 0, width, height);
+    let lastCapturedTime = -Infinity;
+    let isFirst = true;
 
-      const palette = quantize(imageData.data, 256, { format: "rgb444" });
-      const index = applyPalette(imageData.data, palette, "rgb444");
+    await playAndExtractFrames(
+      video,
+      startTime,
+      endTime,
+      async (vid, _timestampUs) => {
+        throwIfAborted(signal);
+        // Only capture frames at the requested FPS interval
+        const currentTime = vid.currentTime;
+        if (currentTime - lastCapturedTime < frameInterval * 0.8) return;
+        // Stamp each frame with the REAL gap since the previous capture.
+        // rVFC delivers on display refresh, so captures land at ≥0.8× the
+        // target interval — a constant delay made such GIFs play ~20% long.
+        const gapMs = isFirst
+          ? delayMs
+          : Math.max(20, Math.round((currentTime - lastCapturedTime) * 1000));
+        lastCapturedTime = currentTime;
 
-      gif.writeFrame(index, width, height, {
-        palette,
-        delay: delayMs,
-        dispose: 2,
-        ...(isFirst ? { first: true, repeat: 0 } : {}),
-      });
-      isFirst = false;
-    },
-    onProgress,
-  );
+        canvasCtx.drawImage(vid, 0, 0, width, height);
+        const imageData = canvasCtx.getImageData(0, 0, width, height);
 
-  gif.finish();
-  URL.revokeObjectURL(videoUrl);
+        const palette = quantize(imageData.data, 256, { format: "rgb444" });
+        const index = applyPalette(imageData.data, palette, "rgb444");
 
-  const blob = new Blob([gif.bytes() as BlobPart], { type: "image/gif" });
-  const baseName = file.name.replace(/\.[^.]+$/, "");
+        gif.writeFrame(index, width, height, {
+          palette,
+          delay: gapMs,
+          dispose: 2,
+          ...(isFirst ? { first: true, repeat: 0 } : {}),
+        });
+        isFirst = false;
+      },
+      { signal, onProgress },
+    );
 
-  return {
-    blob,
-    fileName: `${baseName}.gif`,
-    originalSize: file.size,
-    newSize: blob.size,
-  };
+    // `isFirst` is only cleared inside the frame callback, so it is still true
+    // iff nothing was written — `finish()` would emit an unopenable stub.
+    if (isFirst) throw new Error("No frames were captured from this clip.");
+
+    gif.finish();
+
+    const blob = new Blob([gif.bytes() as BlobPart], { type: "image/gif" });
+    const baseName = file.name.replace(/\.[^.]+$/, "");
+
+    return {
+      blob,
+      fileName: `${baseName}.gif`,
+      originalSize: file.size,
+      newSize: blob.size,
+    };
+  } finally {
+    // Previously only revoked on the success path, so every failed or
+    // cancelled run leaked the source blob for the life of the tab.
+    URL.revokeObjectURL(videoUrl);
+  }
 }

@@ -35,8 +35,7 @@ describe("SqlFormatterUI", () => {
 
   it("passes selected dialect to formatter", () => {
     render(<SqlFormatterUI />);
-    const select = screen.getByDisplayValue("Standard SQL");
-    fireEvent.change(select, { target: { value: "postgresql" } });
+    fireEvent.click(screen.getByRole("button", { name: "PostgreSQL" }));
     const input = screen.getByPlaceholderText(/SELECT id/);
     fireEvent.change(input, { target: { value: "SELECT 1" } });
     fireEvent.click(screen.getByText("Format SQL"));
@@ -75,8 +74,9 @@ describe("SqlFormatterUI", () => {
 
   it("lists all expected dialects", () => {
     render(<SqlFormatterUI />);
-    const select = screen.getByDisplayValue("Standard SQL");
-    expect(select).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Standard SQL" }),
+    ).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByText("PostgreSQL")).toBeInTheDocument();
     expect(screen.getByText("MySQL")).toBeInTheDocument();
     expect(screen.getByText("SQLite")).toBeInTheDocument();

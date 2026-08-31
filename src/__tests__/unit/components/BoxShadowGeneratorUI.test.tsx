@@ -13,7 +13,7 @@ describe("BoxShadowGeneratorUI", () => {
 
   it("renders shadow controls and CSS output", () => {
     render(<BoxShadowGeneratorUI />);
-    expect(screen.getByText("Shadows")).toBeInTheDocument();
+    expect(screen.getByText("SHADOWS")).toBeInTheDocument();
     expect(screen.getByText("CSS Code")).toBeInTheDocument();
     expect(screen.getByText("+ Add Layer")).toBeInTheDocument();
   });
@@ -38,13 +38,13 @@ describe("BoxShadowGeneratorUI", () => {
 
   it("adds a shadow layer", () => {
     render(<BoxShadowGeneratorUI />);
-    expect(screen.getByText("Layer 1")).toBeInTheDocument();
-    expect(screen.queryByText("Layer 2")).not.toBeInTheDocument();
+    expect(screen.getByText("LAYER 1")).toBeInTheDocument();
+    expect(screen.queryByText("LAYER 2")).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByText("+ Add Layer"));
 
-    expect(screen.getByText("Layer 1")).toBeInTheDocument();
-    expect(screen.getByText("Layer 2")).toBeInTheDocument();
+    expect(screen.getByText("LAYER 1")).toBeInTheDocument();
+    expect(screen.getByText("LAYER 2")).toBeInTheDocument();
   });
 
   it("multiple shadows are comma-separated in CSS", () => {
@@ -61,13 +61,13 @@ describe("BoxShadowGeneratorUI", () => {
   it("removes a shadow layer (only when more than 1)", () => {
     render(<BoxShadowGeneratorUI />);
     fireEvent.click(screen.getByText("+ Add Layer"));
-    expect(screen.getByText("Layer 2")).toBeInTheDocument();
+    expect(screen.getByText("LAYER 2")).toBeInTheDocument();
 
     // Remove buttons appear
     const removeButtons = screen.getAllByText("×");
     fireEvent.click(removeButtons[0]);
 
-    expect(screen.queryByText("Layer 2")).not.toBeInTheDocument();
+    expect(screen.queryByText("LAYER 2")).not.toBeInTheDocument();
   });
 
   it("does not show remove button for single shadow", () => {

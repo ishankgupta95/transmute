@@ -3,12 +3,32 @@
 import { useCallback, useState } from "react";
 import { ErrorMessage } from "@/components/tools/ErrorMessage";
 import { DropZone } from "@/components/tools/DropZone";
-import { FilePreview } from "@/components/tools/FilePreview";
 import { DownloadButton } from "@/components/tools/DownloadButton";
-import { ProgressBar } from "@/components/tools/ProgressBar";
 import type { CompressionPreset } from "@/lib/tools/video-compress";
+import { useFileProcessor, type FileProcessorContext } from "@/hooks/useFileProcessor";
+import { videoMeta, type Dimensions } from "@/lib/utils/canvas-meta";
+import { formatFileSize } from "@/lib/utils/file-helpers";
+import { useObjectUrl } from "@/hooks/useObjectUrl";
+import { CANVAS_COLUMN, STAGE_GROW, STAGE_MEDIA, chipClass } from "@/components/workspace/shared";
+import {
+  ToolActions,
+  ToolAside,
+  ToolAsideSection,
+  ToolOutput,
+  ToolResetLink,
+} from "@/components/tools/ToolAside";
+import { ToolControl, ToolControlGroup, ToolProgress } from "@/components/tools/ToolControls";
+import {
+  CanvasHeader,
+  CanvasStage,
+  Filmstrip,
+  StatStrip,
+} from "@/components/tools/ToolCanvas";
+import { extractFilmstrip } from "@/lib/tools/media-preview";
+import { cn } from "@/lib/utils/cn";
 
-type Status = "idle" | "processing" | "done" | "error";
+/** Frame count the doc's strip draws. */
+const FILMSTRIP_FRAMES = 16;
 
 const PRESETS: { value: CompressionPreset; label: string; desc: string }[] = [
   { value: "whatsapp", label: "WhatsApp", desc: "720p, ~1 Mbps" },
@@ -18,122 +38,236 @@ const PRESETS: { value: CompressionPreset; label: string; desc: string }[] = [
 
 export function CompressVideoUI() {
   const [file, setFile] = useState<File | null>(null);
+  // The hook revokes on unmount and on swap; the hand-rolled version only
+  // revoked on swap, so navigating away pinned the source blob for the tab.
+  const videoUrl = useObjectUrl(file);
+  const [frames, setFrames] = useState<string[]>([]);
   const [preset, setPreset] = useState<CompressionPreset>("whatsapp");
-  const [status, setStatus] = useState<Status>("idle");
-  const [progress, setProgress] = useState(0);
-  const [error, setError] = useState<string | null>(null);
-  const [result, setResult] = useState<{ blob: Blob; fileName: string; size: number } | null>(null);
+  /* The doc's video readout leads with the frame size and the clip length:
+     "1920 × 1080 · 00:47.2 · 28.6 MB". Both come off `loadedmetadata` on the
+     preview that is already on screen — no extra decode. WebM written by
+     MediaRecorder declares no duration, so that half stays absent rather than
+     printing Infinity. */
+  const [source, setSource] = useState<{ dims: Dimensions | null; duration: number | null }>({
+    dims: null,
+    duration: null,
+  });
 
-  const handleFiles = useCallback((files: File[]) => {
-    const f = files[0];
-    if (!f) return;
-    setFile(f);
-    setStatus("idle");
-    setResult(null);
-    setError(null);
+  const readSourceMeta = useCallback((e: React.SyntheticEvent<HTMLVideoElement>) => {
+    const v = e.currentTarget;
+    setSource({
+      dims: v.videoWidth > 0 && v.videoHeight > 0 ? { w: v.videoWidth, h: v.videoHeight } : null,
+      duration: Number.isFinite(v.duration) && v.duration > 0 ? v.duration : null,
+    });
   }, []);
 
-  const handleCompress = useCallback(async () => {
-    if (!file) return;
-    setStatus("processing");
-    setProgress(0);
-    setError(null);
-    setResult(null);
-    try {
+  const processFn = useCallback(
+    async (f: File, _options: void, ctx: FileProcessorContext) => {
       const { compressVideo } = await import("@/lib/tools/video-compress");
-      const output = await compressVideo(file, preset, setProgress);
-      setResult({ blob: output.blob, fileName: output.fileName, size: output.newSize });
-      setStatus("done");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Compression failed");
-      setStatus("error");
-    }
-  }, [file, preset]);
+      return compressVideo(f, preset, ctx);
+    },
+    [preset],
+  );
+
+  // `void` options: `processFn` closes over the preset, so `process` takes the
+  // file alone. The hook owns progress and the AbortSignal that makes a 25 MB
+  // re-encode cancellable.
+  const { status, result, error, progress, process, cancel, reset } =
+    useFileProcessor<void>(processFn);
+
+  const handleFiles = useCallback(
+    (files: File[]) => {
+      const f = files[0];
+      if (!f) return;
+      setFile(f);
+      reset();
+      setFrames([]);
+      setSource({ dims: null, duration: null });
+      // Decoration only — see VideoTrimmerUI.
+      extractFilmstrip(f, FILMSTRIP_FRAMES)
+        .then(setFrames)
+        .catch(() => setFrames([]));
+    },
+    [reset],
+  );
+
+  const handleCompress = useCallback(() => {
+    if (!file) return;
+    process(file);
+  }, [file, process]);
 
   const handleReset = useCallback(() => {
     setFile(null);
-    setStatus("idle");
-    setResult(null);
-    setError(null);
-  }, []);
+    setFrames([]);
+    setSource({ dims: null, duration: null });
+    reset();
+  }, [reset]);
+
+  /*
+    Each preset is a different target bitrate and height, so switching drops the
+    finished file. Otherwise the rail describes the new preset while Download
+    still holds the previous encode, and the primary is gone so there is no way
+    to run the one that is now selected.
+  */
+  const handlePresetChange = useCallback(
+    (value: CompressionPreset) => {
+      if (result) reset();
+      setPreset(value);
+    },
+    [result, reset],
+  );
+
+  if (!file) {
+    return <DropZone accept=".mp4,.webm,.mov" onFiles={handleFiles} />;
+  }
 
   return (
-    <div className="space-y-6">
-      {!file ? (
-        <DropZone accept=".mp4,.webm,.mov" onFiles={handleFiles} />
-      ) : (
-        <>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <FilePreview fileName={file.name} fileSize={file.size} label="Original" />
-            {result && (
-              <FilePreview fileName={result.fileName} fileSize={result.size} label="Compressed" />
-            )}
-          </div>
+    <>
+      {/* ── Canvas: what you look at ─────────────────────────── */}
+      <div className={CANVAS_COLUMN}>
+        <CanvasHeader
+          file={file.name}
+          meta={videoMeta(
+            source.dims,
+            source.duration ? formatClock(source.duration) : null,
+            formatFileSize(file.size),
+          )}
+          trailing="MP4"
+        />
 
-          {/* Preset selector */}
-          <div>
-            <label className="block text-sm text-text-secondary mb-2">Compression preset</label>
-            <div className="grid grid-cols-3 gap-2">
+        {videoUrl && (
+          <CanvasStage className={cn(STAGE_GROW, "flex items-center justify-center bg-black")}>
+            <video
+              src={videoUrl}
+              controls
+              onLoadedMetadata={readSourceMeta}
+              className={cn(STAGE_MEDIA, "bg-black")}
+            />
+            <span className="absolute top-3 right-3.5 rounded-sm bg-[rgba(12,14,23,.72)] px-[7px] py-1 font-mono text-[9.5px] leading-none font-medium tracking-[0.12em] text-accent-300">
+              MP4
+            </span>
+          </CanvasStage>
+        )}
+
+        <Filmstrip frames={frames} startPct={0} endPct={100} />
+
+        <StatStrip
+          stats={[
+            { label: "IN", value: formatFileSize(file.size), tone: "neutral" },
+            { label: "OUT", value: result ? formatFileSize(result.newSize) : "—" },
+            {
+              // A bare em dash read as "not run yet" even when the run had
+              // finished and the output was BIGGER. Say 0% and drop the green.
+              label: "SAVED",
+              value: !result
+                ? "—"
+                : result.newSize < file.size
+                  ? `${Math.round(((file.size - result.newSize) / file.size) * 100)}%`
+                  : "0%",
+              tone: result && result.newSize >= file.size ? "neutral" : "ok",
+            },
+            {
+              label: "PROGRESS",
+              value: status === "processing" ? `${progress}%` : status === "done" ? "100%" : "—",
+              tone: "neutral",
+            },
+          ]}
+        />
+
+        {status === "error" && (
+          <ErrorMessage message={error} />
+        )}
+
+      </div>
+
+      {/* ── Controls: the doc's right-hand rail / bottom sheet ── */}
+      <ToolAside
+        footer={
+          <>
+            {/* The doc pins the running readout to the rail footer, above the
+                button that started it. WebCodecs reports nothing until the
+                first frame lands, so stay indeterminate rather than sitting
+                pinned at 0%. */}
+            {status === "processing" && (
+              <ToolProgress
+                phase="RE-ENCODING"
+                percent={progress > 0 ? progress : null}
+                label="Compressing video"
+              />
+            )}
+            {result ? (
+              <DownloadButton
+                blob={result.blob}
+                fileName={result.fileName}
+                className="w-full justify-center"
+              />
+            ) : status === "processing" ? (
+              // The one reachable control while a re-encode runs. It replaces
+              // the primary rather than sitting beside it so "Cancel" is never
+              // two different things at once.
+              <ToolActions primaryLabel="Cancel" onPrimary={cancel} />
+            ) : (
+              <ToolActions primaryLabel="Compress" onPrimary={handleCompress} />
+            )}
+            {status !== "processing" && (
+              <ToolResetLink
+                onClick={handleReset}
+                label={result ? "COMPRESS ANOTHER" : "CANCEL"}
+              />
+            )}
+          </>
+        }
+      >
+        <ToolControlGroup>
+          <ToolControl label="PRESET">
+            {/* Each preset carries a second line, so these are cards not chips. */}
+            <div className="flex flex-col gap-1.5" role="group" aria-label="Compression preset">
               {PRESETS.map((p) => (
                 <button
                   key={p.value}
-                  onClick={() => setPreset(p.value)}
+                  type="button"
+                  onClick={() => handlePresetChange(p.value)}
                   disabled={status === "processing"}
-                  className={`rounded-md border px-3 py-3 text-left transition-colors ${
-                    preset === p.value
-                      ? "border-accent bg-accent-muted"
-                      : "border-border hover:bg-bg-hover"
-                  }`}
+                  aria-pressed={preset === p.value}
+                  className={chipClass(
+                    preset === p.value,
+                    "px-3 py-2.5 text-left disabled:opacity-45",
+                  )}
                 >
-                  <span className={`block text-sm font-medium ${preset === p.value ? "text-accent" : "text-text-primary"}`}>
-                    {p.label}
-                  </span>
-                  <span className="block text-xs text-text-muted mt-0.5">{p.desc}</span>
+                  <span className="block text-sm font-medium">{p.label}</span>
+                  <span className="mt-0.5 block text-xs text-text-muted">{p.desc}</span>
                 </button>
               ))}
             </div>
-          </div>
+          </ToolControl>
+        </ToolControlGroup>
 
-          {status === "processing" && (
-            <div className="space-y-2">
-              <ProgressBar progress={progress} />
-              <p className="text-sm text-text-muted text-center">
-                Compressing{progress > 0 ? ` (${progress}%)` : "..."}
-              </p>
-            </div>
+        <ToolAsideSection label="OUTPUT">
+          <ToolOutput
+            rows={[
+              ["In", formatFileSize(file.size)],
+              ["Out", result ? formatFileSize(result.newSize) : "—"],
+              ["Progress", status === "processing" ? `${progress}%` : status === "done" ? "100%" : "—"],
+            ]}
+          />
+          {result && result.newSize >= file.size && (
+            <span className="font-body text-[10.5px] leading-[1.5] text-text-muted">
+              This clip was already smaller than the preset&rsquo;s target — keep the original.
+            </span>
           )}
-
-          {status === "error" && (
-            <ErrorMessage message={error} />
-          )}
-
-          <div className="flex items-center justify-center gap-3">
-            {status !== "done" && status !== "processing" && (
-              <button
-                onClick={handleCompress}
-                className="inline-flex items-center gap-2 rounded-md bg-accent px-6 py-2.5 text-sm font-medium text-bg-primary hover:bg-accent-hover transition-colors"
-              >
-                Compress
-              </button>
-            )}
-            {result && (
-              <DownloadButton blob={result.blob} fileName={result.fileName} />
-            )}
-            <button
-              onClick={handleReset}
-              className="rounded-md border border-border px-4 py-2.5 text-sm text-text-secondary hover:bg-bg-hover transition-colors"
-            >
-              {result ? "Compress another" : "Cancel"}
-            </button>
-          </div>
-
-          {result && (
-            <p className="text-sm text-text-muted text-center">
-              {Math.round(((file.size - result.size) / file.size) * 100)}% smaller than the original
-            </p>
-          )}
-        </>
-      )}
-    </div>
+          <span className="font-body text-[10.5px] leading-[1.5] text-text-muted">
+            Re-encoded with WebCodecs in this tab. Long clips take a while — keep the tab open.
+          </span>
+        </ToolAsideSection>
+      </ToolAside>
+    </>
   );
+}
+
+/** `m:ss.d`, matching the doc's clip readouts. */
+function formatClock(seconds: number): string {
+  const mins = Math.floor(seconds / 60);
+  const secs = Math.floor(seconds % 60);
+  const ms = Math.floor((seconds % 1) * 10);
+  return `${mins}:${String(secs).padStart(2, "0")}.${ms}`;
 }

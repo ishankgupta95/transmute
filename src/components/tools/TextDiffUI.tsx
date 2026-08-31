@@ -2,17 +2,39 @@
 
 import { useCallback, useMemo, useState } from "react";
 import { diffLines, diffWords } from "diff";
+import {
+  ToolActions,
+  ToolAside,
+  ToolAsideSection,
+  ToolChoice,
+  ToolOutput,
+} from "@/components/tools/ToolAside";
+import {
+  lineCount,
+  TEXT_PANE_BODY,
+  TextPane,
+  TextPanes,
+} from "@/components/tools/ToolCanvas";
+import { CANVAS_COLUMN } from "@/components/workspace/shared";
+import { formatFileSize } from "@/lib/utils/file-helpers";
 
-type DiffMode = "inline" | "side-by-side";
+/*
+  The chips name the GRANULARITY, which is all this control has ever changed.
+  They used to read "Inline" / "Side-by-Side" while both modes rendered the
+  same single full-width combined pane — a labelled promise of a layout that
+  was never built. Renaming is the honest fix; a real two-column diff is a
+  feature, not a defect.
+*/
+type DiffMode = "words" | "lines";
 
 export function TextDiffUI() {
   const [left, setLeft] = useState("");
   const [right, setRight] = useState("");
-  const [mode, setMode] = useState<DiffMode>("inline");
+  const [mode, setMode] = useState<DiffMode>("words");
 
   const diff = useMemo(() => {
     if (!left && !right) return [];
-    return mode === "side-by-side" ? diffLines(left, right) : diffWords(left, right);
+    return mode === "lines" ? diffLines(left, right) : diffWords(left, right);
   }, [left, right, mode]);
 
   const handleSwap = useCallback(() => {
@@ -20,75 +42,113 @@ export function TextDiffUI() {
     setRight(left);
   }, [left, right]);
 
+  const added = diff.filter((p) => p.added).length;
+  const removed = diff.filter((p) => p.removed).length;
+
   return (
-    <div className="space-y-4">
-      {/* Mode toggle */}
-      <div className="flex items-center justify-center gap-2">
-        {(["inline", "side-by-side"] as const).map((m) => (
-          <button
-            key={m}
-            onClick={() => setMode(m)}
-            className={`rounded-md px-4 py-2 text-sm font-medium transition-colors ${
-              mode === m ? "bg-accent text-bg-primary" : "bg-bg-elevated text-text-secondary hover:bg-bg-hover"
-            }`}
+    <>
+      {/* ── Canvas: what you look at ─────────────────────────── */}
+      <div className={CANVAS_COLUMN}>
+        <TextPanes>
+          <TextPane
+            label="Original"
+            lines={lineCount(left)}
+            size={formatFileSize(new Blob([left]).size)}
           >
-            {m === "inline" ? "Inline" : "Side-by-Side"}
-          </button>
-        ))}
-        <button
-          onClick={handleSwap}
-          className="rounded-md px-4 py-2 text-sm font-medium bg-bg-elevated text-text-secondary hover:bg-bg-hover transition-colors"
-        >
-          Swap
-        </button>
+            <textarea
+              value={left}
+              onChange={(e) => setLeft(e.target.value)}
+              placeholder="Paste original text..."
+              aria-label="Original text"
+              className={TEXT_PANE_BODY}
+            />
+          </TextPane>
+          <TextPane
+            label="Modified"
+            lines={lineCount(right)}
+            size={formatFileSize(new Blob([right]).size)}
+          >
+            <textarea
+              value={right}
+              onChange={(e) => setRight(e.target.value)}
+              placeholder="Paste modified text..."
+              aria-label="Modified text"
+              className={TEXT_PANE_BODY}
+            />
+          </TextPane>
+        </TextPanes>
+
+        {diff.length > 0 && (left || right) && (
+          <TextPanes columns={1}>
+            {/* `added + removed` counts diff PARTS, not lines — under a
+                header that says "N LINES" that was a third, unrelated
+                number. Count the rendered text instead. */}
+            <TextPane
+              tone="out"
+              label="Diff"
+              lines={lineCount(diff.map((p) => p.value).join(""))}
+              size={formatFileSize(new Blob([diff.map((p) => p.value).join("")]).size)}
+            >
+              <div className={TEXT_PANE_BODY}>
+                {diff.map((part, i) => (
+                  <span
+                    key={i}
+                    className={
+                      part.added
+                        ? "bg-success/20 text-success"
+                        : part.removed
+                          ? "bg-error/20 text-error line-through"
+                          : "text-neutral-300"
+                    }
+                  >
+                    {part.value}
+                  </span>
+                ))}
+              </div>
+            </TextPane>
+          </TextPanes>
+        )}
       </div>
 
-      {/* Input areas */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div>
-          <label className="block text-sm font-medium text-text-secondary mb-1">Original</label>
-          <textarea
-            value={left}
-            onChange={(e) => setLeft(e.target.value)}
-            placeholder="Paste original text..."
-            rows={10}
-            className="w-full rounded-lg border border-border bg-bg-elevated p-3 text-sm text-text-primary font-mono resize-y placeholder:text-text-muted"
+      {/* ── Controls: the doc's right-hand rail / bottom sheet ── */}
+      <ToolAside
+        footer={
+          <ToolActions
+            primaryLabel="Swap"
+            onPrimary={handleSwap}
+            primaryDisabled={!left && !right}
           />
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-text-secondary mb-1">Modified</label>
-          <textarea
-            value={right}
-            onChange={(e) => setRight(e.target.value)}
-            placeholder="Paste modified text..."
-            rows={10}
-            className="w-full rounded-lg border border-border bg-bg-elevated p-3 text-sm text-text-primary font-mono resize-y placeholder:text-text-muted"
+        }
+      >
+        <ToolAsideSection label="GRANULARITY">
+          <ToolChoice
+            label="Diff granularity"
+            fill
+            value={mode}
+            onChange={setMode}
+            options={[
+              { value: "words" as const, label: "By word" },
+              { value: "lines" as const, label: "By line" },
+            ]}
           />
-        </div>
-      </div>
+          <span className="font-body text-[10.5px] leading-[1.5] text-text-muted">
+            {mode === "words"
+              ? "Word by word — best for prose."
+              : "Line by line — best for code and config."}
+          </span>
+        </ToolAsideSection>
 
-      {/* Diff output */}
-      {diff.length > 0 && (left || right) && (
-        <div>
-          <label className="block text-sm font-medium text-text-secondary mb-1">Diff</label>
-          <div className="w-full rounded-lg border border-border bg-bg-elevated p-3 text-sm font-mono overflow-x-auto whitespace-pre-wrap max-h-96 overflow-y-auto">
-            {diff.map((part, i) => (
-              <span
-                key={i}
-                className={
-                  part.added
-                    ? "bg-success/20 text-success"
-                    : part.removed
-                      ? "bg-error/20 text-error line-through"
-                      : "text-text-primary"
-                }
-              >
-                {part.value}
-              </span>
-            ))}
-          </div>
-        </div>
-      )}
-    </div>
+        <ToolAsideSection label="OUTPUT">
+          <ToolOutput
+            rows={[
+              // `added`/`removed` are counts of diff parts — contiguous runs
+              // of changed text — not lines and not words. Say so.
+              ["Added runs", left || right ? String(added) : "—"],
+              ["Removed runs", left || right ? String(removed) : "—"],
+            ]}
+          />
+        </ToolAsideSection>
+      </ToolAside>
+    </>
   );
 }

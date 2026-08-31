@@ -1,39 +1,30 @@
 import { describe, it, expect, vi } from "vitest";
 
-// Mock audiobuffer-to-wav
-vi.mock("audiobuffer-to-wav", () => ({
-  default: vi.fn().mockImplementation((buffer: AudioBuffer) => {
-    // Return a mock WAV ArrayBuffer — RIFF header is 44 bytes + PCM data
-    const dataLength = buffer.length * buffer.numberOfChannels * 2; // 16-bit PCM
-    const totalLength = 44 + dataLength;
-    const arrayBuffer = new ArrayBuffer(totalLength);
-    const view = new DataView(arrayBuffer);
+/**
+ * These assert the actual bytes rather than "did we call the library". The
+ * previous suite mocked `audiobuffer-to-wav` and so was blind to the reason
+ * that library is gone: above two channels it wrote channel 0's samples alone
+ * beneath a header still declaring the source channel count.
+ */
 
-    // Write RIFF header identifier
-    view.setUint32(0, 0x52494646, false); // "RIFF"
-    view.setUint32(4, totalLength - 8, true);
-    view.setUint32(8, 0x57415645, false); // "WAVE"
-
-    return arrayBuffer;
-  }),
-}));
-
-// Mock audio-decode
 vi.mock("@/lib/tools/audio-decode", () => ({
   decodeAudioFile: vi.fn(),
 }));
 
 import { encodeToWav } from "@/lib/tools/audio-encode-wav";
-import toWav from "audiobuffer-to-wav";
 
-function createMockAudioBuffer(
+/** Distinct per-channel ramps, so mis-interleaving is visible in the output. */
+function createAudioBuffer(
   channels: number,
   length: number,
   sampleRate: number,
+  fill: (channel: number, index: number) => number = () => 0,
 ): AudioBuffer {
   const channelData: Float32Array[] = [];
-  for (let i = 0; i < channels; i++) {
-    channelData.push(new Float32Array(length));
+  for (let ch = 0; ch < channels; ch++) {
+    const data = new Float32Array(length);
+    for (let i = 0; i < length; i++) data[i] = fill(ch, i);
+    channelData.push(data);
   }
   return {
     numberOfChannels: channels,
@@ -44,42 +35,97 @@ function createMockAudioBuffer(
   } as unknown as AudioBuffer;
 }
 
+const ascii = (view: DataView, offset: number, len: number) =>
+  String.fromCharCode(
+    ...Array.from({ length: len }, (_, i) => view.getUint8(offset + i)),
+  );
+
+async function readWav(blob: Blob) {
+  const view = new DataView(await blob.arrayBuffer());
+  return {
+    view,
+    riff: ascii(view, 0, 4),
+    wave: ascii(view, 8, 4),
+    fmt: ascii(view, 12, 4),
+    audioFormat: view.getUint16(20, true),
+    channels: view.getUint16(22, true),
+    sampleRate: view.getUint32(24, true),
+    byteRate: view.getUint32(28, true),
+    blockAlign: view.getUint16(32, true),
+    bitsPerSample: view.getUint16(34, true),
+    dataTag: ascii(view, 36, 4),
+    dataBytes: view.getUint32(40, true),
+    riffSize: view.getUint32(4, true),
+  };
+}
+
 describe("encodeToWav", () => {
-  it("calls audiobuffer-to-wav with the AudioBuffer", () => {
-    const buffer = createMockAudioBuffer(2, 44100, 44100);
-    encodeToWav(buffer);
-
-    expect(toWav).toHaveBeenCalledWith(buffer);
-  });
-
   it("returns a Blob with audio/wav type", () => {
-    const buffer = createMockAudioBuffer(1, 44100, 44100);
-    const result = encodeToWav(buffer);
+    const result = encodeToWav(createAudioBuffer(1, 100, 44100));
 
     expect(result).toBeInstanceOf(Blob);
     expect(result.type).toBe("audio/wav");
   });
 
-  it("output blob size includes RIFF header + PCM data", () => {
-    const length = 44100;
-    const channels = 2;
-    const buffer = createMockAudioBuffer(channels, length, 44100);
-    const result = encodeToWav(buffer);
+  it("writes a well-formed 16-bit PCM header", async () => {
+    const wav = await readWav(encodeToWav(createAudioBuffer(2, 100, 48000)));
 
-    // 44 header + (44100 samples × 2 channels × 2 bytes)
-    const expectedSize = 44 + length * channels * 2;
-    expect(result.size).toBe(expectedSize);
+    expect(wav.riff).toBe("RIFF");
+    expect(wav.wave).toBe("WAVE");
+    expect(wav.fmt).toBe("fmt ");
+    expect(wav.dataTag).toBe("data");
+    expect(wav.audioFormat).toBe(1); // uncompressed PCM
+    expect(wav.bitsPerSample).toBe(16);
+    expect(wav.sampleRate).toBe(48000);
+    expect(wav.blockAlign).toBe(4); // 2 channels × 2 bytes
+    expect(wav.byteRate).toBe(48000 * 4);
   });
 
-  it("output contains valid RIFF header", async () => {
-    const buffer = createMockAudioBuffer(1, 100, 44100);
-    const blob = encodeToWav(buffer);
-    const arrayBuffer = await blob.arrayBuffer();
-    const view = new DataView(arrayBuffer);
+  it("sizes the blob as header + interleaved PCM", () => {
+    const result = encodeToWav(createAudioBuffer(2, 44100, 44100));
 
-    // Check "RIFF" magic bytes
-    expect(view.getUint32(0, false)).toBe(0x52494646);
-    // Check "WAVE" format
-    expect(view.getUint32(8, false)).toBe(0x57415645);
+    expect(result.size).toBe(44 + 44100 * 2 * 2);
+  });
+
+  for (const channels of [1, 2, 6]) {
+    it(`keeps the header and payload consistent for ${channels} channel(s)`, async () => {
+      const length = 128;
+      const wav = await readWav(
+        encodeToWav(createAudioBuffer(channels, length, 44100)),
+      );
+
+      // The corruption this replaced: a 6-channel header over 1 channel of
+      // samples, which players read at a sixth of the true duration.
+      expect(wav.channels).toBe(channels);
+      expect(wav.dataBytes).toBe(length * channels * 2);
+      expect(wav.riffSize).toBe(36 + length * channels * 2);
+      expect(wav.view.byteLength).toBe(44 + length * channels * 2);
+    });
+  }
+
+  it("interleaves every channel frame by frame", async () => {
+    // Channel n holds the constant n/10, so each frame should read 0.0, 0.1,
+    // 0.2 … in channel order.
+    const { view } = await readWav(
+      encodeToWav(createAudioBuffer(3, 4, 44100, (ch) => ch / 10)),
+    );
+
+    for (let frame = 0; frame < 4; frame++) {
+      for (let ch = 0; ch < 3; ch++) {
+        const sample = view.getInt16(44 + (frame * 3 + ch) * 2, true);
+        expect(sample / 0x7fff).toBeCloseTo(ch / 10, 3);
+      }
+    }
+  });
+
+  it("clamps samples outside [-1, 1] instead of wrapping", async () => {
+    const { view } = await readWav(
+      encodeToWav(createAudioBuffer(1, 2, 44100, (_ch, i) => (i === 0 ? 4 : -4))),
+    );
+
+    // Wrapping would turn a hot sample into the opposite polarity — an audible
+    // click rather than clean clipping.
+    expect(view.getInt16(44, true)).toBe(0x7fff);
+    expect(view.getInt16(46, true)).toBe(-0x8000);
   });
 });

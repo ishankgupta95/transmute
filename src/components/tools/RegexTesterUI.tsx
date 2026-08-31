@@ -1,18 +1,94 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { ErrorMessage } from "@/components/tools/ErrorMessage";
+import {
+  chipClass,
+  CANVAS_COLUMN,
+  MONO_LABEL,
+} from "@/components/workspace/shared";
+import { cn } from "@/lib/utils/cn";
+import {
+  ToolActions,
+  ToolAside,
+  ToolAsideSection,
+  ToolOutput,
+} from "@/components/tools/ToolAside";
+import {
+  GenList,
+  lineCount,
+  TEXT_PANE_BODY,
+  TextPane,
+  TextPanes,
+} from "@/components/tools/ToolCanvas";
+import { evalRegexSync, type RegexMatch } from "@/lib/tools/regex-eval";
+import { evalRegexGuarded, regexRunsInline } from "@/lib/workers/regex-client";
+import { useCopied } from "@/hooks/useCopied";
+import { formatFileSize } from "@/lib/utils/file-helpers";
 
-interface Match {
-  text: string;
-  index: number;
-  groups: string[];
+/** What each flag letter does, for the rail's hint line. */
+const FLAGS: readonly { flag: string; hint: string }[] = [
+  { flag: "g", hint: "global" },
+  { flag: "i", hint: "ignore case" },
+  { flag: "m", hint: "multiline" },
+  { flag: "s", hint: "dot matches newline" },
+  { flag: "u", hint: "unicode" },
+];
+
+interface EvalState {
+  matches: RegexMatch[];
+  error: string;
+  /** The string the matches were computed against — highlights must use it. */
+  evaluated: string;
 }
+
+const EMPTY_EVAL: EvalState = { matches: [], error: "", evaluated: "" };
 
 export function RegexTesterUI() {
   const [pattern, setPattern] = useState("");
   const [flags, setFlags] = useState("g");
   const [testStr, setTestStr] = useState("");
+  const { copied, copy } = useCopied();
+  const [evalState, setEvalState] = useState<EvalState>(EMPTY_EVAL);
+
+  /*
+    Evaluation runs in a pool worker with a hard timeout — a catastrophically
+    backtracking pattern used to freeze the tab on every keystroke inside a
+    useMemo. Event handlers kick it off; a run id drops stale results.
+    Without Worker (jsdom) it evaluates inline, synchronously.
+  */
+  const runIdRef = useRef(0);
+  const evaluate = useCallback((p: string, f: string, t: string) => {
+    const runId = ++runIdRef.current;
+    if (!p || !t) {
+      setEvalState(EMPTY_EVAL);
+      return;
+    }
+    if (regexRunsInline()) {
+      const { matches, error } = evalRegexSync(p, f, t);
+      setEvalState({ matches, error, evaluated: t });
+      return;
+    }
+    void evalRegexGuarded(p, f, t).then(({ matches, error }) => {
+      if (runIdRef.current === runId) setEvalState({ matches, error, evaluated: t });
+    });
+  }, []);
+
+  const handlePattern = useCallback(
+    (value: string) => {
+      setPattern(value);
+      evaluate(value, flags, testStr);
+    },
+    [evaluate, flags, testStr],
+  );
+
+  const handleTestStr = useCallback(
+    (value: string) => {
+      setTestStr(value);
+      evaluate(pattern, flags, value);
+    },
+    [evaluate, pattern, flags],
+  );
 
   const flagSet = useMemo(() => new Set(flags.split("")), [flags]);
 
@@ -21,122 +97,155 @@ export function RegexTesterUI() {
       const newFlags = new Set(flagSet);
       if (newFlags.has(flag)) newFlags.delete(flag);
       else newFlags.add(flag);
-      setFlags(Array.from(newFlags).join(""));
+      const next = Array.from(newFlags).join("");
+      setFlags(next);
+      evaluate(pattern, next, testStr);
     },
-    [flagSet],
+    [flagSet, evaluate, pattern, testStr],
   );
 
-  const { matches, highlighted, regexError } = useMemo(() => {
-    if (!pattern || !testStr) return { matches: [] as Match[], highlighted: "", regexError: "" };
-    try {
-      const re = new RegExp(pattern, flags);
-      const found: Match[] = [];
-      let m: RegExpExecArray | null;
+  const { matches, error: regexError, evaluated } = evalState;
 
-      if (flags.includes("g")) {
-        while ((m = re.exec(testStr)) !== null) {
-          found.push({ text: m[0], index: m.index, groups: m.slice(1) });
-          if (!m[0]) re.lastIndex++;
-        }
-      } else {
-        m = re.exec(testStr);
-        if (m) found.push({ text: m[0], index: m.index, groups: m.slice(1) });
-      }
-
-      // Build highlighted HTML
-      let html = "";
-      let last = 0;
-      for (const match of found) {
-        html += escapeHtml(testStr.slice(last, match.index));
-        html += `<mark class="bg-accent/30 text-accent rounded px-0.5">${escapeHtml(match.text)}</mark>`;
-        last = match.index + match.text.length;
-      }
-      html += escapeHtml(testStr.slice(last));
-
-      return { matches: found, highlighted: html, regexError: "" };
-    } catch (e) {
-      return { matches: [] as Match[], highlighted: "", regexError: e instanceof Error ? e.message : "Invalid regex" };
+  const highlighted = useMemo(() => {
+    if (matches.length === 0 && !evaluated) return "";
+    let html = "";
+    let last = 0;
+    for (const match of matches) {
+      html += escapeHtml(evaluated.slice(last, match.index));
+      html += `<mark class="bg-accent/30 text-accent rounded px-0.5">${escapeHtml(match.text)}</mark>`;
+      last = match.index + match.text.length;
     }
-  }, [pattern, flags, testStr]);
+    html += escapeHtml(evaluated.slice(last));
+    return html;
+  }, [matches, evaluated]);
+
+  const groupCount = matches.reduce((n, m) => n + m.groups.length, 0);
+
+  const handleCopy = useCallback(() => {
+    void copy(matches.map((m) => m.text).join("\n"));
+  }, [copy, matches]);
 
   return (
-    <div className="space-y-4">
-      {/* Pattern input */}
-      <div className="flex gap-2">
-        <div className="flex-1">
-          <label className="block text-sm font-medium text-text-secondary mb-1">Regex Pattern</label>
+    <>
+      {/* ── Canvas: what you look at ─────────────────────────── */}
+      <div className={CANVAS_COLUMN}>
+        {/* Pattern input — the tool's primary control. It stays in the canvas,
+            directly above the string it filters; only its tokens change, from
+            generic Tailwind sizes to the Nocturne field scale the rest of the
+            dev family uses. The heading is a <span>, not a <label>: it never
+            pointed at the input, so the field had no accessible name at all —
+            aria-label is what supplies one now. */}
+        <div className="flex flex-col">
+          <span className={cn(MONO_LABEL, "mb-1.5 block tracking-[0.1em] text-text-muted")}>
+            PATTERN
+          </span>
           <input
             type="text"
             value={pattern}
-            onChange={(e) => setPattern(e.target.value)}
+            onChange={(e) => handlePattern(e.target.value)}
             placeholder="[A-Za-z]+@[A-Za-z]+\.[A-Za-z]+"
-            className="w-full rounded-md border border-border bg-bg-elevated px-3 py-2 text-sm text-text-primary font-mono placeholder:text-text-muted"
+            aria-label="Regex pattern"
+            className="h-[30px] w-full rounded-[7px] border border-border bg-bg-elevated px-2.5 font-mono text-xs leading-none text-text-primary placeholder:text-text-muted focus:border-accent focus:outline-none"
           />
         </div>
-      </div>
 
-      {/* Flags */}
-      <div className="flex items-center justify-center gap-2">
-        {["g", "i", "m", "s", "u"].map((f) => (
-          <button
-            key={f}
-            onClick={() => toggleFlag(f)}
-            className={`w-8 h-8 rounded-md text-sm font-mono font-medium transition-colors ${
-              flagSet.has(f) ? "bg-accent text-bg-primary" : "bg-bg-elevated text-text-muted hover:bg-bg-hover"
-            }`}
+        <TextPanes columns={highlighted ? 2 : 1}>
+          <TextPane
+            label="Test String"
+            lines={lineCount(testStr)}
+            size={formatFileSize(new Blob([testStr]).size)}
           >
-            {f}
-          </button>
-        ))}
+            <textarea
+              value={testStr}
+              onChange={(e) => handleTestStr(e.target.value)}
+              placeholder="Enter text to test against..."
+              aria-label="Test string"
+              className={TEXT_PANE_BODY}
+            />
+          </TextPane>
+
+          {highlighted && (
+            <TextPane
+              tone="out"
+              label={`Matches (${matches.length})`}
+              lines={lineCount(testStr)}
+              size={formatFileSize(new Blob([testStr]).size)}
+            >
+              <div
+                data-testid="regex-highlight"
+                className={TEXT_PANE_BODY}
+                dangerouslySetInnerHTML={{ __html: highlighted }}
+              />
+            </TextPane>
+          )}
+        </TextPanes>
+
+        {regexError && <ErrorMessage message={regexError} />}
+
+        {/* Capture groups — GenList is the system's list primitive; this was
+            the only hand-rolled one left in the dev family. The heading labels
+            a list, not a control, so it is a <span>. */}
+        {matches.some((m) => m.groups.length > 0) && (
+          <div className="flex flex-col">
+            <span className={cn(MONO_LABEL, "mb-1.5 block tracking-[0.1em] text-text-muted")}>
+              CAPTURE GROUPS
+            </span>
+            <GenList
+              rows={matches.flatMap((m, i) =>
+                // An optional group that did not participate is `undefined` —
+                // show the em dash rather than an empty row.
+                m.groups.map((g, j) => ({ value: g ?? "—", meta: `M${i + 1} · G${j + 1}` })),
+              )}
+            />
+          </div>
+        )}
       </div>
 
-      {/* Test string */}
-      <div>
-        <label className="block text-sm font-medium text-text-secondary mb-1">Test String</label>
-        <textarea
-          value={testStr}
-          onChange={(e) => setTestStr(e.target.value)}
-          placeholder="Enter text to test against..."
-          rows={5}
-          className="w-full rounded-lg border border-border bg-bg-elevated p-3 text-sm text-text-primary font-mono resize-y placeholder:text-text-muted"
-        />
-      </div>
-
-      {regexError && <ErrorMessage message={regexError} />}
-
-      {/* Highlighted result */}
-      {highlighted && (
-        <div>
-          <label className="block text-sm font-medium text-text-secondary mb-1">
-            Matches ({matches.length})
-          </label>
-          <div
-            className="w-full rounded-lg border border-border bg-bg-elevated p-3 text-sm text-text-primary font-mono whitespace-pre-wrap"
-            dangerouslySetInnerHTML={{ __html: highlighted }}
-          />
-        </div>
-      )}
-
-      {/* Capture groups */}
-      {matches.some((m) => m.groups.length > 0) && (
-        <div>
-          <label className="block text-sm font-medium text-text-secondary mb-1">Capture Groups</label>
-          <div className="space-y-1">
-            {matches.map((m, i) => (
-              <div key={i} className="rounded-md border border-border bg-bg-elevated px-3 py-2 text-xs font-mono">
-                <span className="text-text-muted">Match {i + 1}:</span>{" "}
-                <span className="text-text-primary">&quot;{m.text}&quot;</span>
-                {m.groups.map((g, j) => (
-                  <span key={j} className="ml-3 text-accent">
-                    Group {j + 1}: &quot;{g}&quot;
-                  </span>
-                ))}
-              </div>
+      {/* ── Controls: the doc's right-hand rail / bottom sheet ── */}
+      <ToolAside
+        footer={
+          matches.length > 0 ? (
+            <ToolActions
+              primaryLabel={copied ? "Copied to clipboard" : "Copy all hits"}
+              onPrimary={handleCopy}
+            />
+          ) : undefined
+        }
+      >
+        <ToolAsideSection label="FLAGS">
+          {/* Flags are a multi-select, so these are toggles rather than a ToolChoice. */}
+          <div className="flex flex-wrap gap-1.5" role="group" aria-label="Regex flags">
+            {FLAGS.map(({ flag, hint }) => (
+              <button
+                key={flag}
+                type="button"
+                onClick={() => toggleFlag(flag)}
+                aria-pressed={flagSet.has(flag)}
+                title={hint}
+                className={chipClass(flagSet.has(flag), "size-8 font-mono text-sm")}
+              >
+                {flag}
+              </button>
             ))}
           </div>
-        </div>
-      )}
-    </div>
+          <span className="font-body text-[10.5px] leading-[1.5] text-text-muted">
+            {FLAGS.filter(({ flag }) => flagSet.has(flag))
+              .map(({ flag, hint }) => `${flag} — ${hint}`)
+              .join(" · ") || "No flags: first match only, case sensitive."}
+          </span>
+        </ToolAsideSection>
+
+        <ToolAsideSection label="OUTPUT">
+          <ToolOutput
+            rows={[
+              ["Hits", pattern && testStr ? String(matches.length) : "—"],
+              ["Captures", pattern && testStr ? String(groupCount) : "—"],
+              ["Pattern", pattern ? `/${pattern}/${flags}` : "—"],
+            ]}
+          />
+        </ToolAsideSection>
+      </ToolAside>
+    </>
   );
 }
 

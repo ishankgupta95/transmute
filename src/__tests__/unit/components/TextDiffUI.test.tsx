@@ -33,12 +33,12 @@ describe("TextDiffUI", () => {
     render(<TextDiffUI />);
     expect(getOriginalTextarea()).toBeInTheDocument();
     expect(getModifiedTextarea()).toBeInTheDocument();
-    expect(screen.getByText("Inline")).toBeInTheDocument();
-    expect(screen.getByText("Side-by-Side")).toBeInTheDocument();
+    expect(screen.getByText("By word")).toBeInTheDocument();
+    expect(screen.getByText("By line")).toBeInTheDocument();
     expect(screen.getByText("Swap")).toBeInTheDocument();
   });
 
-  it("uses diffWords in inline mode (default)", () => {
+  it("uses diffWords in by-word mode (default)", () => {
     mockDiffWords.mockReturnValue([
       { value: "hello ", added: false, removed: false },
       { value: "world", added: false, removed: true },
@@ -56,7 +56,7 @@ describe("TextDiffUI", () => {
     expect(mockDiffLines).not.toHaveBeenCalled();
   });
 
-  it("uses diffLines in side-by-side mode", () => {
+  it("uses diffLines in by-line mode", () => {
     mockDiffLines.mockReturnValue([
       { value: "line one\n", added: false, removed: false },
       { value: "line two\n", added: false, removed: true },
@@ -64,7 +64,7 @@ describe("TextDiffUI", () => {
     ]);
 
     render(<TextDiffUI />);
-    fireEvent.click(screen.getByText("Side-by-Side"));
+    fireEvent.click(screen.getByText("By line"));
 
     const original = getOriginalTextarea();
     const modified = getModifiedTextarea();
@@ -92,7 +92,11 @@ describe("TextDiffUI", () => {
     // Diff section should have content rendered
     expect(screen.getByText("Diff")).toBeInTheDocument();
     // Verify the diff container has the expected span elements
-    const diffContainer = screen.getByText("Diff").nextElementSibling!;
+    // The diff parts sit in the pane body, a sibling of the pane's header row.
+    const diffContainer = screen
+      .getByText("Diff")
+      .closest("div")!
+      .parentElement!.querySelector("div:last-child")!;
     const spans = diffContainer.querySelectorAll("span");
     expect(spans).toHaveLength(3);
     expect(spans[0].textContent).toBe("hello ");
@@ -139,7 +143,7 @@ describe("TextDiffUI", () => {
     expect(modified).toHaveValue("text A");
   });
 
-  it("switches from inline to side-by-side mode and re-computes diff", () => {
+  it("switches from by-word to by-line mode and re-computes diff", () => {
     mockDiffWords.mockReturnValue([
       { value: "abc", added: false, removed: false },
     ]);
@@ -151,11 +155,11 @@ describe("TextDiffUI", () => {
     fireEvent.change(getOriginalTextarea(), { target: { value: "abc" } });
     fireEvent.change(getModifiedTextarea(), { target: { value: "abc" } });
 
-    // Initially inline mode uses diffWords
+    // Initially by-word mode uses diffWords
     expect(mockDiffWords).toHaveBeenCalled();
 
-    // Switch to side-by-side
-    fireEvent.click(screen.getByText("Side-by-Side"));
+    // Switch to by-line
+    fireEvent.click(screen.getByText("By line"));
 
     expect(mockDiffLines).toHaveBeenCalledWith("abc", "abc");
   });

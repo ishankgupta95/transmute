@@ -2,8 +2,23 @@
 
 import { useCallback, useState } from "react";
 import { ErrorMessage } from "@/components/tools/ErrorMessage";
-import { copyText } from "@/lib/utils/clipboard";
 import { triggerDownload } from "@/lib/utils/download";
+import {
+  ToolActions,
+  ToolAside,
+  ToolAsideSection,
+  ToolOutput,
+  ToolResetLink,
+} from "@/components/tools/ToolAside";
+import {
+  lineCount,
+  TEXT_PANE_BODY,
+  TextPane,
+  TextPanes,
+} from "@/components/tools/ToolCanvas";
+import { CANVAS_COLUMN } from "@/components/workspace/shared";
+import { useCopied } from "@/hooks/useCopied";
+import { formatFileSize } from "@/lib/utils/file-helpers";
 
 /**
  * Single-pass CSV parser. Tracks quote state across the whole string so quoted
@@ -48,7 +63,14 @@ function parseCsv(text: string): string[][] {
   return rows;
 }
 
-function csvToJson(csv: string): string {
+/** The rail's OUTPUT readout wants the shape, so the conversion reports it. */
+interface JsonResult {
+  json: string;
+  rows: number;
+  cols: number;
+}
+
+function csvToJson(csv: string): JsonResult {
   const rows = parseCsv(csv).filter((r) => r.some((c) => c !== ""));
   if (rows.length < 2) throw new Error("CSV must have a header row and at least one data row");
 
@@ -60,34 +82,33 @@ function csvToJson(csv: string): string {
     });
     return obj;
   });
-  return JSON.stringify(data, null, 2);
+  return { json: JSON.stringify(data, null, 2), rows: data.length, cols: headers.length };
 }
 
 export function CsvToJsonUI() {
   const [input, setInput] = useState("");
   const [output, setOutput] = useState("");
+  const [shape, setShape] = useState<{ rows: number; cols: number } | null>(null);
   const [error, setError] = useState("");
-  const [copied, setCopied] = useState(false);
+  const { copied, copy } = useCopied();
 
   const handleConvert = useCallback(() => {
     setError("");
     setOutput("");
+    setShape(null);
     if (!input.trim()) return;
     try {
-      setOutput(csvToJson(input));
+      const result = csvToJson(input);
+      setOutput(result.json);
+      setShape({ rows: result.rows, cols: result.cols });
     } catch (e) {
       setError(e instanceof Error ? e.message : "Invalid CSV");
     }
   }, [input]);
 
   const handleCopy = useCallback(() => {
-    copyText(output).then((ok) => {
-      if (ok) {
-        setCopied(true);
-        setTimeout(() => setCopied(false), 2000);
-      }
-    });
-  }, [output]);
+    void copy(output);
+  }, [copy, output]);
 
   const handleDownload = useCallback(() => {
     const blob = new Blob([output], { type: "application/json" });
@@ -95,49 +116,76 @@ export function CsvToJsonUI() {
   }, [output]);
 
   return (
-    <div className="space-y-4">
-      <div>
-        <label className="block text-sm font-medium text-text-secondary mb-1">Input CSV</label>
-        <textarea
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          placeholder={"name,age,city\nAlice,30,NYC\nBob,25,LA"}
-          rows={8}
-          className="w-full rounded-lg border border-border bg-bg-elevated p-3 text-sm text-text-primary font-mono resize-y placeholder:text-text-muted"
-        />
+    <>
+      {/* ── Canvas: the doc's two-up IN / OUT panes ────────── */}
+      <div className={CANVAS_COLUMN}>
+        <TextPanes columns={output ? 2 : 1}>
+          <TextPane
+            label="Input CSV"
+            lines={lineCount(input)}
+            size={formatFileSize(new Blob([input]).size)}
+          >
+            <textarea
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              placeholder={"name,age,city\nAlice,30,NYC\nBob,25,LA"}
+              aria-label="Input CSV"
+              className={TEXT_PANE_BODY}
+            />
+          </TextPane>
+
+          {output && (
+            <TextPane
+              tone="out"
+              label="JSON Output"
+              lines={lineCount(output)}
+              size={formatFileSize(new Blob([output]).size)}
+              action={
+                <>
+                  <button onClick={handleCopy} className="cursor-pointer text-accent transition-colors hover:text-accent-hover">
+                    {copied ? "Copied!" : "Copy"}
+                  </button>
+                  <button onClick={handleDownload} className="cursor-pointer text-accent transition-colors hover:text-accent-hover">
+                    Download
+                  </button>
+                </>
+              }
+            >
+              <pre className={TEXT_PANE_BODY} aria-label="JSON output">{output}</pre>
+            </TextPane>
+          )}
+        </TextPanes>
+
+        {error && (
+          <ErrorMessage message={error} />
+        )}
       </div>
 
-      <div className="flex justify-center">
-        <button
-          onClick={handleConvert}
-          className="rounded-md bg-accent px-6 py-2.5 text-sm font-medium text-bg-primary hover:bg-accent-hover transition-colors"
-        >
-          Convert to JSON
-        </button>
-      </div>
-
-      {error && (
-        <ErrorMessage message={error} />
-      )}
-
-      {output && (
-        <div>
-          <div className="flex items-center justify-between mb-1">
-            <label className="text-sm font-medium text-text-secondary">JSON Output</label>
-            <div className="flex gap-2">
-              <button onClick={handleCopy} className="text-xs text-accent hover:text-accent-hover transition-colors">
-                {copied ? "Copied!" : "Copy"}
-              </button>
-              <button onClick={handleDownload} className="text-xs text-accent hover:text-accent-hover transition-colors">
-                Download
-              </button>
-            </div>
-          </div>
-          <pre className="w-full rounded-lg border border-border bg-bg-elevated p-3 text-sm text-text-primary font-mono overflow-x-auto whitespace-pre-wrap max-h-96 overflow-y-auto">
-            {output}
-          </pre>
-        </div>
-      )}
-    </div>
+      {/* ── Controls: the doc's right-hand rail / bottom sheet ── */}
+      <ToolAside
+        footer={
+          <>
+            <ToolActions
+              primaryLabel="Convert to JSON"
+              onPrimary={handleConvert}
+              primaryDisabled={!input.trim()}
+            />
+            {output && <ToolResetLink onClick={handleDownload} label="SAVE data.json" />}
+          </>
+        }
+      >
+        <ToolAsideSection label="OUTPUT">
+          <ToolOutput
+            rows={[
+              ["Rows", shape ? String(shape.rows) : "—"],
+              ["Columns", shape ? String(shape.cols) : "—"],
+            ]}
+          />
+          <span className="font-body text-[10.5px] leading-[1.5] text-text-muted">
+            Quoted fields keep their commas and newlines; every value stays a string.
+          </span>
+        </ToolAsideSection>
+      </ToolAside>
+    </>
   );
 }

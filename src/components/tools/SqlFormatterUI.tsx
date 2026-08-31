@@ -2,8 +2,22 @@
 
 import { useCallback, useState } from "react";
 import { ErrorMessage } from "@/components/tools/ErrorMessage";
-import { copyText } from "@/lib/utils/clipboard";
 import { format as formatSql } from "sql-formatter";
+import {
+  ToolActions,
+  ToolAside,
+  ToolChoice,
+} from "@/components/tools/ToolAside";
+import {
+  lineCount,
+  TEXT_PANE_BODY,
+  TextPane,
+  TextPanes,
+} from "@/components/tools/ToolCanvas";
+import { ToolControl, ToolControlGroup } from "@/components/tools/ToolControls";
+import { CANVAS_COLUMN } from "@/components/workspace/shared";
+import { useCopied } from "@/hooks/useCopied";
+import { formatFileSize } from "@/lib/utils/file-helpers";
 
 const DIALECTS = [
   { value: "sql", label: "Standard SQL" },
@@ -24,94 +38,116 @@ export function SqlFormatterUI() {
   const [error, setError] = useState("");
   const [dialect, setDialect] = useState<Dialect>("sql");
   const [uppercase, setUppercase] = useState(true);
-  const [copied, setCopied] = useState(false);
+  const { copied, copy } = useCopied();
 
-  const handleFormat = useCallback(() => {
+  /*
+    Parameterised so DIALECT and STYLE can re-run it the moment they change:
+    a lit "PostgreSQL / lowercase" pair sitting over upper-cased standard SQL
+    describes an output that was never produced.
+  */
+  const runFormat = useCallback((text: string, d: Dialect, upper: boolean) => {
     setError("");
     setOutput("");
-    if (!input.trim()) return;
+    if (!text.trim()) return;
     try {
-      const result = formatSql(input, {
-        language: dialect,
-        keywordCase: uppercase ? "upper" : "preserve",
+      const result = formatSql(text, {
+        language: d,
+        keywordCase: upper ? "upper" : "preserve",
         tabWidth: 2,
       });
       setOutput(result);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to format SQL");
     }
-  }, [input, dialect, uppercase]);
+  }, []);
 
   const handleCopy = useCallback(() => {
-    copyText(output).then((ok) => {
-      if (ok) {
-        setCopied(true);
-        setTimeout(() => setCopied(false), 2000);
-      }
-    });
-  }, [output]);
+    void copy(output);
+  }, [copy, output]);
 
   return (
-    <div className="space-y-4">
-      {/* Options row */}
-      <div className="flex flex-wrap items-center justify-center gap-3">
-        <select
-          value={dialect}
-          onChange={(e) => setDialect(e.target.value as Dialect)}
-          className="rounded-md border border-border bg-bg-elevated px-3 py-2 text-sm text-text-primary"
-        >
-          {DIALECTS.map((d) => (
-            <option key={d.value} value={d.value}>{d.label}</option>
-          ))}
-        </select>
-        <label className="flex items-center gap-2 text-sm text-text-secondary">
-          <input
-            type="checkbox"
-            checked={uppercase}
-            onChange={(e) => setUppercase(e.target.checked)}
-            className="rounded border-border"
+    <>
+      {/* ── Canvas: the doc's two-up IN / OUT panes ────────── */}
+      <div className={CANVAS_COLUMN}>
+        <TextPanes columns={output ? 2 : 1}>
+          <TextPane
+            label="Input SQL"
+            lines={lineCount(input)}
+            size={formatFileSize(new Blob([input]).size)}
+          >
+            <textarea
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              placeholder="SELECT id, name FROM users WHERE age > 18 ORDER BY name ASC"
+              aria-label="Input SQL"
+              className={TEXT_PANE_BODY}
+            />
+          </TextPane>
+
+          {output && (
+            <TextPane
+              tone="out"
+              label="Formatted SQL"
+              lines={lineCount(output)}
+              size={formatFileSize(new Blob([output]).size)}
+              action={
+                <button
+                  onClick={handleCopy}
+                  className="cursor-pointer text-accent transition-colors hover:text-accent-hover"
+                >
+                  {copied ? "Copied!" : "Copy"}
+                </button>
+              }
+            >
+              <pre className={TEXT_PANE_BODY} aria-label="Formatted SQL">{output}</pre>
+            </TextPane>
+          )}
+        </TextPanes>
+
+        {error && <ErrorMessage message={error} />}
+      </div>
+
+      <ToolAside
+        footer={
+          <ToolActions
+            primaryLabel="Format SQL"
+            onPrimary={() => runFormat(input, dialect, uppercase)}
+            primaryDisabled={!input.trim()}
           />
-          Uppercase keywords
-        </label>
-      </div>
+        }
+      >
+        {/* One bordered block for the whole control set — the doc gives its
+            own rule only to START FROM, ADVANCED and OUTPUT. */}
+        <ToolControlGroup>
+          <ToolControl label="DIALECT">
+            <ToolChoice
+              label="SQL dialect"
+              fill
+              value={dialect}
+              onChange={(d) => {
+                setDialect(d);
+                runFormat(input, d, uppercase);
+              }}
+              options={DIALECTS.map((d) => ({ value: d.value as Dialect, label: d.label }))}
+            />
+          </ToolControl>
 
-      <div>
-        <label className="block text-sm font-medium text-text-secondary mb-1">Input SQL</label>
-        <textarea
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          placeholder="SELECT id, name FROM users WHERE age > 18 ORDER BY name ASC"
-          rows={8}
-          className="w-full rounded-lg border border-border bg-bg-elevated p-3 text-sm text-text-primary font-mono resize-y placeholder:text-text-muted"
-        />
-      </div>
-
-      <div className="flex justify-center">
-        <button
-          onClick={handleFormat}
-          className="rounded-md bg-accent px-6 py-2.5 text-sm font-medium text-bg-primary hover:bg-accent-hover transition-colors"
-        >
-          Format SQL
-        </button>
-      </div>
-
-      {error && (
-        <ErrorMessage message={error} />
-      )}
-
-      {output && (
-        <div>
-          <div className="flex items-center justify-between mb-1">
-            <label className="text-sm font-medium text-text-secondary">Formatted SQL</label>
-            <button onClick={handleCopy} className="text-xs text-accent hover:text-accent-hover transition-colors">
-              {copied ? "Copied!" : "Copy"}
-            </button>
-          </div>
-          <pre className="w-full rounded-lg border border-border bg-bg-elevated p-3 text-sm text-text-primary font-mono overflow-x-auto whitespace-pre-wrap max-h-96 overflow-y-auto">
-            {output}
-          </pre>
-        </div>
-      )}
-    </div>
+          <ToolControl label="STYLE">
+            <label className="flex cursor-pointer items-center gap-2.5 font-body text-[12.5px] text-neutral-300">
+              <input
+                type="checkbox"
+                checked={uppercase}
+                onChange={(e) => {
+                  setUppercase(e.target.checked);
+                  runFormat(input, dialect, e.target.checked);
+                }}
+                className="size-4 rounded-sm border-border accent-accent"
+              />
+              Uppercase keywords
+            </label>
+          </ToolControl>
+        </ToolControlGroup>
+      </ToolAside>
+    </>
   );
 }

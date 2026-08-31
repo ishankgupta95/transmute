@@ -16,7 +16,7 @@ describe("CssGradientGeneratorUI", () => {
     expect(screen.getByText("Linear")).toBeInTheDocument();
     expect(screen.getByText("Radial")).toBeInTheDocument();
     expect(screen.getByText("Conic")).toBeInTheDocument();
-    expect(screen.getByText("Color Stops")).toBeInTheDocument();
+    expect(screen.getByText("COLOR STOPS")).toBeInTheDocument();
   });
 
   it("generates linear-gradient CSS by default", () => {
@@ -46,15 +46,15 @@ describe("CssGradientGeneratorUI", () => {
   it("hides angle slider for radial gradient", () => {
     render(<CssGradientGeneratorUI />);
     // Linear shows angle
-    expect(screen.getByText("Angle:")).toBeInTheDocument();
+    expect(screen.getByText("Angle")).toBeInTheDocument();
     fireEvent.click(screen.getByText("Radial"));
-    expect(screen.queryByText("Angle:")).not.toBeInTheDocument();
+    expect(screen.queryByText("Angle")).not.toBeInTheDocument();
   });
 
   it("shows angle slider for conic gradient", () => {
     render(<CssGradientGeneratorUI />);
     fireEvent.click(screen.getByText("Conic"));
-    expect(screen.getByText("Angle:")).toBeInTheDocument();
+    expect(screen.getByText("Angle")).toBeInTheDocument();
   });
 
   it("adds a color stop", () => {

@@ -56,7 +56,11 @@ test.describe("category hubs", () => {
 
       // The CategoryHubPage renders an h1 with the category title.
       await expect(page.locator("h1")).toHaveCount(1);
-      await expect(page.locator("h1")).toHaveText(cat.title);
+      // Case-insensitive: the redesign moved these H1s to sentence case,
+      // and casing is presentation, not contract.
+      await expect(page.locator("h1")).toHaveText(
+        new RegExp(`^${cat.title}$`, "i"),
+      );
 
       // Every expected tool is reachable from the hub via a card link.
       for (const slug of cat.expectedToolLinks) {
@@ -69,7 +73,7 @@ test.describe("category hubs", () => {
 
       // Breadcrumb back to home is rendered.
       const crumbs = page.locator('nav[aria-label="Breadcrumb"]');
-      await expect(crumbs.locator('a[href="/"]')).toHaveText("Home");
+      await expect(crumbs.locator('a[href="/"]')).toHaveText(/^Home$/i);
     });
   }
 

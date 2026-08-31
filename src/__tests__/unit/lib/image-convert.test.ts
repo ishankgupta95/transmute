@@ -6,9 +6,26 @@ vi.mock("heic2any", () => ({
 }));
 
 // Mock utif2
+/*
+ * utif2 is mocked to the shape the REAL library emits, verified against
+ * `UTIF.encodeImage` output in Node: `decode()` returns IFD objects carrying
+ * only numeric TIFF tags (t256 = ImageWidth, t257 = ImageLength) — `.width`
+ * and `.height` do not exist until `decodeImage()` has populated them.
+ *
+ * The earlier mock put `width`/`height` straight on `decode()`'s return, which
+ * no real TIFF ever does. That made the decode order untestable: reading the
+ * dimensions before `decodeImage()` ran would have kept passing here while
+ * producing a NaN-sized canvas in the browser. Populating them in
+ * `decodeImage` instead pins the ordering the production path depends on.
+ */
 vi.mock("utif2", () => ({
-  decode: vi.fn().mockReturnValue([{ width: 100, height: 80 }]),
-  decodeImage: vi.fn(),
+  // A fresh IFD per call — real decode() never hands back a shared object,
+  // and reusing one would leak decodeImage's mutations between tests.
+  decode: vi.fn(() => [{ t256: [100], t257: [80] } as Record<string, unknown>]),
+  decodeImage: vi.fn((_buf: ArrayBuffer, ifd: Record<string, unknown>) => {
+    ifd.width = (ifd.t256 as number[])[0];
+    ifd.height = (ifd.t257 as number[])[0];
+  }),
   toRGBA8: vi.fn().mockReturnValue(new Uint8Array(100 * 80 * 4)),
 }));
 
@@ -111,14 +128,11 @@ describe("convertImage", () => {
     expect(result.blob.type).toBe("image/webp");
   });
 
-  it("converts to BMP format", async () => {
-    const file = makeFile("test.png", "image/png");
-    const opts: ImageConvertOptions = { targetFormat: "bmp", quality: 1 };
-    const result = await convertImage(file, opts);
-
-    expect(result.fileName).toBe("test.bmp");
-    expect(result.blob.type).toBe("image/bmp");
-  });
+  // There was a "converts to BMP format" case here. It only passed because
+  // `canvasToBlob` is mocked to echo back whatever MIME it is handed — no real
+  // browser encodes BMP, so `canvas.toBlob` fell back to PNG and the tool
+  // produced PNG bytes named `.bmp`. BMP is source-only now, and the type no
+  // longer admits it as a target.
 
   it("uses natural dimensions when width/height not specified", async () => {
     setupImageMock(800, 600);
@@ -197,6 +211,21 @@ describe("convertImage", () => {
     expect(UTIF.decode).toHaveBeenCalled();
     expect(UTIF.decodeImage).toHaveBeenCalled();
     expect(UTIF.toRGBA8).toHaveBeenCalled();
+  });
+
+  it("reads TIFF dimensions only after decodeImage has populated them", async () => {
+    // Real utif2 leaves width/height undefined until decodeImage runs, so a
+    // regression that reads them straight off decode()'s IFD would size the
+    // canvas NaN x NaN. A decodeImage that populates nothing must break the run.
+    vi.mocked(UTIF.decodeImage).mockImplementationOnce(() => {});
+
+    const file = makeFile("scan.tiff", "image/tiff");
+    const opts: ImageConvertOptions = { targetFormat: "png", quality: 1 };
+    // With no dimensions on the IFD the canvas is sized undefined x undefined
+    // and the RGBA copy overruns a zero-length buffer — the browser-side
+    // symptom of reading the tags too early, surfaced here as a rejection.
+    await expect(convertImage(file, opts)).rejects.toThrow();
+    expect(mockCtx.createImageData).toHaveBeenCalledWith(undefined, undefined);
   });
 
   it("sets RGBA data into imageData when converting TIFF", async () => {
@@ -311,5 +340,40 @@ describe("convertImage", () => {
     const file = makeFile("photo.png");
     const opts: ImageConvertOptions = { targetFormat: "png", quality: 1 };
     await expect(convertImage(file, opts)).rejects.toThrow("Canvas 2D context not available");
+  });
+});
+
+/*
+  Dimensionless SVGs (viewBox only) report naturalWidth 0 and used to produce
+  a 0×0 PNG. The raster fallback is pure string parsing — tested directly.
+*/
+import { svgFallbackSize } from "@/lib/tools/image-convert";
+
+describe("svgFallbackSize", () => {
+  it("scales a viewBox to a 1024px longest edge, marked non-explicit", () => {
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 120"></svg>`;
+    expect(svgFallbackSize(svg)).toEqual({ width: 1024, height: 512, explicit: false });
+  });
+
+  it("returns explicit width/height attributes unscaled", () => {
+    const svg = `<svg width="240" height="120" viewBox="0 0 20 10"></svg>`;
+    // An author-chosen 240px must never be inflated to 1024.
+    expect(svgFallbackSize(svg)).toEqual({ width: 240, height: 120, explicit: true });
+  });
+
+  it("never scales DOWN an already-large viewBox", () => {
+    const svg = `<svg viewBox="0 0 4096 2048"></svg>`;
+    expect(svgFallbackSize(svg)).toEqual({ width: 4096, height: 2048, explicit: false });
+  });
+
+  it("handles negative viewBox origins", () => {
+    const svg = `<svg viewBox="-10 -5 200 100"></svg>`;
+    expect(svgFallbackSize(svg)).toEqual({ width: 1024, height: 512, explicit: false });
+  });
+
+  it("returns null for percentage-only or missing dimensions", () => {
+    expect(svgFallbackSize(`<svg width="100%" height="100%"></svg>`)).toBeNull();
+    expect(svgFallbackSize(`<svg xmlns="http://www.w3.org/2000/svg"></svg>`)).toBeNull();
+    expect(svgFallbackSize(`not svg at all`)).toBeNull();
   });
 });

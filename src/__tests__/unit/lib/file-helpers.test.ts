@@ -21,4 +21,19 @@ describe("formatFileSize", () => {
   it("formats fractional megabytes", () => {
     expect(formatFileSize(2621440)).toBe("2.5 MB");
   });
+
+  it("formats terabytes and petabytes instead of indexing off the unit table", () => {
+    expect(formatFileSize(1024 ** 4)).toBe("1.0 TB");
+    expect(formatFileSize(1024 ** 5)).toBe("1.0 PB");
+  });
+
+  it("clamps beyond the table to the largest unit — never 'undefined'", () => {
+    expect(formatFileSize(1024 ** 6)).toBe("1024.0 PB");
+  });
+
+  it("renders a dash for garbage input — never 'NaN'", () => {
+    expect(formatFileSize(NaN)).toBe("—");
+    expect(formatFileSize(-1)).toBe("—");
+    expect(formatFileSize(Infinity)).toBe("—");
+  });
 });

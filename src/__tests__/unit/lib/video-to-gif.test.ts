@@ -14,7 +14,6 @@ const {
 const {
   mockGifWriteFrame,
   mockGifFinish,
-  mockGifBytes,
   mockQuantize,
   mockApplyPalette,
   mockGIFEncoder,
@@ -95,7 +94,7 @@ describe("videoToGif", () => {
 
     // Default: invoke frame callback 3 times with spaced-apart currentTime
     mockPlayAndExtractFrames.mockImplementation(
-      async (_video: unknown, _start: number, _end: number, frameCb: (vid: unknown, ts: number) => Promise<void>, _onProgress?: unknown) => {
+      async (_video: unknown, _start: number, _end: number, frameCb: (vid: unknown, ts: number) => Promise<void>, _ctx?: unknown) => {
         const mockVid = { currentTime: 0 };
         // Frame at t=0
         mockVid.currentTime = 0;
@@ -129,21 +128,22 @@ describe("videoToGif", () => {
       2,                 // startTime
       8,                 // endTime
       expect.any(Function), // frame callback
-      undefined,            // onProgress (not passed)
+      { signal: undefined, onProgress: undefined }, // no context passed
     );
   });
 
-  it("forwards progress callback to playAndExtractFrames", async () => {
+  it("forwards progress callback and signal to playAndExtractFrames", async () => {
     const onProgress = vi.fn();
+    const signal = new AbortController().signal;
     const file = new File(["video"], "test.mp4", { type: "video/mp4" });
-    await videoToGif(file, defaultOptions, onProgress);
+    await videoToGif(file, defaultOptions, { onProgress, signal });
 
     expect(mockPlayAndExtractFrames).toHaveBeenCalledWith(
       expect.anything(),
       0,
       5,
       expect.any(Function),
-      onProgress,
+      { signal, onProgress },
     );
   });
 
@@ -209,6 +209,27 @@ describe("videoToGif", () => {
     expect(secondCall[3]).not.toHaveProperty("first");
     expect(secondCall[3]).not.toHaveProperty("repeat");
     expect(secondCall[3]).toEqual(expect.objectContaining({ delay: 100, dispose: 2 }));
+  });
+
+  it("rejects a zero-length clip instead of writing a 1-byte GIF", async () => {
+    // `playAndExtractFrames` exits on its first callback when start === end, so
+    // `finish()` wrote an empty stream that the UI offered as a finished GIF.
+    const file = new File(["video"], "clip.mp4", { type: "video/mp4" });
+
+    await expect(
+      videoToGif(file, { ...defaultOptions, startTime: 2, endTime: 2 }),
+    ).rejects.toThrow(/longer than zero seconds/i);
+    expect(mockPlayAndExtractFrames).not.toHaveBeenCalled();
+  });
+
+  it("rejects when the frame walk captured nothing", async () => {
+    mockPlayAndExtractFrames.mockImplementationOnce(async () => {
+      /* a source we can open but cannot decode a single frame from */
+    });
+    const file = new File(["video"], "clip.mp4", { type: "video/mp4" });
+
+    await expect(videoToGif(file, defaultOptions)).rejects.toThrow(/No frames were captured/i);
+    expect(mockGifFinish).not.toHaveBeenCalled();
   });
 
   it("gif.finish() called after frame extraction", async () => {

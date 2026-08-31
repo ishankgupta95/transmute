@@ -1,53 +1,60 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+<!--
+  Transmute OG card — Nocturne.
+
+  The seam mark, the product headline, and the one promise that matters.
+  Rendered to public/og-image.png by scripts/render-og.mjs, which inlines this
+  file into a running page so Inter and IBM Plex Mono resolve; the font-family
+  vars below fall back to sane stacks when the file is opened on its own.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" font-family="Inter, system-ui, sans-serif">
   <defs>
-    <radialGradient id="orb1" cx="50%" cy="50%" r="50%">
-      <stop offset="0%" stop-color="#56b8e6" stop-opacity="0.35"/>
-      <stop offset="70%" stop-color="#56b8e6" stop-opacity="0"/>
+    <radialGradient id="glow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#9184d9" stop-opacity="0.30"/>
+      <stop offset="70%" stop-color="#9184d9" stop-opacity="0"/>
     </radialGradient>
-    <radialGradient id="orb2" cx="50%" cy="50%" r="50%">
-      <stop offset="0%" stop-color="#56b8e6" stop-opacity="0.22"/>
-      <stop offset="70%" stop-color="#56b8e6" stop-opacity="0"/>
-    </radialGradient>
-    <linearGradient id="accent" x1="0%" y1="0%" x2="100%" y2="0%">
-      <stop offset="0%" stop-color="#56b8e6"/>
-      <stop offset="100%" stop-color="#3fa8db"/>
-    </linearGradient>
-    <pattern id="grid" x="0" y="0" width="60" height="60" patternUnits="userSpaceOnUse">
-      <path d="M 60 0 L 0 0 0 60" fill="none" stroke="#ffffff" stroke-opacity="0.025" stroke-width="1"/>
+    <pattern id="dots" x="0" y="0" width="24" height="24" patternUnits="userSpaceOnUse">
+      <circle cx="1" cy="1" r="1" fill="#e9e9ed" fill-opacity="0.055"/>
     </pattern>
+    <linearGradient id="seam" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#9184d9" stop-opacity="0"/>
+      <stop offset="18%" stop-color="#9184d9" stop-opacity="0.75"/>
+      <stop offset="82%" stop-color="#9184d9" stop-opacity="0.75"/>
+      <stop offset="100%" stop-color="#9184d9" stop-opacity="0"/>
+    </linearGradient>
   </defs>
 
-  <!-- Background -->
-  <rect width="1200" height="630" fill="#08080a"/>
+  <rect width="1200" height="630" fill="#0f111c"/>
+  <rect width="1200" height="630" fill="url(#dots)"/>
+  <ellipse cx="930" cy="150" rx="460" ry="380" fill="url(#glow)"/>
 
-  <!-- Subtle grid -->
-  <rect width="1200" height="630" fill="url(#grid)"/>
+  <!-- The mark, oversized and quiet, sitting past the seam. -->
+  <g opacity="0.10" transform="translate(880 175) scale(9.4)">
+    <path d="M13 6.5 H7.5 V25.5 H13" stroke="#9184d9" stroke-width="3" stroke-linejoin="miter" fill="none"/>
+    <path d="M16.5 5 A11 11 0 0 1 16.5 27 Z" fill="#9184d9"/>
+  </g>
 
-  <!-- Gradient orbs -->
-  <circle cx="280" cy="180" r="320" fill="url(#orb1)"/>
-  <circle cx="980" cy="520" r="260" fill="url(#orb2)"/>
+  <!-- The seam: the same accent line the compare slider draws. -->
+  <rect x="792" y="0" width="1.5" height="630" fill="url(#seam)"/>
 
-  <!-- Accent bar -->
-  <rect x="100" y="295" width="60" height="3" fill="url(#accent)"/>
-
-  <!-- Pill / status badge -->
-  <g transform="translate(100, 130)">
-    <rect x="0" y="0" width="320" height="40" rx="20" fill="#111114" stroke="rgba(255,255,255,0.08)" stroke-width="1"/>
-    <circle cx="22" cy="20" r="4" fill="#56b8e6"/>
-    <text x="38" y="26" font-family="system-ui, -apple-system, 'Helvetica Neue', sans-serif" font-size="14" font-weight="500" fill="#8a8880">100% browser-based · No uploads</text>
+  <!-- Lockup -->
+  <g transform="translate(88 66)">
+    <g transform="scale(1.5)">
+      <path d="M13 6.5 H7.5 V25.5 H13" stroke="#9184d9" stroke-width="3" stroke-linejoin="miter" fill="none"/>
+      <path d="M16.5 5 A11 11 0 0 1 16.5 27 Z" fill="#9184d9"/>
+    </g>
+    <text x="62" y="35" style="font-family: var(--font-inter, Inter), system-ui, sans-serif" font-size="34" font-weight="600" letter-spacing="-0.7" fill="#e9e9ed">Transmute</text>
   </g>
 
   <!-- Headline -->
-  <text x="100" y="350" font-family="system-ui, -apple-system, 'Helvetica Neue', sans-serif" font-size="92" font-weight="700" letter-spacing="-2" fill="#e8e5e0">Transmute</text>
+  <text x="88" y="316" style="font-family: var(--font-inter, Inter), system-ui, sans-serif" font-size="72" font-weight="500" letter-spacing="-2" fill="#e9e9ed">Change the file.</text>
+  <text x="88" y="398" style="font-family: var(--font-inter, Inter), system-ui, sans-serif" font-size="72" font-weight="500" letter-spacing="-2" fill="#b2b6ca">Not the file&#8217;s owner.</text>
 
-  <!-- Sub-headline -->
-  <text x="100" y="430" font-family="system-ui, -apple-system, 'Helvetica Neue', sans-serif" font-size="36" font-weight="500" fill="#56b8e6">Free file conversion tools.</text>
-  <text x="100" y="478" font-family="system-ui, -apple-system, 'Helvetica Neue', sans-serif" font-size="36" font-weight="500" fill="#8a8880">Right in your browser.</text>
+  <text x="88" y="466" style="font-family: var(--font-inter, Inter), system-ui, sans-serif" font-size="24" font-weight="400" fill="#9397ab">67 browser-based tools for images, PDFs, audio, video and code.</text>
 
-  <!-- Footer row -->
-  <g transform="translate(100, 555)">
-    <text x="0" y="0" font-family="system-ui, -apple-system, 'Helvetica Neue', sans-serif" font-size="20" font-weight="600" fill="#7a7870">transmute.tools</text>
-    <text x="200" y="0" font-family="system-ui, -apple-system, 'Helvetica Neue', sans-serif" font-size="20" font-weight="400" fill="#7a7870">·  Image · PDF · Audio · Video · Developer</text>
-  </g>
+  <!-- Footer strip -->
+  <line x1="88" y1="536" x2="1112" y2="536" stroke="#e9e9ed" stroke-opacity="0.16" stroke-width="1"/>
+  <circle cx="93" cy="576" r="4" fill="#7ee0a8"/>
+  <text x="108" y="581" style="font-family: var(--font-plex-mono, 'IBM Plex Mono'), monospace" font-size="16" font-weight="400" letter-spacing="1.6" fill="#9397ab">NOTHING LEAVES THIS TAB</text>
+  <text x="1112" y="581" text-anchor="end" style="font-family: var(--font-plex-mono, 'IBM Plex Mono'), monospace" font-size="16" font-weight="500" letter-spacing="1.6" fill="#d2cefd">TRANSMUTE.TOOLS</text>
 </svg>

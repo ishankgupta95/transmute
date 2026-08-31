@@ -5,12 +5,16 @@ vi.mock("@/lib/tools/audio-decode", () => ({
   decodeAudioFile: vi.fn(),
 }));
 
-vi.mock("@/lib/tools/audio-encode-wav", () => ({
-  encodeToWav: vi.fn().mockReturnValue(new Blob(["wav-data"], { type: "audio/wav" })),
+// Encodes route through the worker-pool client (Phase 3); the pure encoders
+// have their own coverage — these tests only care the right encode is reached.
+vi.mock("@/lib/workers/audio-client", () => ({
+  encodeWav: vi.fn(async () => new Blob(["wav-data"], { type: "audio/wav" })),
+  encodeMp3: vi.fn(async () => new Blob(["mp3-data"], { type: "audio/mpeg" })),
 }));
 
 vi.mock("@/lib/tools/audio-encode-mp3", () => ({
-  encodeToMp3: vi.fn().mockReturnValue(new Blob(["mp3-data"], { type: "audio/mpeg" })),
+  // Pass-through: rate handling has its own coverage.
+  resampleForMp3: vi.fn(async (buffer: AudioBuffer) => buffer),
 }));
 
 // Mock OfflineAudioContext
@@ -41,8 +45,7 @@ vi.stubGlobal("OfflineAudioContext", MockOfflineAudioContext);
 
 import { mergeAudio } from "@/lib/tools/audio-merge";
 import { decodeAudioFile } from "@/lib/tools/audio-decode";
-import { encodeToWav } from "@/lib/tools/audio-encode-wav";
-import { encodeToMp3 } from "@/lib/tools/audio-encode-mp3";
+import { encodeWav, encodeMp3 } from "@/lib/workers/audio-client";
 
 function createMockAudioBuffer(
   channels: number,
@@ -83,32 +86,33 @@ describe("mergeAudio", () => {
     ).rejects.toThrow("At least 2 files required");
   });
 
-  it("decodes all input files", async () => {
-    await mergeAudio([file1, file2], { outputFormat: "wav" });
+  it("decodes all input files, forwarding the cancellation context to each", async () => {
+    const { signal } = new AbortController();
+    await mergeAudio([file1, file2], { outputFormat: "wav" }, { signal });
 
     expect(decodeAudioFile).toHaveBeenCalledTimes(2);
-    expect(decodeAudioFile).toHaveBeenCalledWith(file1);
-    expect(decodeAudioFile).toHaveBeenCalledWith(file2);
+    expect(decodeAudioFile).toHaveBeenCalledWith(file1, expect.objectContaining({ signal }));
+    expect(decodeAudioFile).toHaveBeenCalledWith(file2, expect.objectContaining({ signal }));
   });
 
   it("outputs WAV when outputFormat is wav", async () => {
     const result = await mergeAudio([file1, file2], { outputFormat: "wav" });
 
-    expect(encodeToWav).toHaveBeenCalled();
+    expect(encodeWav).toHaveBeenCalled();
     expect(result.fileName).toBe("merged.wav");
   });
 
   it("outputs MP3 when outputFormat is mp3", async () => {
     const result = await mergeAudio([file1, file2], { outputFormat: "mp3", bitrate: 320 });
 
-    expect(encodeToMp3).toHaveBeenCalledWith(expect.anything(), 320);
+    expect(encodeMp3).toHaveBeenCalledWith(expect.anything(), 320, expect.anything());
     expect(result.fileName).toBe("merged.mp3");
   });
 
   it("uses default bitrate 192 for mp3", async () => {
     await mergeAudio([file1, file2], { outputFormat: "mp3" });
 
-    expect(encodeToMp3).toHaveBeenCalledWith(expect.anything(), 192);
+    expect(encodeMp3).toHaveBeenCalledWith(expect.anything(), 192, expect.anything());
   });
 
   it("returns combined originalSize from all input files", async () => {
@@ -155,7 +159,7 @@ describe("mergeAudio", () => {
       .mockResolvedValueOnce(buf2);
 
     let capturedBuffer: AudioBuffer | null = null;
-    vi.mocked(encodeToWav).mockImplementation((buf: AudioBuffer) => {
+    vi.mocked(encodeWav).mockImplementation(async (buf: AudioBuffer) => {
       capturedBuffer = buf;
       return new Blob(["wav-data"], { type: "audio/wav" });
     });
@@ -186,7 +190,7 @@ describe("mergeAudio", () => {
       .mockResolvedValueOnce(buf3);
 
     let capturedBuffer: AudioBuffer | null = null;
-    vi.mocked(encodeToWav).mockImplementation((buf: AudioBuffer) => {
+    vi.mocked(encodeWav).mockImplementation(async (buf: AudioBuffer) => {
       capturedBuffer = buf;
       return new Blob(["wav-data"], { type: "audio/wav" });
     });

@@ -19,7 +19,7 @@ npm run test:all     # Unit + E2E sequentially
 
 ## Architecture
 
-**Transmute** is a browser-based file conversion toolkit. All processing happens client-side (no server). Deployed as a static export to GitHub Pages at `/transmute`.
+**Transmute** is a browser-based file conversion toolkit. All processing happens client-side (no server). Deployed as a static export to GitHub Pages at the apex domain `transmute.tools` (no basePath).
 
 ### Stack
 - Next.js 16.2.2 (App Router, `output: "export"`), React 19, TypeScript (strict)
@@ -53,7 +53,9 @@ Each tool follows a three-layer pattern to handle the Server/Client Component bo
 
 ### Static generation
 - All tool pages use `generateStaticParams()` from the tools registry.
-- `basePath: "/transmute"` in `next.config.ts` (GitHub Pages). URLs must account for this.
+- **No basePath.** The site deploys to the apex domain `transmute.tools` (`public/CNAME`);
+  the old `basePath: "/transmute"` is gone. The few places that need a base prefix read
+  `process.env.__NEXT_ROUTER_BASEPATH` (currently "") rather than hardcoding one.
 
 ### Testing
 - **Unit tests** in `src/__tests__/unit/` — jsdom environment, globals enabled.

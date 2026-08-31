@@ -1,22 +1,23 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import Script from "next/script";
-import { Syne, Outfit } from "next/font/google";
+import { IBM_Plex_Mono, Inter } from "next/font/google";
 import { Navbar } from "@/components/layout/Navbar";
 import { Footer } from "@/components/layout/Footer";
+import { CommandPalette } from "@/components/layout/CommandPalette";
+import { AnalyticsPageviews } from "@/components/layout/AnalyticsPageviews";
 import "./globals.css";
 
 const GA_ID = "G-TCWDH01ZSK";
-const ADSENSE_ID = "ca-pub-3308993640799405";
-const ADS_ENABLED = process.env.NEXT_PUBLIC_ADS_ENABLED === "true";
 
-const syne = Syne({
-  variable: "--font-syne",
+const inter = Inter({
+  variable: "--font-inter",
   subsets: ["latin"],
   display: "swap",
 });
 
-const outfit = Outfit({
-  variable: "--font-outfit",
+const plexMono = IBM_Plex_Mono({
+  variable: "--font-plex-mono",
+  weight: ["400", "500", "600"],
   subsets: ["latin"],
   display: "swap",
 });
@@ -73,6 +74,12 @@ export const metadata: Metadata = {
   },
 };
 
+export const viewport: Viewport = {
+  // Matches the navbar ground, so mobile browser chrome blends into the app.
+  themeColor: "#161826",
+  colorScheme: "dark",
+};
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -81,21 +88,11 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${syne.variable} ${outfit.variable} h-full antialiased`}
+      className={`${inter.variable} ${plexMono.variable} h-full antialiased`}
     >
       <head>
-        <meta name="google-adsense-account" content={ADSENSE_ID} />
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
         <link rel="preconnect" href="https://www.googletagmanager.com" />
         <link rel="preconnect" href="https://www.google-analytics.com" />
-        {ADS_ENABLED && (
-          <>
-            <link rel="preconnect" href="https://pagead2.googlesyndication.com" />
-            <link rel="preconnect" href="https://googleads.g.doubleclick.net" />
-            <link rel="preconnect" href="https://tpc.googlesyndication.com" />
-          </>
-        )}
         <Script
           src={`https://www.googletagmanager.com/gtag/js?id=${GA_ID}`}
           strategy="afterInteractive"
@@ -108,18 +105,30 @@ export default function RootLayout({
             gtag('config', '${GA_ID}');
           `}
         </Script>
-        {ADS_ENABLED && (
-          <Script
-            src={`https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=${ADSENSE_ID}`}
-            crossOrigin="anonymous"
-            strategy="afterInteractive"
-          />
-        )}
       </head>
-      <body className="min-h-full flex flex-col">
+      {/* The page ground lives here as utilities — `globals.css` is @theme
+          plus Tailwind only, no bare element rules. */}
+      <body className="min-h-full flex flex-col bg-bg-primary text-text-primary font-body">
+        {/* WCAG 2.4.1: the navbar puts eight tab stops in front of every page's
+            first control. The wrapper below is what the link targets — it needs
+            `flex flex-1 flex-col` because each route's <main className="flex-1">
+            was a direct flex child of <body>, and `tabIndex={-1}` because
+            otherwise the browser scrolls without moving focus. */}
+        <a
+          href="#main-content"
+          className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-[10000] focus:rounded-lg focus:border focus:border-accent focus:bg-bg-primary focus:px-4 focus:py-2 focus:font-body focus:text-sm focus:text-accent-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+        >
+          Skip to content
+        </a>
         <Navbar />
-        {children}
+        <div id="main-content" tabIndex={-1} className="flex flex-1 flex-col">
+          {children}
+        </div>
         <Footer />
+        <CommandPalette />
+        {/* GA pageviews for client-side navigations — the head snippet only
+            counts the initial document. */}
+        <AnalyticsPageviews />
       </body>
     </html>
   );

@@ -3,7 +3,7 @@ import { getToolsByCategory } from "@/data/tools";
 import { CategoryHubPage } from "@/components/layout/CategoryHubPage";
 
 export const metadata: Metadata = {
-  title: "Image Tools — Convert, Compress, Resize & More | Transmute",
+  title: "Image Tools — Convert, Compress, Resize & More",
   description:
     "Free browser-based image tools. Convert formats, compress to target size, resize with presets, crop, extract colors, view EXIF data, and more. No uploads — everything runs locally.",
   keywords: [
@@ -32,11 +32,11 @@ export default function ImageToolsPage() {
     <CategoryHubPage
       breadcrumbName="Image Tools"
       breadcrumbHref="/image-tools"
-      title="Image Tools"
-      intro="Convert between image formats, compress file sizes, resize, crop, and transform images — all entirely in your browser. No files are uploaded to any server."
+      title="Image tools"
+      intro="Convert between formats, compress to an exact size, resize, crop and inspect — all in this tab. No file is uploaded to any server."
       sections={[
-        { title: "Image Utilities", tools: utilities },
-        { title: "Format Converters", tools: converters },
+        { title: "Utilities", caption: "CHANGE THE FILE, KEEP THE FORMAT", tools: utilities },
+        { title: "Format converters", caption: "ONE FORMAT IN, ANOTHER OUT", tools: converters },
       ]}
     />
   );

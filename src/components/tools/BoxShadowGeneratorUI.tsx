@@ -2,7 +2,15 @@
 
 import { useCallback, useState } from "react";
 
-import { copyText } from "@/lib/utils/clipboard";
+import {
+  ToolActions,
+  ToolAside,
+  ToolAsideSection,
+  ToolSlider,
+} from "@/components/tools/ToolAside";
+import { CanvasHeader, CodeBlock, ColorStage } from "@/components/tools/ToolCanvas";
+import { CANVAS_COLUMN } from "@/components/workspace/shared";
+import { useCopied } from "@/hooks/useCopied";
 
 interface Shadow {
   x: number;
@@ -35,7 +43,7 @@ function shadowToCss(s: Shadow): string {
 
 export function BoxShadowGeneratorUI() {
   const [shadows, setShadows] = useState<Shadow[]>([{ ...defaultShadow }]);
-  const [copied, setCopied] = useState(false);
+  const { copied, copy } = useCopied();
 
   const cssValue = shadows.map(shadowToCss).join(", ");
   const cssCode = `box-shadow: ${cssValue};`;
@@ -55,105 +63,108 @@ export function BoxShadowGeneratorUI() {
   }, []);
 
   const handleCopy = useCallback(() => {
-    copyText(cssCode).then((ok) => {
-      if (ok) {
-        setCopied(true);
-        setTimeout(() => setCopied(false), 2000);
-      }
-    });
-  }, [cssCode]);
+    void copy(cssCode);
+  }, [copy, cssCode]);
 
   return (
-    <div className="space-y-4">
-      {/* Preview */}
-      <div className="flex items-center justify-center py-12">
-        <div
-          className="w-48 h-48 rounded-lg bg-bg-secondary border border-border"
-          style={{ boxShadow: cssValue }}
+    <>
+      {/* ── Canvas: the doc's colour stage + code block ────── */}
+      <div className={CANVAS_COLUMN}>
+        <CanvasHeader
+          file="Shadow"
+          trailing={`${shadows.length} LAYER${shadows.length === 1 ? "" : "S"}`}
         />
+
+        <ColorStage className="bg-[#1b1e2e]" caption="card on the page ground">
+          <div
+            className="h-[45%] min-h-32 w-[55%] rounded-[10px] bg-bg-elevated"
+            style={{ boxShadow: cssValue }}
+          />
+        </ColorStage>
+
+        <CodeBlock
+          label="CSS Code"
+          action={
+            <button
+              onClick={handleCopy}
+              className="cursor-pointer font-body text-[11px] leading-none text-accent transition-colors hover:text-accent-hover"
+            >
+              {copied ? "Copied!" : "Copy"}
+            </button>
+          }
+        >
+          {cssCode}
+        </CodeBlock>
       </div>
 
-      {/* Shadow layers */}
-      <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <label className="text-sm font-medium text-text-secondary">Shadows</label>
-          <button onClick={addShadow} className="text-xs text-accent hover:text-accent-hover transition-colors">
+      <ToolAside
+        footer={<ToolActions primaryLabel="Copy CSS" onPrimary={handleCopy} />}
+      >
+        <ToolAsideSection label="SHADOWS">
+          <button
+            type="button"
+            onClick={addShadow}
+            className="cursor-pointer self-start rounded-md border border-dashed border-border px-2.5 py-1.5 font-body text-[11.5px] text-text-muted transition-colors duration-200 hover:border-accent/50 hover:text-accent-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+          >
             + Add Layer
           </button>
-        </div>
+        </ToolAsideSection>
 
         {shadows.map((shadow, i) => (
-          <div key={i} className="rounded-lg border border-border bg-bg-secondary p-4 space-y-3">
-            <div className="flex items-center justify-between">
-              <span className="text-xs text-text-muted">Layer {i + 1}</span>
-              <div className="flex items-center gap-3">
-                <label className="flex items-center gap-1 text-xs text-text-secondary">
-                  <input
-                    type="checkbox"
-                    checked={shadow.inset}
-                    onChange={(e) => updateShadow(i, "inset", e.target.checked)}
-                    className="rounded border-border accent-accent"
-                  />
-                  Inset
-                </label>
-                {shadows.length > 1 && (
-                  <button onClick={() => removeShadow(i)} className="text-xs text-error hover:text-error/80">×</button>
-                )}
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-2">
-              {(["x", "y", "blur", "spread"] as const).map((field) => (
-                <label key={field} className="space-y-1">
-                  <span className="text-xs text-text-muted capitalize">{field} ({shadow[field]}px)</span>
-                  <input
-                    type="range"
-                    min={field === "x" || field === "y" ? -50 : 0}
-                    max={field === "spread" ? 50 : 100}
-                    value={shadow[field]}
-                    onChange={(e) => updateShadow(i, field, Number(e.target.value))}
-                    className="w-full accent-accent"
-                  />
-                </label>
-              ))}
-            </div>
-            <div className="flex items-center gap-3">
-              <label className="flex items-center gap-2 text-xs text-text-muted">
-                Color:
+          <ToolAsideSection key={i} label={`LAYER ${i + 1}`}>
+            <div className="flex items-center justify-between gap-3">
+              <label className="flex cursor-pointer items-center gap-2 font-body text-[11.5px] text-neutral-300">
+                <input
+                  type="checkbox"
+                  checked={shadow.inset}
+                  onChange={(e) => updateShadow(i, "inset", e.target.checked)}
+                  className="size-3.5 rounded-sm border-border accent-accent"
+                />
+                Inset
+              </label>
+              <div className="flex items-center gap-2.5">
                 <input
                   type="color"
                   value={shadow.color}
                   onChange={(e) => updateShadow(i, "color", e.target.value)}
-                  className="w-7 h-7 rounded border border-border cursor-pointer"
+                  aria-label={`Layer ${i + 1} color`}
+                  className="size-7 cursor-pointer rounded-sm border border-border"
                 />
-              </label>
-              <label className="flex-1 space-y-1">
-                <span className="text-xs text-text-muted">Opacity ({shadow.opacity}%)</span>
-                <input
-                  type="range"
-                  min={0}
-                  max={100}
-                  value={shadow.opacity}
-                  onChange={(e) => updateShadow(i, "opacity", Number(e.target.value))}
-                  className="w-full accent-accent"
-                />
-              </label>
+                {shadows.length > 1 && (
+                  <button
+                    onClick={() => removeShadow(i)}
+                    aria-label={`Remove layer ${i + 1}`}
+                    className="cursor-pointer text-sm text-error transition-opacity hover:opacity-70"
+                  >
+                    ×
+                  </button>
+                )}
+              </div>
             </div>
-          </div>
-        ))}
-      </div>
 
-      {/* CSS code */}
-      <div>
-        <div className="flex items-center justify-between mb-1">
-          <label className="text-sm font-medium text-text-secondary">CSS Code</label>
-          <button onClick={handleCopy} className="text-xs text-accent hover:text-accent-hover transition-colors">
-            {copied ? "Copied!" : "Copy"}
-          </button>
-        </div>
-        <code className="block rounded-lg border border-border bg-bg-elevated p-3 text-sm text-text-primary font-mono break-all">
-          {cssCode}
-        </code>
-      </div>
-    </div>
+            {(["x", "y", "blur", "spread"] as const).map((field) => (
+              <ToolSlider
+                key={field}
+                label={field.charAt(0).toUpperCase() + field.slice(1)}
+                display={`${shadow[field]}px`}
+                min={field === "x" || field === "y" ? -50 : 0}
+                max={field === "spread" ? 50 : 100}
+                value={shadow[field]}
+                onChange={(v) => updateShadow(i, field, v)}
+              />
+            ))}
+
+            <ToolSlider
+              label="Opacity"
+              display={`${shadow.opacity}%`}
+              min={0}
+              max={100}
+              value={shadow.opacity}
+              onChange={(v) => updateShadow(i, "opacity", v)}
+            />
+          </ToolAsideSection>
+        ))}
+      </ToolAside>
+    </>
   );
 }

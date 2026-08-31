@@ -1,10 +1,24 @@
 "use client";
 
 import { useCallback, useState } from "react";
+import { useObjectUrl } from "@/hooks/useObjectUrl";
+import { useImageDimensions } from "@/hooks/useImageDimensions";
+import { imageMeta } from "@/lib/utils/canvas-meta";
+import { useCopied } from "@/hooks/useCopied";
+import { formatFileSize } from "@/lib/utils/file-helpers";
 import { ErrorMessage } from "@/components/tools/ErrorMessage";
 import { DropZone } from "@/components/tools/DropZone";
 import { extractColorPalette, type ColorInfo } from "@/lib/tools/color-palette";
-import { copyText } from "@/lib/utils/clipboard";
+import {
+  ToolActions,
+  ToolAside,
+  ToolAsideSection,
+  ToolChoice,
+  ToolOutput,
+} from "@/components/tools/ToolAside";
+import { ToolControl, ToolControlGroup, ToolProgress } from "@/components/tools/ToolControls";
+import { CanvasHeader, ColorStage, SwatchRow } from "@/components/tools/ToolCanvas";
+import { CANVAS_COLUMN } from "@/components/workspace/shared";
 
 interface ColorPaletteUIProps {
   acceptFormats: string;
@@ -12,143 +26,168 @@ interface ColorPaletteUIProps {
 
 export function ColorPaletteUI({ acceptFormats }: ColorPaletteUIProps) {
   const [file, setFile] = useState<File | null>(null);
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  // Hook-owned: revoked on unmount and when a second image is dropped. The
+  // hand-rolled createObjectURL leaked on every route change away from here.
+  const previewUrl = useObjectUrl(file);
   const [colors, setColors] = useState<ColorInfo[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [copiedIdx, setCopiedIdx] = useState<number | null>(null);
+  const { copied: copiedIdx, copy: copySwatch } = useCopied<number>();
+  const { copied: copiedAll, copy: copyAll } = useCopied();
   const [colorCount, setColorCount] = useState(8);
+  // The doc's image readout is dimensions AND size — the palette's own header
+  // names the artefact, so the source's facts go in the meta slot.
+  const sourceDims = useImageDimensions(file);
+
+  const extract = useCallback(async (f: File, count: number) => {
+    setColors([]);
+    setError(null);
+    setIsProcessing(true);
+    try {
+      const palette = await extractColorPalette(f, count);
+      setColors(palette);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to extract colors");
+    }
+    setIsProcessing(false);
+  }, []);
 
   const handleFiles = useCallback(
     async (files: File[]) => {
       const f = files[0];
       if (!f) return;
       setFile(f);
-      setPreviewUrl(URL.createObjectURL(f));
-      setColors([]);
-      setError(null);
-      setIsProcessing(true);
-
-      try {
-        const palette = await extractColorPalette(f, colorCount);
-        setColors(palette);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to extract colors");
-      }
-      setIsProcessing(false);
+      await extract(f, colorCount);
     },
-    [colorCount],
+    [colorCount, extract],
   );
 
-  const handleCopy = useCallback((hex: string, idx: number) => {
-    copyText(hex).then((ok) => {
-      if (ok) {
-        setCopiedIdx(idx);
-        setTimeout(() => setCopiedIdx(null), 1500);
-      }
-    });
-  }, []);
+  // Changing the count in the rail re-runs the extraction on the same image.
+  const handleCountChange = useCallback(
+    (n: number) => {
+      setColorCount(n);
+      if (file) void extract(file, n);
+    },
+    [file, extract],
+  );
+
+  const handleCopy = useCallback(
+    (hex: string, idx: number) => {
+      void copySwatch(hex, idx);
+    },
+    [copySwatch],
+  );
+
+  const handleCopyAll = useCallback(() => {
+    void copyAll(colors.map((c) => c.hex).join("\n"));
+  }, [copyAll, colors]);
 
   const handleReset = useCallback(() => {
-    if (previewUrl) URL.revokeObjectURL(previewUrl);
     setFile(null);
-    setPreviewUrl(null);
     setColors([]);
     setError(null);
-  }, [previewUrl]);
+  }, []);
+
+  if (!file) {
+    return <DropZone accept={acceptFormats} onFiles={handleFiles} />;
+  }
 
   return (
-    <div className="space-y-6">
-      {!file ? (
-        <>
-          <div className="flex items-center justify-center gap-2 mb-2">
-            <span className="text-sm text-text-muted">Colors to extract:</span>
-            {[4, 6, 8, 10, 12].map((n) => (
-              <button
-                key={n}
-                onClick={() => setColorCount(n)}
-                className={`rounded px-2.5 py-1 text-xs font-medium transition-colors ${
-                  colorCount === n
-                    ? "bg-accent text-bg-primary"
-                    : "bg-bg-elevated text-text-muted hover:bg-bg-hover"
-                }`}
-              >
-                {n}
-              </button>
-            ))}
-          </div>
-          <DropZone accept={acceptFormats} onFiles={handleFiles} />
-        </>
-      ) : (
-        <>
-          {/* Image preview + palette side by side */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {previewUrl && (
-              <div className="flex items-center justify-center rounded-lg border border-border bg-bg-secondary p-4">
-                <img
-                  src={previewUrl}
-                  alt={file.name}
-                  className="max-h-64 rounded object-contain"
-                />
-              </div>
-            )}
-            <div className="flex flex-col gap-2">
-              {isProcessing && (
-                <p className="text-sm text-text-muted text-center py-8">Extracting colors...</p>
-              )}
-              {error && <ErrorMessage message={error} />}
-              {colors.map((color, i) => (
-                <button
-                  key={i}
-                  onClick={() => handleCopy(color.hex, i)}
-                  className="flex items-center gap-3 rounded-md border border-border bg-bg-secondary p-2 hover:bg-bg-hover transition-colors text-left"
-                  title="Click to copy hex code"
-                >
-                  <div
-                    className="w-10 h-10 rounded shrink-0"
-                    style={{ backgroundColor: color.hex }}
-                  />
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm text-text-primary font-mono">
-                      {copiedIdx === i ? "Copied!" : color.hex}
-                    </p>
-                    <p className="text-xs text-text-muted">
-                      rgb({color.rgb.join(", ")}) · {Math.round(color.frequency * 100)}%
-                    </p>
-                  </div>
-                </button>
-              ))}
-            </div>
-          </div>
+    <>
+      {/* ── Canvas: what you look at ─────────────────────────── */}
+      <div className={CANVAS_COLUMN}>
+        <CanvasHeader
+          file="Extracted palette"
+          meta={imageMeta(sourceDims, formatFileSize(file.size))}
+          trailing={isProcessing ? "SAMPLING…" : `${colors.length} COLORS`}
+        />
 
-          {/* Combined palette bar */}
-          {colors.length > 0 && (
-            <div className="flex h-12 rounded-lg overflow-hidden border border-border">
+        {previewUrl && (
+          <ColorStage className="bg-bg-primary" caption={file.name}>
+            {/* eslint-disable-next-line @next/next/no-img-element -- blob: URL, nothing for next/image to optimise */}
+            <img
+              src={previewUrl}
+              alt={file.name}
+              className="max-h-full w-full object-contain"
+            />
+          </ColorStage>
+        )}
+
+        {error && <ErrorMessage message={error} />}
+
+        {colors.length > 0 && (
+          <>
+            <SwatchRow
+              swatches={colors.map((c, i) => ({
+                hex: c.hex,
+                meta: copiedIdx === i ? "Copied!" : `${Math.round(c.frequency * 100)}%`,
+              }))}
+              onPick={handleCopy}
+            />
+
+            {/* The doc's combined bar: every colour at its real share. */}
+            <div className="flex h-12 overflow-hidden rounded-lg border border-neutral-800">
               {colors.map((color, i) => (
                 <div
                   key={i}
                   className="h-full"
-                  style={{
-                    backgroundColor: color.hex,
-                    flex: color.frequency,
-                  }}
+                  style={{ backgroundColor: color.hex, flex: color.frequency }}
                   title={color.hex}
                 />
               ))}
             </div>
-          )}
+          </>
+        )}
+      </div>
 
-          {/* Actions */}
-          <div className="flex items-center justify-center">
-            <button
-              onClick={handleReset}
-              className="rounded-md border border-border px-4 py-2.5 text-sm text-text-secondary hover:bg-bg-hover transition-colors"
-            >
-              Analyze another image
-            </button>
-          </div>
-        </>
-      )}
-    </div>
+      {/* ── Controls: the doc's right-hand rail / bottom sheet ── */}
+      <ToolAside
+        footer={
+          <>
+            {/* The doc pins the running readout to the rail footer. The
+                sampler reports no progress, so the bar stays indeterminate
+                rather than inventing a number. */}
+            {isProcessing && (
+              <ToolProgress phase="SAMPLING" percent={null} label="Extracting colors" />
+            )}
+            <ToolActions
+              primaryLabel={copiedAll ? "Copied to clipboard" : "Copy all hex codes"}
+              onPrimary={handleCopyAll}
+              primaryDisabled={colors.length === 0}
+              onReset={handleReset}
+              resetLabel="ANALYZE ANOTHER"
+            />
+          </>
+        }
+      >
+        <ToolControlGroup>
+          <ToolControl label="COLORS TO EXTRACT">
+            <ToolChoice
+              label="Colors to extract"
+              fill
+              value={colorCount}
+              onChange={handleCountChange}
+              disabled={isProcessing}
+              options={[4, 6, 8, 10, 12].map((n) => ({ value: n, label: String(n) }))}
+            />
+            <span className="font-body text-[10.5px] leading-[1.5] text-text-muted">
+              Changing this re-analyses the same image. Click any swatch to copy its hex.
+            </span>
+          </ToolControl>
+        </ToolControlGroup>
+
+        <ToolAsideSection label="OUTPUT">
+          <ToolOutput
+            rows={[
+              ["Found", isProcessing ? "…" : String(colors.length)],
+              [
+                "Dominant",
+                colors[0] ? `${Math.round(colors[0].frequency * 100)}%` : "—",
+              ],
+            ]}
+          />
+        </ToolAsideSection>
+      </ToolAside>
+    </>
   );
 }

@@ -25,16 +25,23 @@ test.describe("markdown-to-pdf", () => {
     await expect(h1).toHaveCount(1);
     await expect(h1).toHaveText(/Convert Markdown to PDF/i);
 
-    // FAQ section: 5 bespoke FAQs + 1 PRIVACY_FAQ = 6 details.
-    await expect(page.locator("details")).toHaveCount(6);
+    // FAQ section: 5 bespoke FAQs + 1 PRIVACY_FAQ = 6 details. Scoped to the
+    // Questions section — ToolPageLayout also renders the sibling-tool rail as
+    // a <details> (lg:hidden, but present in the DOM at every width).
+    const faqs = page
+      .locator("section")
+      .filter({ has: page.getByRole("heading", { name: "Questions" }) })
+      .locator("details");
+    await expect(faqs).toHaveCount(6);
 
-    // Related tools surface the registry cross-links.
-    await expect(
-      page.getByRole("link", { name: /Markdown to HTML/i }),
-    ).toBeVisible();
-    await expect(
-      page.getByRole("link", { name: /Merge PDF/i }),
-    ).toBeVisible();
+    // Related tools surface the registry cross-links. Scoped to the "Related"
+    // section — the sibling-tool rail links to the same slugs, so an unscoped
+    // query matches twice.
+    const related = page
+      .locator("section")
+      .filter({ has: page.getByRole("heading", { name: "Related" }) });
+    await expect(related.getByRole("link", { name: /Markdown to HTML/i })).toBeVisible();
+    await expect(related.getByRole("link", { name: /Merge PDF/i })).toBeVisible();
 
     // No console errors during initial render.
     expect(consoleErrors, consoleErrors.join("\n")).toHaveLength(0);

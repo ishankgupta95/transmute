@@ -1,84 +1,98 @@
 import type { Metadata } from "next";
+import { tools } from "@/data/tools";
 
 export const metadata: Metadata = {
   title: "About",
-  description: "About Transmute — free, private, browser-based file conversion tools. Learn how Transmute keeps your files safe with 100% client-side processing.",
+  description:
+    "About Transmute — free, private, browser-based file conversion tools. Learn how Transmute keeps your files safe with 100% client-side processing.",
   alternates: { canonical: "/about" },
 };
 
+const CAPABILITIES = [
+  { tag: "IMAGE", text: "Convert between HEIC, WebP, PNG, JPG, AVIF and TIFF" },
+  { tag: "IMAGE", text: "Compress, resize and crop with real quality control" },
+  { tag: "PDF", text: "Merge, split, compress, rotate and reorder pages" },
+  { tag: "AUDIO", text: "Convert and trim MP3, WAV and M4A, or merge tracks" },
+  { tag: "VIDEO", text: "Convert to GIF, trim clips, extract audio, compress" },
+  { tag: "DEV", text: "Format JSON, SQL and XML; encode Base64 and URLs" },
+  { tag: "DEV", text: "Generate UUIDs, passwords, hashes, QR codes, lorem ipsum" },
+  { tag: "DEV", text: "Build CSS gradients and box shadows, pick colours" },
+] as const;
+
+const H2 = "m-0 font-display text-[17px] leading-[1.25] font-medium text-text-primary";
+const BODY = "m-0 font-body text-sm leading-[1.75] text-neutral-400";
+const RULE =
+  "h-px bg-[linear-gradient(to_right,transparent,var(--color-border)_32px,var(--color-border)_calc(100%-32px),transparent)]";
+
 export default function AboutPage() {
   return (
-    <main className="flex-1 px-4 py-16 max-w-3xl mx-auto w-full">
-      <h1 className="text-3xl md:text-4xl font-bold font-display tracking-tight text-text-primary mb-6">
-        About Transmute
-      </h1>
+    <main className="mx-auto w-full max-w-[700px] flex-1 px-4 pt-11 pb-10 md:px-8">
+      <div className="flex flex-col gap-6.5">
+        <h1 className="m-0 font-display text-[clamp(28px,5vw,36px)] leading-[1.14] font-medium tracking-[-0.028em] text-text-primary">
+          About Transmute
+        </h1>
 
-      <div className="space-y-6 text-text-secondary leading-relaxed">
-        <p>
-          Transmute is a free, open collection of browser-based file conversion
-          and developer tools. Every tool runs entirely on your device using
-          WebAssembly and modern browser APIs &mdash; your files are never
-          uploaded to a server.
+        <p className="m-0 font-body text-[15px] leading-[1.75] text-neutral-300">
+          A free collection of browser-based file conversion and developer tools. Every
+          tool runs on your device using WebAssembly and modern browser APIs. Your files
+          are never uploaded to a server.
         </p>
 
-        <section>
-          <h2 className="text-xl font-bold font-display text-text-primary mb-3">
-            Why Transmute?
-          </h2>
-          <p>
-            Most online converters require you to upload files to their servers,
-            wait in a queue, and trust them with your data. Transmute takes a
-            different approach: all processing happens locally in your browser
-            tab. That means faster results, no file size queues, and total
-            privacy. There is nothing to sign up for and no data to hand over.
+        <div className={RULE} />
+
+        <section className="flex flex-col gap-[9px]">
+          <h2 className={H2}>Why it works this way</h2>
+          <p className={BODY}>
+            Most online converters ask you to upload a file, wait in a queue, and trust
+            them with it. Transmute does the work in your tab instead. That means faster
+            results, no queue, no size cap, and nothing to sign up for — because there is
+            no account and no data to hand over.
           </p>
         </section>
 
-        <section>
-          <h2 className="text-xl font-bold font-display text-text-primary mb-3">
-            What You Can Do
-          </h2>
-          <ul className="list-disc list-inside space-y-1.5 text-text-secondary">
-            <li>Convert images between HEIC, WebP, PNG, JPG, AVIF, TIFF, and more</li>
-            <li>Compress, resize, and crop images with quality control</li>
-            <li>Merge, split, compress, rotate, and reorder PDF pages</li>
-            <li>Convert and trim audio (MP3, WAV, M4A) and merge tracks</li>
-            <li>Convert video to GIF, trim clips, extract audio, and compress</li>
-            <li>Format JSON, SQL, and XML; encode Base64 and URLs</li>
-            <li>Generate UUIDs, passwords, hashes, QR codes, and lorem ipsum text</li>
-            <li>Build CSS gradients, box shadows, and pick colors</li>
-          </ul>
+        <section className="flex flex-col gap-3">
+          <h2 className={H2}>What you can do</h2>
+          <div className="grid grid-cols-1 gap-px overflow-hidden rounded-[9px] border border-border bg-border sm:grid-cols-2">
+            {CAPABILITIES.map((c) => (
+              <div
+                key={c.text}
+                className="flex flex-col gap-[5px] bg-bg-primary px-3.5 py-3"
+              >
+                <span className="font-mono text-[9.5px] leading-none font-medium tracking-[0.1em] text-accent-300">
+                  {c.tag}
+                </span>
+                <span className="font-body text-[12.5px] leading-[1.5] text-neutral-400">
+                  {c.text}
+                </span>
+              </div>
+            ))}
+          </div>
         </section>
 
-        <section>
-          <h2 className="text-xl font-bold font-display text-text-primary mb-3">
-            How It Works
-          </h2>
-          <p>
-            Transmute is built with Next.js and TypeScript and exported as a
-            fully static site. Heavy-lifting is handled by WebAssembly engines
-            like FFmpeg.wasm and MuPDF, the Canvas API, Web Audio API, and
-            WebCodecs. Because everything compiles to static HTML, CSS, and
-            JavaScript, there is no backend server &mdash; and therefore nothing
-            that can leak your files.
+        <section className="flex flex-col gap-[9px]">
+          <h2 className={H2}>How it is built</h2>
+          <p className={BODY}>
+            Next.js and TypeScript, exported as a fully static site. The heavy lifting is
+            done by FFmpeg.wasm, MuPDF, the Canvas API, Web Audio and WebCodecs. Because
+            everything compiles to static HTML, CSS and JavaScript, there is no backend —
+            and therefore nothing that can leak your files. {tools.length} tools ship this
+            way today.
           </p>
         </section>
 
-        <section>
-          <h2 className="text-xl font-bold font-display text-text-primary mb-3">
-            Built By
-          </h2>
-          <p>
+        <section className="flex flex-col gap-[9px]">
+          <h2 className={H2}>Built by</h2>
+          <p className={BODY}>
             Transmute is built and maintained by{" "}
             <a
               href="https://ishank.dev"
               target="_blank"
               rel="noopener noreferrer"
-              className="text-accent underline hover:opacity-80 transition-opacity"
+              className="rounded-sm text-accent underline underline-offset-[3px] transition-colors duration-200 hover:text-accent-400 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
             >
               Ishank
             </a>
-            . If you have feedback or feature requests, feel free to get in touch.
+            . Feedback and feature requests are welcome.
           </p>
         </section>
       </div>

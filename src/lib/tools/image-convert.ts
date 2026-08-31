@@ -1,8 +1,14 @@
 import type { ProcessedResult } from "@/hooks/useFileProcessor";
 import { canvasToBlob, fillBackground, loadImage, mimeSupportsAlpha } from "./canvas-utils";
 
+/**
+ * BMP is deliberately absent as a *target*: `canvas.toBlob` is only required to
+ * support PNG and silently falls back to it for any type the browser can't
+ * encode, so asking for `image/bmp` produced PNG bytes wearing a `.bmp` name.
+ * It remains a perfectly good *source* format — the browser decodes it fine.
+ */
 export interface ImageConvertOptions {
-  targetFormat: "jpeg" | "png" | "webp" | "bmp";
+  targetFormat: "jpeg" | "png" | "webp";
   quality: number; // 0–1
   width?: number;
   height?: number;
@@ -26,9 +32,27 @@ export async function convertImage(
   // Load into an HTMLImageElement
   const img = await loadImage(decodableBlob);
 
-  // Determine output dimensions
-  const outWidth = width ?? img.naturalWidth;
-  const outHeight = height ?? img.naturalHeight;
+  // Determine output dimensions. An SVG without width/height attributes has
+  // no intrinsic size — Firefox reports naturalWidth 0 and Chromium invents
+  // the CSS replaced-element default (300×150), so the old code produced a
+  // 0×0 or 300×150 PNG regardless of the drawing. When the document itself
+  // declares no size, its viewBox (scaled to a usable raster) wins over
+  // whatever the UA made up.
+  let intrinsicWidth = img.naturalWidth;
+  let intrinsicHeight = img.naturalHeight;
+  if (isSvgSource(file)) {
+    const fallback = svgFallbackSize(await file.text());
+    if (fallback && (!fallback.explicit || intrinsicWidth === 0 || intrinsicHeight === 0)) {
+      intrinsicWidth = fallback.width;
+      intrinsicHeight = fallback.height;
+    }
+  }
+  if (intrinsicWidth === 0 || intrinsicHeight === 0) {
+    throw new Error("Could not determine the image's dimensions");
+  }
+
+  const outWidth = width ?? intrinsicWidth;
+  const outHeight = height ?? intrinsicHeight;
 
   // Draw to canvas and export
   const canvas = document.createElement("canvas");
@@ -51,6 +75,42 @@ export async function convertImage(
     originalSize: file.size,
     newSize: blob.size,
   };
+}
+
+function isSvgSource(file: File): boolean {
+  const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
+  return ext === "svg" || file.type === "image/svg+xml";
+}
+
+/**
+ * Raster size for an SVG. `explicit: true` means the document declares its
+ * own width/height (returned as-is — the browser's naturalWidth agrees, and
+ * an author-chosen 240px SVG must not be inflated). `explicit: false` means
+ * the size came from the viewBox, scaled so the longest edge is 1024 px —
+ * a viewBox of 24×24 units would otherwise rasterise into an unusable
+ * thumbnail. Exported for unit tests.
+ */
+export function svgFallbackSize(
+  svgText: string,
+): { width: number; height: number; explicit: boolean } | null {
+  const attr = (name: string): number | null => {
+    const m = svgText.match(new RegExp(`<svg[^>]*\\s${name}="([0-9.]+)(?:px)?"`, "i"));
+    return m ? Number(m[1]) : null;
+  };
+  const w = attr("width");
+  const h = attr("height");
+  if (w && h && Number.isFinite(w) && Number.isFinite(h)) {
+    return { width: Math.round(w), height: Math.round(h), explicit: true };
+  }
+  const vb = svgText.match(
+    /<svg[^>]*\sviewBox="[\s]*([-0-9.]+)[ ,]+([-0-9.]+)[ ,]+([0-9.]+)[ ,]+([0-9.]+)/i,
+  );
+  if (!vb) return null;
+  const vw = Number(vb[3]);
+  const vh = Number(vb[4]);
+  if (!vw || !vh || !Number.isFinite(vw) || !Number.isFinite(vh)) return null;
+  const scale = Math.max(1, 1024 / Math.max(vw, vh));
+  return { width: Math.round(vw * scale), height: Math.round(vh * scale), explicit: false };
 }
 
 /**

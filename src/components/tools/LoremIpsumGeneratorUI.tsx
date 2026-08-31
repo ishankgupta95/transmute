@@ -2,7 +2,31 @@
 
 import { useCallback, useState } from "react";
 
-import { copyText } from "@/lib/utils/clipboard";
+import {
+  ToolActions,
+  ToolAside,
+  ToolChoice,
+} from "@/components/tools/ToolAside";
+import {
+  CanvasFootnote,
+  lineCount,
+  TEXT_PANE_BODY,
+  TextPane,
+  TextPanes,
+} from "@/components/tools/ToolCanvas";
+import { ToolControl, ToolControlGroup } from "@/components/tools/ToolControls";
+import { CANVAS_COLUMN } from "@/components/workspace/shared";
+import { useCopied } from "@/hooks/useCopied";
+import { formatFileSize } from "@/lib/utils/file-helpers";
+
+/**
+ * The doc's one field box, from the RANGE strip:
+ * `height:30px;border-radius:7px;background:var(--color-surface);border:1px
+ * solid var(--color-divider);font:400 12px/1 'IBM Plex Mono';padding:0 10px`.
+ * The same shape `RangeField` and the regex pattern input already wear.
+ */
+const FIELD_CLASS =
+  "h-[30px] w-24 rounded-[7px] border border-border bg-bg-elevated px-2.5 text-center font-mono text-xs leading-none text-text-primary focus:border-accent focus:outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent";
 
 const LOREM_WORDS = "lorem ipsum dolor sit amet consectetur adipiscing elit sed do eiusmod tempor incididunt ut labore et dolore magna aliqua ut enim ad minim veniam quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur excepteur sint occaecat cupidatat non proident sunt in culpa qui officia deserunt mollit anim id est laborum".split(" ");
 
@@ -30,7 +54,10 @@ function generateWords(count: number): string {
     result.push(LOREM_WORDS[i % LOREM_WORDS.length]);
   }
   result[0] = "Lorem";
-  return result.join(" ") + ".";
+  // A word list, not a sentence: asking for N words used to return N words
+  // plus a bolted-on period — wrong the moment it lands in a design comp.
+  // Sentence punctuation belongs to the sentences/paragraphs modes.
+  return result.join(" ");
 }
 
 function generateSentences(count: number): string {
@@ -59,8 +86,15 @@ type Unit = "paragraphs" | "sentences" | "words";
 export function LoremIpsumGeneratorUI() {
   const [unit, setUnit] = useState<Unit>("paragraphs");
   const [count, setCount] = useState(3);
+  /*
+    The field holds a string draft. Binding it straight to the clamped number
+    meant `Number("")` was 0, `Math.max(1, 0)` wrote 1 back into the controlled
+    value, and backspacing to empty repopulated "1" — so retyping 25 landed as
+    "125" and clamped to 100. `count` stays the clamped number generation reads.
+  */
+  const [countText, setCountText] = useState("3");
   const [output, setOutput] = useState("");
-  const [copied, setCopied] = useState(false);
+  const { copied, copy } = useCopied();
 
   const handleGenerate = useCallback(() => {
     switch (unit) {
@@ -77,60 +111,85 @@ export function LoremIpsumGeneratorUI() {
   }, [unit, count]);
 
   const handleCopy = useCallback(() => {
-    copyText(output).then((ok) => {
-      if (ok) {
-        setCopied(true);
-        setTimeout(() => setCopied(false), 2000);
-      }
-    });
-  }, [output]);
+    void copy(output);
+  }, [copy, output]);
 
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-center gap-3">
-        <input
-          type="number"
-          min={1}
-          max={100}
-          value={count}
-          onChange={(e) => setCount(Math.max(1, Math.min(100, Number(e.target.value))))}
-          className="w-20 rounded-md border border-border bg-bg-elevated px-3 py-2 text-sm text-text-primary text-center font-mono"
-        />
-        {(["paragraphs", "sentences", "words"] as const).map((u) => (
-          <button
-            key={u}
-            onClick={() => setUnit(u)}
-            className={`rounded-md px-4 py-2 text-sm font-medium transition-colors ${
-              unit === u ? "bg-accent text-bg-primary" : "bg-bg-elevated text-text-secondary hover:bg-bg-hover"
-            }`}
-          >
-            {u.charAt(0).toUpperCase() + u.slice(1)}
-          </button>
-        ))}
+    <>
+      {/* ── Canvas: the generated copy, in the doc's OUT pane ── */}
+      <div className={CANVAS_COLUMN}>
+        {output ? (
+          <>
+            <TextPanes columns={1}>
+              <TextPane
+                tone="out"
+                label="Output"
+                lines={lineCount(output)}
+                size={formatFileSize(new Blob([output]).size)}
+                action={
+                  <button
+                    onClick={handleCopy}
+                    className="cursor-pointer text-accent transition-colors hover:text-accent-hover"
+                  >
+                    {copied ? "Copied!" : "Copy"}
+                  </button>
+                }
+              >
+                <div className={TEXT_PANE_BODY}>{output}</div>
+              </TextPane>
+            </TextPanes>
+            <CanvasFootnote>GENERATED LOCALLY · NOTHING LOGGED</CanvasFootnote>
+          </>
+        ) : (
+          <p className="py-10 text-center font-body text-[12.5px] leading-[1.5] text-text-muted">
+            Choose a unit and a count, then generate.
+          </p>
+        )}
       </div>
 
-      <div className="flex justify-center">
-        <button
-          onClick={handleGenerate}
-          className="rounded-md bg-accent px-6 py-2.5 text-sm font-medium text-bg-primary hover:bg-accent-hover transition-colors"
-        >
-          Generate
-        </button>
-      </div>
+      <ToolAside footer={<ToolActions primaryLabel="Generate" onPrimary={handleGenerate} />}>
+        {/* One bordered block for the whole control set — the doc gives its
+            own rule only to START FROM, ADVANCED and OUTPUT. */}
+        <ToolControlGroup>
+          <ToolControl label="UNIT">
+            <ToolChoice
+              label="Unit"
+              fill
+              value={unit}
+              onChange={(u) => {
+                setUnit(u);
+                setOutput(""); // three paragraphs under a lit "Words" chip lie
+              }}
+              options={[
+                { value: "paragraphs" as const, label: "Paragraphs" },
+                { value: "sentences" as const, label: "Sentences" },
+                { value: "words" as const, label: "Words" },
+              ]}
+            />
+          </ToolControl>
 
-      {output && (
-        <div>
-          <div className="flex items-center justify-between mb-1">
-            <label className="text-sm font-medium text-text-secondary">Output</label>
-            <button onClick={handleCopy} className="text-xs text-accent hover:text-accent-hover transition-colors">
-              {copied ? "Copied!" : "Copy"}
-            </button>
-          </div>
-          <div className="w-full rounded-lg border border-border bg-bg-elevated p-3 text-sm text-text-primary whitespace-pre-wrap max-h-96 overflow-y-auto">
-            {output}
-          </div>
-        </div>
-      )}
-    </div>
+          <ToolControl label="HOW MANY">
+            <input
+              type="number"
+              min={1}
+              max={100}
+              value={countText}
+              onChange={(e) => {
+                const text = e.target.value;
+                setCountText(text);
+                setOutput(""); // three paragraphs under a "20" count lie
+                const n = Number(text);
+                if (text !== "" && Number.isFinite(n)) {
+                  setCount(Math.max(1, Math.min(100, n)));
+                }
+              }}
+              onBlur={() => setCountText(String(count))}
+              aria-label={`Number of ${unit}`}
+              className={FIELD_CLASS}
+            />
+          </ToolControl>
+        </ToolControlGroup>
+      </ToolAside>
+    </>
   );
 }

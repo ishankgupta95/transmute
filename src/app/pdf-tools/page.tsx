@@ -1,9 +1,9 @@
 import type { Metadata } from "next";
-import { getToolsByCategory } from "@/data/tools";
+import { getToolsByCategory, splitByJob } from "@/data/tools";
 import { CategoryHubPage } from "@/components/layout/CategoryHubPage";
 
 export const metadata: Metadata = {
-  title: "PDF Tools — Merge, Split & Manipulate PDFs | Transmute",
+  title: "PDF Tools — Merge, Split & Manipulate PDFs",
   description:
     "Free browser-based PDF tools. Merge, split, compress, convert, rotate, reorder, and add page numbers to PDF files without uploading. Everything runs locally.",
   keywords: [
@@ -24,15 +24,18 @@ export const metadata: Metadata = {
 };
 
 export default function PdfToolsPage() {
-  const pdfTools = getToolsByCategory("pdf-tools");
+  const { utilities, converters } = splitByJob(getToolsByCategory("pdf-tools"));
 
   return (
     <CategoryHubPage
       breadcrumbName="PDF Tools"
       breadcrumbHref="/pdf-tools"
-      title="PDF Tools"
+      title="PDF tools"
       intro="Merge, split, compress, convert, rotate, and manipulate PDF files — all entirely in your browser. No files are uploaded to any server."
-      sections={[{ tools: pdfTools }]}
+      sections={[
+        { title: "Utilities", caption: "CHANGE THE FILE, KEEP THE FORMAT", tools: utilities },
+        { title: "Format converters", caption: "ONE FORMAT IN, ANOTHER OUT", tools: converters },
+      ]}
     />
   );
 }

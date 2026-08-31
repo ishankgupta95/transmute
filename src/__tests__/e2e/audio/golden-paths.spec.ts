@@ -50,8 +50,10 @@ test.describe("audio golden paths", () => {
     // Click 320kbps and assert that button is now active.
     const btn320 = page.getByRole("button", { name: "320", exact: true });
     await btn320.click();
-    // Active state uses border-accent + bg-accent-muted classes.
-    await expect(btn320).toHaveClass(/border-accent/);
+    // Assert the semantic state, not the class list — the theme renames its
+    // colour utilities (border-accent → border-nocturne-accent) and a
+    // class-name assertion silently rots when it does.
+    await expect(btn320).toHaveAttribute("aria-pressed", "true");
   });
 
   test("mp3-to-wav: page renders but skips conversion (binary fixture not shipped)", async ({
@@ -86,15 +88,15 @@ test.describe("audio golden paths", () => {
     await page.goto("/audio-trimmer");
     await uploadFile(page, tinyWav(1));
 
-    // Wait for the audio element to read its duration; the "Selected:" line
-    // only appears once endTime > startTime.
-    await expect(page.getByText(/Duration:/)).toBeVisible({ timeout: 10_000 });
+    // The IN/OUT handles stay disabled until the file decodes and a real
+    // duration is known — that readiness gate replaced the "Duration:" line.
+    const start = page.getByLabel("Selection start");
+    const end = page.getByLabel("Selection end");
+    await expect(start).toBeEnabled({ timeout: 10_000 });
 
-    // The end-time number input is the second number input on the page; set
-    // a sub-second range so the encoded output is meaningfully shorter.
-    const numbers = page.locator('input[type="number"]');
-    await numbers.first().fill("0.2");
-    await numbers.nth(1).fill("0.7");
+    // Sub-second range so the encoded output is meaningfully shorter.
+    await start.fill("0.2");
+    await end.fill("0.7");
 
     // WAV output keeps the test off the slow lamejs encoder.
     await page.getByRole("button", { name: "WAV", exact: true }).click();
@@ -119,8 +121,9 @@ test.describe("audio golden paths", () => {
     // Upload a tiny WAV and assert the audio element gets the duration.
     await uploadFile(page, tinyWav(1));
     await expect(page.locator("audio")).toBeVisible({ timeout: 10_000 });
-    // Once the metadata loads, the "Duration:" label appears.
-    await expect(page.getByText(/Duration:/)).toBeVisible({ timeout: 10_000 });
+    // Once the metadata loads the IN/OUT handles enable — that readiness
+    // gate replaced the old "Duration:" label.
+    await expect(page.getByLabel("Selection start")).toBeEnabled({ timeout: 10_000 });
   });
 
   test("merge-audio: 2 tiny WAVs in → 1 download out", async ({ page }) => {

@@ -5,6 +5,7 @@ const {
   mockPlayAndExtractFrames,
   mockCreateVideo,
   mockWaitForReady,
+  mockResolveDuration,
   mockDecodeAudio,
   mockAssertWebCodecsSupported,
   mockPickH264Config,
@@ -12,6 +13,9 @@ const {
   mockPlayAndExtractFrames: vi.fn().mockResolvedValue(undefined),
   mockCreateVideo: vi.fn(),
   mockWaitForReady: vi.fn().mockResolvedValue(undefined),
+  // The real helper returns `video.duration` when the container declares
+  // one, and only probes by seeking when it is Infinity.
+  mockResolveDuration: vi.fn((video: { duration: number }) => Promise.resolve(video.duration)),
   mockDecodeAudio: vi.fn().mockResolvedValue(null),
   mockAssertWebCodecsSupported: vi.fn(),
   mockPickH264Config: vi.fn((base: Record<string, unknown>) =>
@@ -37,6 +41,7 @@ const {
 vi.mock("@/lib/tools/video-utils", () => ({
   createVideo: mockCreateVideo,
   waitForReady: mockWaitForReady,
+  resolveDuration: mockResolveDuration,
   decodeAudio: mockDecodeAudio,
   assertWebCodecsSupported: mockAssertWebCodecsSupported,
   pickH264Config: mockPickH264Config,
@@ -122,12 +127,15 @@ import { webmToMp4 } from "@/lib/tools/webm-to-mp4";
 describe("webmToMp4", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockResolveDuration.mockImplementation((video: { duration: number }) =>
+      Promise.resolve(video.duration),
+    );
     mockDecodeAudio.mockResolvedValue(null);
     mockPickH264Config.mockImplementation((base: Record<string, unknown>) =>
       Promise.resolve({ codec: "avc1.640034", ...base }),
     );
     mockPlayAndExtractFrames.mockImplementation(
-      async (video: unknown, startTime: number, _endTime: unknown, onFrame: (vid: unknown, ts: number) => Promise<void>, onProgress?: (pct: number) => void) => {
+      async (video: unknown, startTime: number, _endTime: unknown, onFrame: (vid: unknown, ts: number) => Promise<void>, { onProgress }: { onProgress?: (pct: number) => void } = {}) => {
         for (let i = 0; i < 3; i++) {
           const timestampUs = (startTime + i * (1 / 30)) * 1_000_000;
           await onFrame(video, timestampUs);
@@ -203,14 +211,14 @@ describe("webmToMp4", () => {
       0,
       30,
       expect.any(Function),
-      expect.any(Function),
+      { signal: undefined, onProgress: expect.any(Function) },
     );
   });
 
   it("calls progress callback with 100 at the end", async () => {
     const onProgress = vi.fn();
     const file = new File(["video"], "recording.webm", { type: "video/webm" });
-    await webmToMp4(file, onProgress);
+    await webmToMp4(file, { onProgress });
 
     expect(onProgress).toHaveBeenCalledWith(100);
   });

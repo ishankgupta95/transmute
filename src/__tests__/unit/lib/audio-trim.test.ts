@@ -5,12 +5,16 @@ vi.mock("@/lib/tools/audio-decode", () => ({
   decodeAudioFile: vi.fn(),
 }));
 
-vi.mock("@/lib/tools/audio-encode-wav", () => ({
-  encodeToWav: vi.fn().mockReturnValue(new Blob(["wav-data"], { type: "audio/wav" })),
+// Encodes route through the worker-pool client (Phase 3); the pure encoders
+// have their own coverage — these tests only care the right encode is reached.
+vi.mock("@/lib/workers/audio-client", () => ({
+  encodeWav: vi.fn(async () => new Blob(["wav-data"], { type: "audio/wav" })),
+  encodeMp3: vi.fn(async () => new Blob(["mp3-data"], { type: "audio/mpeg" })),
 }));
 
 vi.mock("@/lib/tools/audio-encode-mp3", () => ({
-  encodeToMp3: vi.fn().mockReturnValue(new Blob(["mp3-data"], { type: "audio/mpeg" })),
+  // Pass-through: rate handling has its own coverage.
+  resampleForMp3: vi.fn(async (buffer: AudioBuffer) => buffer),
 }));
 
 // Must mock OfflineAudioContext since jsdom doesn't have it
@@ -37,8 +41,7 @@ vi.stubGlobal("OfflineAudioContext", MockOfflineAudioContext);
 
 import { trimAudio } from "@/lib/tools/audio-trim";
 import { decodeAudioFile } from "@/lib/tools/audio-decode";
-import { encodeToWav } from "@/lib/tools/audio-encode-wav";
-import { encodeToMp3 } from "@/lib/tools/audio-encode-mp3";
+import { encodeWav, encodeMp3 } from "@/lib/workers/audio-client";
 
 function createMockAudioBuffer(
   channels: number,
@@ -91,10 +94,13 @@ describe("trimAudio", () => {
     ).rejects.toThrow("Selected range is empty");
   });
 
-  it("decodes the input file", async () => {
-    await trimAudio(mockFile, { startTime: 2, endTime: 5, outputFormat: "wav" });
+  it("decodes the input file, forwarding the cancellation context", async () => {
+    // The decode is the long half of a trim on a large file; if the signal
+    // stops here, Cancel does nothing until the encode finally starts.
+    const { signal } = new AbortController();
+    await trimAudio(mockFile, { startTime: 2, endTime: 5, outputFormat: "wav" }, { signal });
 
-    expect(decodeAudioFile).toHaveBeenCalledWith(mockFile);
+    expect(decodeAudioFile).toHaveBeenCalledWith(mockFile, expect.objectContaining({ signal }));
   });
 
   it("creates OfflineAudioContext with correct trimmed length", async () => {
@@ -111,21 +117,21 @@ describe("trimAudio", () => {
   it("outputs WAV when outputFormat is wav", async () => {
     const result = await trimAudio(mockFile, { startTime: 0, endTime: 5, outputFormat: "wav" });
 
-    expect(encodeToWav).toHaveBeenCalled();
+    expect(encodeWav).toHaveBeenCalled();
     expect(result.fileName).toBe("test-trimmed.wav");
   });
 
   it("outputs MP3 when outputFormat is mp3", async () => {
     const result = await trimAudio(mockFile, { startTime: 0, endTime: 5, outputFormat: "mp3", bitrate: 256 });
 
-    expect(encodeToMp3).toHaveBeenCalledWith(expect.anything(), 256);
+    expect(encodeMp3).toHaveBeenCalledWith(expect.anything(), 256, expect.anything());
     expect(result.fileName).toBe("test-trimmed.mp3");
   });
 
   it("uses default bitrate 192 for mp3 when not specified", async () => {
     await trimAudio(mockFile, { startTime: 0, endTime: 5, outputFormat: "mp3" });
 
-    expect(encodeToMp3).toHaveBeenCalledWith(expect.anything(), 192);
+    expect(encodeMp3).toHaveBeenCalledWith(expect.anything(), 192, expect.anything());
   });
 
   it("returns correct ProcessedResult shape", async () => {
@@ -158,7 +164,7 @@ describe("trimAudio", () => {
     vi.mocked(decodeAudioFile).mockReset().mockResolvedValue(sourceBuffer);
 
     let capturedBuffer: AudioBuffer | null = null;
-    vi.mocked(encodeToWav).mockImplementation((buf: AudioBuffer) => {
+    vi.mocked(encodeWav).mockImplementation(async (buf: AudioBuffer) => {
       capturedBuffer = buf;
       return new Blob(["wav-data"], { type: "audio/wav" });
     });
@@ -179,5 +185,17 @@ describe("trimAudio", () => {
     // Verify channel 1 contains samples[20..49] from source
     const expectedCh1 = Array.from(ch1Data.slice(20, 50));
     expect(Array.from(trimmedCh1)).toEqual(expectedCh1);
+  });
+});
+
+describe("trimAudio input validation", () => {
+  it("rejects non-finite trim times before touching the decoder", async () => {
+    const file = new File(["not audio"], "a.wav", { type: "audio/wav" });
+    await expect(
+      trimAudio(file, { startTime: NaN, endTime: 1, outputFormat: "wav" }),
+    ).rejects.toThrow("Trim times must be numbers");
+    await expect(
+      trimAudio(file, { startTime: 0, endTime: Infinity, outputFormat: "wav" }),
+    ).rejects.toThrow("Trim times must be numbers");
   });
 });

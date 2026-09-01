@@ -32,6 +32,7 @@ const ROUTES: string[] = [
   ...posts.map((p) => `/blog/${p.slug}`),
   "/about",
   "/privacy",
+  "/licenses",
 ];
 
 const VIEWPORTS = [
@@ -81,8 +82,9 @@ test("the sweep covers the whole route table", () => {
   expect(categories.length).toBe(5);
   expect(posts.length).toBeGreaterThan(0);
   expect(ROUTES.length).toBe(
-    // home + categories + tools + /all-tools + /workspace + /blog + posts + about/privacy
-    1 + categories.length + tools.length + 1 + 1 + 1 + posts.length + 2,
+    // home + categories + tools + /all-tools + /workspace + /blog + posts
+    // + about/privacy/licenses
+    1 + categories.length + tools.length + 1 + 1 + 1 + posts.length + 3,
   );
 });
 

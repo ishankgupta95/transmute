@@ -27,7 +27,7 @@ export const categories: Category[] = [
     description: "Merge, split, and manipulate PDF files — no upload needed.",
     icon: "FileText",
     shortName: "PDF",
-    engine: "MUPDF · PDF-LIB",
+    engine: "PDF-LIB · PDFJS",
     formats: ["PDF", "JPG", "PNG", "WEBP", "MD"],
   },
   {

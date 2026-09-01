@@ -73,10 +73,10 @@ export default function AboutPage() {
           <h2 className={H2}>How it is built</h2>
           <p className={BODY}>
             Next.js and TypeScript, exported as a fully static site. The heavy lifting is
-            done by FFmpeg.wasm, MuPDF, the Canvas API, Web Audio and WebCodecs. Because
-            everything compiles to static HTML, CSS and JavaScript, there is no backend —
-            and therefore nothing that can leak your files. {tools.length} tools ship this
-            way today.
+            done by FFmpeg.wasm, pdf-lib, pdf.js, the Canvas API, Web Audio and
+            WebCodecs. Because everything compiles to static HTML, CSS and JavaScript,
+            there is no backend — and therefore nothing that can leak your files.{" "}
+            {tools.length} tools ship this way today.
           </p>
         </section>
 

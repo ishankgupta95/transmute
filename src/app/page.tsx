@@ -15,7 +15,7 @@ const POPULAR: { slug: string; desc: string }[] = [
   { slug: "heic-to-jpg", desc: "iPhone photos that Windows and web forms will actually accept." },
   { slug: "compress-image", desc: "By quality, or to an exact target like 100 KB." },
   { slug: "merge-pdf", desc: "Drag to reorder whole documents, then combine." },
-  { slug: "compress-pdf", desc: "Strips metadata and deduplicates objects." },
+  { slug: "compress-pdf", desc: "Drops dead objects, deflates raw streams, keeps your images." },
   { slug: "video-to-gif", desc: "Trim, set frame rate and width, see the size first." },
   { slug: "json-formatter", desc: "Format, validate and minify with line-accurate errors." },
   { slug: "jwt-decoder", desc: "Header, claims and expiry — parsed locally, safe on prod tokens." },
@@ -44,7 +44,7 @@ const WORKSHOPS: Record<string, { blurb: string; engine: string; icon: React.Rea
   },
   "pdf-tools": {
     blurb: "Merge, split, rotate, reorder pages, compress, add numbers, images to PDF.",
-    engine: "MUPDF · PDF-LIB",
+    engine: "PDF-LIB · PDFJS",
     icon: (
       <>
         <path d="M56 128V40a8 8 0 0 1 8-8h96l40 40v56" />
@@ -101,20 +101,32 @@ const WORKSHOPS: Record<string, { blurb: string; engine: string; icon: React.Rea
   (lib/tools/image-resize.ts) and worker (lib/workers/image.worker.ts) paths,
   and HEIC and TIFF are decoded by heic2any and utif2 before Canvas ever sees a
   bitmap — so those three have their own rows now. pdf.js did every page
-  thumbnail and every PDF→image render with no row at all; the MuPDF row is
-  the page/document operations only.
+  thumbnail and every PDF→image render with no row at all; pdf-lib's row used
+  to say only "building a PDF out of images", which stopped being true when it
+  absorbed all seven page and document operations.
+
+  There is no PDF engine row with a download attached any more. This table used
+  to carry a 10 MB MuPDF WASM row that loaded on the first PDF; that engine is
+  gone from the app entirely, so merging, splitting, rotating, reordering,
+  numbering and compressing now cost nothing beyond the JavaScript already in
+  the page.
+
+  lamejs has its own row for the same reason heic2any does: it is no longer
+  bundled into the audio worker but fetched from /vendor/ at the first MP3
+  encode, so folding it into Web Audio's "0 KB, built in" would hide a real
+  254 KB request. Size is the byte count of the file we copy into public/vendor/.
 */
 const ENGINES = [
   { name: "Canvas 2D", handles: "Image conversion, compression and crop — plus the frames gifenc quantises into a GIF", size: "0 KB", when: "BUILT IN" },
   { name: "pica", handles: "Image resizing, Lanczos3 — on the main thread and in the worker", size: "36 KB", when: "ON FIRST RESIZE" },
   { name: "heic2any", handles: "Decoding iPhone HEIC, which Canvas cannot open", size: "1.3 MB", when: "ON FIRST HEIC" },
   { name: "utif2", handles: "Decoding TIFF, likewise", size: "96 KB", when: "ON FIRST TIFF" },
-  { name: "MuPDF WASM", handles: "Merge, split, rotate, reorder, page numbers, compression", size: "10 MB", when: "ON FIRST PDF" },
   { name: "pdf.js", handles: "All PDF rendering — page thumbnails, and PDF to JPG or PNG", size: "1.6 MB", when: "ON PAGE PREVIEW" },
-  { name: "pdf-lib", handles: "Building a PDF out of images", size: "320 KB", when: "ON FIRST PDF" },
+  { name: "pdf-lib", handles: "Every PDF page and document operation — merge, split, rotate, reorder, page numbers, compression, and images into a PDF", size: "320 KB", when: "ON FIRST PDF" },
   { name: "FFmpeg WASM", handles: "Lossless video trimming, MP3 extraction from video", size: "31 MB", when: "ON FIRST USE" },
   { name: "WebCodecs", handles: "Video compression and WebM→MP4, hardware H.264 encoding", size: "0 KB", when: "BUILT IN" },
-  { name: "Web Audio", handles: "Decoding, trimming and merging audio; MP3 encoding via lamejs", size: "0 KB", when: "BUILT IN" },
+  { name: "Web Audio", handles: "Decoding, trimming and merging audio", size: "0 KB", when: "BUILT IN" },
+  { name: "lamejs", handles: "MP3 encoding — the one codec browsers will decode but not write", size: "254 KB", when: "ON FIRST MP3" },
 ] as const;
 
 const STATS = [

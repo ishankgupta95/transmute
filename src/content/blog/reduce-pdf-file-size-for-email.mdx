@@ -17,18 +17,19 @@ A clean text-only PDF is rarely above 1 MB even at hundreds of pages. If your PD
 
 The lowest-effort approach is to let a PDF library re-pack the document, removing redundancy without touching content. This includes:
 
-- Stripping document metadata (title, author, comments, custom XMP)
-- Removing duplicate fonts and images
-- Re-encoding the cross-reference table to use object streams (introduced in PDF 1.5, often skipped by older exporters)
-- Discarding orphaned objects (referenced from removed pages, etc.)
+- Discarding orphaned objects — anything the document no longer references, such as an image an editor replaced or a page someone removed
+- Deflating streams that were stored with no compression at all (plenty of producers emit raw content streams)
+- Repacking the objects into object streams behind a cross-reference stream (introduced in PDF 1.5, often skipped by older exporters)
 
-This is what the [compress PDF tool](/compress-pdf) does by default. It's a "free" optimization — visual quality is identical to the original, and the file usually shrinks by 10–30%.
+This is what the [compress PDF tool](/compress-pdf) does. It's a "free" optimization — visual quality is identical to the original, because nothing in the pixel or text data is touched.
+
+How much it actually saves depends entirely on where the slack is, and the honest answer is that the range is enormous. A PDF carrying orphaned objects, or one whose streams arrived uncompressed, can lose 80% or more. A PDF saved with a plain cross-reference table and no object streams typically halves. A PDF that has already been garbage-collected, deflated and packed comes back exactly the same size — and rather than dress that up, the tool compares the two files and hands back your original bytes with a note saying nothing was saved.
 
 Where this method shines:
 
-- PDFs that were exported by older software (Office 2007, OpenOffice 3.x)
-- Documents with extensive custom metadata or embedded XML data
-- PDFs that have been edited many times (each edit can leave residue)
+- PDFs that were exported by older software (Office 2007, OpenOffice 3.x), which tends to write a plain cross-reference table and skip object streams entirely
+- Documents from report generators and typesetting pipelines that emit uncompressed content streams
+- PDFs that have been edited many times, since each incremental save can leave residue nothing points at any more
 
 Where this method falls short:
 
@@ -126,4 +127,4 @@ The [compress PDF](/compress-pdf), [split PDF](/split-pdf), [PDF to JPG](/pdf-to
 
 Almost every "make my PDF smaller" problem is a "make the embedded images smaller" problem. The browser-based workflow is: try [compress PDF](/compress-pdf) first for an easy win, then re-encode images via [PDF to JPG](/pdf-to-jpg) → [images to PDF](/images-to-pdf) round-trip if you need more aggressive compression, and split with [split PDF](/split-pdf) only as a last resort.
 
-Most documents go from "too big to email" to "fits comfortably under the cap" with method 1 alone. The remaining cases are mostly scans, and the round-trip method handles them in a single pass.
+Method 1 is worth trying first because it costs you nothing and occasionally does the whole job on its own — but it only ever recovers structural slack, so whether it is enough depends on whether your file had any. Scans and image-heavy exports usually don't, and the round-trip method handles those in a single pass.

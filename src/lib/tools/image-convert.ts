@@ -125,6 +125,89 @@ export interface DecodableSource {
 }
 
 /**
+ * The one call shape this file makes into heic2any. Declared by hand because
+ * the library is now reached through a dynamic `import()` with a computed
+ * specifier, and such an import has no static type — TypeScript cannot know
+ * which file will answer it.
+ */
+type Heic2AnyOptions = { blob: Blob; toType?: string; quality?: number };
+type Heic2Any = (options: Heic2AnyOptions) => Promise<Blob | Blob[]>;
+
+/**
+ * Same-origin URL of a vendored third-party library, prefixed the way every
+ * other self-hosted asset in this app is (see workers/image-client.ts).
+ *
+ * THIS FUNCTION IS LOAD-BEARING — see the twin in lib/tools/audio-pcm.ts.
+ * Folding it into a plain template literal at the `import()` call site would
+ * give the bundler a resolvable string constant and it would inline the
+ * library again, which is precisely what must not happen.
+ */
+function vendorUrl(name: string, attempt = 0): string {
+  const base = `${process.env.__NEXT_ROUTER_BASEPATH ?? ""}/vendor/${name}`;
+  // A failed module fetch is remembered per specifier by the browser's module
+  // map, so a retry of the identical URL rejects without a request. See the
+  // fuller note on the twin in lib/tools/audio-pcm.ts.
+  return attempt === 0 ? base : `${base}?retry=${attempt}`;
+}
+
+
+/** Memoised so a batch of HEICs shares one fetch of the 1.3 MB decoder. */
+let heic2anyScript: Promise<unknown> | null = null;
+/** How many times loading has been attempted; see vendorUrl's `attempt`. */
+let heic2anyAttempts = 0;
+
+/**
+ * Fetch heic2any from `/vendor/heic2any.js` instead of bundling it.
+ *
+ * The heic2any *wrapper* is MIT, but the file ships libheif and libde265
+ * compiled into it, and both of those are LGPL. An LGPL library stays under
+ * its own terms only while it remains replaceable — someone must be able to
+ * substitute their own build of the decoder and have this app use it.
+ * Minified into a Next client chunk it is not replaceable, so
+ * `npm run copy:wasm` copies upstream's `dist/heic2any.js` byte-for-byte into
+ * `public/vendor/` and this loads it at first HEIC.
+ *
+ * NOW THE PART THAT LOOKS WRONG AND IS NOT: the module namespace this import
+ * resolves to is EMPTY. `dist/heic2any.js` is a UMD bundle, and when a UMD
+ * bundle is executed as an ES module neither of its module-system branches
+ * matches — there is no `exports`, no `module`, no AMD `define`, and
+ * top-level `this` is `undefined`. It therefore falls through to its global
+ * branch, `(global = global || self, global.heic2any = factory())`, and
+ * assigns itself to `self`. So `(await import(url)).default` — which is
+ * what this code used to do against the bare "heic2any" specifier, back when
+ * Turbopack was interoperating the CommonJS branch for us — is `undefined`
+ * here. The import is awaited purely for its side effect and the function is
+ * read off `globalThis` afterwards. Verified in both Chromium and WebKit.
+ *
+ * This is main-thread-only code: image-convert.ts is reachable from the UI and
+ * from workers/image-client.ts's main-thread `prepareSource`, but from no
+ * worker entrypoint (image.worker.ts imports it with `import type` only, which
+ * esbuild erases). Keep it that way — dragging it into the worker graph would
+ * put a 1.3 MB decoder into a worker bundle that today has none of it.
+ */
+async function loadHeic2Any(): Promise<Heic2Any> {
+  if (!heic2anyScript) {
+    heic2anyScript = (
+      import(
+        /* webpackIgnore: true */ /* turbopackIgnore: true */ vendorUrl("heic2any.js", heic2anyAttempts++)
+      ) as Promise<unknown>
+    ).catch((err) => {
+      // Clearing the memo is only half of it — the retry also has to ask for a
+      // URL the module map has not already condemned, which is what the
+      // attempt counter in vendorUrl buys. Without both, one flaky request for
+      // this 1.3 MB file breaks every later HEIC in the tab, including the
+      // retry the user reaches for by re-dropping the photo.
+      heic2anyScript = null;
+      throw err;
+    });
+  }
+  await heic2anyScript;
+  const heic2any = (globalThis as { heic2any?: Heic2Any }).heic2any;
+  if (!heic2any) throw new Error("Could not load the HEIC decoder");
+  return heic2any;
+}
+
+/**
  * Return a blob the browser's <img> can decode, plus warnings about what the
  * pre-decode dropped. HEIC/HEIF and TIFF are pre-decoded to PNG; SVG is
  * re-wrapped with the right MIME; everything else is returned as-is (with an
@@ -136,7 +219,7 @@ export async function toDecodableSource(file: File): Promise<DecodableSource> {
 
   // HEIC / HEIF
   if (ext === "heic" || ext === "heif" || file.type === "image/heic" || file.type === "image/heif") {
-    const heic2any = (await import("heic2any")).default;
+    const heic2any = await loadHeic2Any();
     const result = await heic2any({ blob: file, toType: "image/png" });
     return { blob: Array.isArray(result) ? result[0] : result, warnings: [] };
   }

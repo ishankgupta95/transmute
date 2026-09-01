@@ -2,7 +2,7 @@ import { defineConfig, devices } from "@playwright/test";
 
 /**
  * The real-conversion suite (`src/__tests__/e2e/conversion/`) drives FFmpeg.wasm,
- * WebCodecs, MuPDF and lamejs end to end against genuinely-encoded fixtures. It
+ * WebCodecs, pdf-lib and lamejs end to end against genuinely-encoded fixtures. It
  * is minutes rather than seconds, so it is opt-in via `npm run test:e2e:conversion`
  * and excluded from the default run.
  */
@@ -48,7 +48,7 @@ export default defineConfig({
         {
           /*
             The same conversions in WebKit — the engines the suite guards
-            (Web Audio, lamejs, MuPDF, pdf-lib, canvas, FFmpeg.wasm) all run
+            (Web Audio, lamejs, pdf-lib, pdfjs, canvas, FFmpeg.wasm) all run
             in Safari, and its decoder quirks are exactly what the m4a/Ogg
             FFmpeg fallback exists for. Excluded: the WebCodecs video specs,
             the screen recorder (both lean on Chromium launch flags), and the

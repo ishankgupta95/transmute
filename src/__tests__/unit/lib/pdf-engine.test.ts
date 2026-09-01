@@ -1,104 +1,40 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+import { inflateSync } from "node:zlib";
+import {
+  PDFDocument,
+  PDFArray,
+  PDFDict,
+  PDFName,
+  PDFNumber,
+  PDFRawStream,
+  PDFRef,
+  PDFString,
+  StandardFonts,
+} from "pdf-lib";
 
-// ── Hoisted shared state & helpers (runs before vi.mock) ──────────
+/*
+  These are REAL round trips, not mock-shape assertions.
+
+  The version of this file that came before mocked `mupdf` with fifteen stub
+  methods and then checked that the engine had called them in a particular
+  order — which proved that the code called the library, and nothing at all
+  about the documents it produced. The engine is pure pdf-lib now, pdf-lib is
+  pure JavaScript, and jsdom runs it happily, so every test below builds a
+  real PDF, runs the operation on its bytes, parses the bytes that come back
+  and asserts on the state of the resulting document. A regression that a mock
+  harness cannot see — a rotation that silently no-ops, a stamp drawn off the
+  edge of the page, a garbage collector that eats a form field — fails here.
+
+  The one thing that still cannot run for real is the pdfjs render path in
+  pdf-engine.ts: it needs a canvas with real 2D raster output, which jsdom does
+  not have. Those tests keep their mocks and are unchanged.
+*/
+
+// ── pdfjs-dist mock (rasterisation only — see above) ──────────────
 
 const hoisted = vi.hoisted(() => {
-  function createMockBuffer() {
-    const data = new Uint8Array([37, 80, 68, 70]);
-    return { asUint8Array: vi.fn().mockReturnValue(data) };
-  }
-
-  function createMockPdfObj(overrides: Record<string, unknown> = {}): Record<string, unknown> {
-    return {
-      isNull: vi.fn().mockReturnValue(false),
-      isArray: vi.fn().mockReturnValue(false),
-      asNumber: vi.fn().mockReturnValue(0),
-      get: vi.fn().mockImplementation(() => createMockPdfObj()),
-      put: vi.fn(),
-      push: vi.fn(),
-      ...overrides,
-    };
-  }
-
-  function createMockDocument(pageCount = 3) {
-    const loadedPages: { getBounds: unknown; destroy: ReturnType<typeof vi.fn> }[] = [];
-    const pages = Array.from({ length: pageCount }, () =>
-      createMockPdfObj({
-        get: vi.fn().mockImplementation((key: string) => {
-          if (key === "Rotate")
-            return createMockPdfObj({ isNull: vi.fn().mockReturnValue(true), asNumber: vi.fn().mockReturnValue(0) });
-          if (key === "Resources")
-            return createMockPdfObj({ isNull: vi.fn().mockReturnValue(true) });
-          if (key === "Contents")
-            return createMockPdfObj({ isNull: vi.fn().mockReturnValue(true), isArray: vi.fn().mockReturnValue(false) });
-          return createMockPdfObj();
-        }),
-      }),
-    );
-
-    // The trailer carries /Info; split/merge/reorder must graft it across.
-    const info = createMockPdfObj({ _tag: "Info" });
-    const trailer = createMockPdfObj({
-      get: vi.fn().mockImplementation((key: string) =>
-        key === "Info" ? info : createMockPdfObj(),
-      ),
-    });
-
-    return {
-      countPages: vi.fn().mockReturnValue(pageCount),
-      findPage: vi.fn().mockImplementation((idx: number) => pages[idx]),
-      // Every Page handed out is recorded on `_loadedPages` so tests can
-      // assert the caller released it — an undestroyed Page is a live
-      // allocation in the MuPDF WASM heap that the JS GC never reclaims.
-      loadPage: vi.fn().mockImplementation(() => {
-        const page = {
-          getBounds: vi.fn().mockReturnValue([0, 0, 595, 842]),
-          destroy: vi.fn(),
-        };
-        loadedPages.push(page);
-        return page;
-      }),
-      getTrailer: vi.fn().mockReturnValue(trailer),
-      newGraftMap: vi.fn().mockReturnValue({
-        graftPage: vi.fn(),
-        graftObject: vi.fn().mockImplementation((o: unknown) => o),
-      }),
-      newInteger: vi.fn().mockImplementation((n: number) => n),
-      newDictionary: vi.fn().mockImplementation(() => createMockPdfObj()),
-      newArray: vi.fn().mockImplementation(() => {
-        const items: unknown[] = [];
-        return createMockPdfObj({
-          push: vi.fn().mockImplementation((item: unknown) => items.push(item)),
-          isArray: vi.fn().mockReturnValue(true),
-        });
-      }),
-      addSimpleFont: vi.fn().mockReturnValue(createMockPdfObj()),
-      addStream: vi.fn().mockReturnValue(createMockPdfObj()),
-      saveToBuffer: vi.fn().mockReturnValue(createMockBuffer()),
-      destroy: vi.fn(),
-      _pages: pages,
-      _loadedPages: loadedPages,
-      _trailer: trailer,
-      _info: info,
-    };
-  }
-
-  const mockDocuments: ReturnType<typeof createMockDocument>[] = [];
-
-  const mockFont = {
-    encodeCharacter: vi.fn().mockReturnValue(1),
-    advanceGlyph: vi.fn().mockReturnValue(0.5),
-  };
-
-  const mockPdfPage = { drawImage: vi.fn() };
-  const mockEmbedded = { scale: vi.fn().mockReturnValue({ width: 200, height: 150 }) };
-  const mockPdfDoc = {
-    embedPng: vi.fn().mockResolvedValue(mockEmbedded),
-    embedJpg: vi.fn().mockResolvedValue(mockEmbedded),
-    addPage: vi.fn().mockReturnValue(mockPdfPage),
-    save: vi.fn().mockResolvedValue(new Uint8Array([37, 80, 68, 70])),
-  };
-
   const mockRenderTask = { promise: Promise.resolve() };
   const mockPdfjsPage = {
     getViewport: vi.fn().mockReturnValue({ width: 800, height: 600 }),
@@ -110,53 +46,8 @@ const hoisted = vi.hoisted(() => {
     getPage: vi.fn().mockResolvedValue(mockPdfjsPage),
     destroy: vi.fn().mockResolvedValue(undefined),
   };
-
-  return {
-    createMockDocument,
-    createMockPdfObj,
-    mockDocuments,
-    mockFont,
-    mockPdfDoc,
-    mockPdfPage,
-    mockEmbedded,
-    mockPdfjsDoc,
-    mockPdfjsPage,
-    mockRenderTask,
-  };
+  return { mockPdfjsDoc, mockPdfjsPage, mockRenderTask };
 });
-
-// ── Mock mupdf ────────────────────────────────────────────────────
-
-vi.mock("mupdf", () => ({
-  Document: {
-    openDocument: vi.fn().mockImplementation(() => {
-      const doc = hoisted.createMockDocument(3);
-      hoisted.mockDocuments.push(doc);
-      return doc;
-    }),
-  },
-  // Must be a function (not arrow) so it can be called with `new`
-  PDFDocument: vi.fn().mockImplementation(function (data?: Uint8Array) {
-    const pageCount = data ? 3 : 0;
-    const doc = hoisted.createMockDocument(pageCount);
-    hoisted.mockDocuments.push(doc);
-    // Copy all properties onto `this` so `new PDFDocument(...)` returns an object with the methods
-    return doc;
-  }),
-  Font: vi.fn().mockImplementation(function () {
-    return hoisted.mockFont;
-  }),
-}));
-
-// ── Mock pdf-lib ──────────────────────────────────────────────────
-
-vi.mock("pdf-lib", () => ({
-  PDFDocument: {
-    create: vi.fn().mockResolvedValue(hoisted.mockPdfDoc),
-  },
-}));
-
-// ── Mock pdfjs-dist ───────────────────────────────────────────────
 
 vi.mock("pdfjs-dist", () => ({
   getDocument: vi.fn().mockReturnValue({
@@ -182,9 +73,16 @@ import {
   renderPageToCanvas,
 } from "@/lib/tools/pdf-engine";
 
+const { mockPdfjsDoc, mockPdfjsPage, mockRenderTask } = hoisted;
+
 // ── Canvas mock for pdfToImages / render helpers ──────────────────
 
 let mockCanvas: Record<string, unknown>;
+
+// Captured before the spy is installed: the fallback branch below must reach
+// jsdom's real createElement, not the spy, or a non-canvas tag would recurse
+// into itself forever.
+const realCreateElement = document.createElement.bind(document);
 
 function setupCanvasMock() {
   mockCanvas = {
@@ -197,42 +95,126 @@ function setupCanvasMock() {
   };
   vi.spyOn(document, "createElement").mockImplementation((tag: string) => {
     if (tag === "canvas") return mockCanvas as unknown as HTMLCanvasElement;
-    return document.createElement(tag);
+    return realCreateElement(tag);
   });
 }
 
-// ── Test data ─────────────────────────────────────────────────────
+// ── Fixture builders ──────────────────────────────────────────────
 
-const fakePdfData = new Uint8Array([37, 80, 68, 70, 45, 49, 46, 52]); // %PDF-1.4
+type Size = [number, number];
 
-// ── Convenience aliases ───────────────────────────────────────────
+const A4: Size = [595, 842];
 
-const {
-  mockDocuments,
-  mockPdfDoc,
-  mockPdfPage,
-  mockEmbedded,
-  mockPdfjsDoc,
-  mockPdfjsPage,
-  mockRenderTask,
-  createMockDocument,
-  createMockPdfObj,
-} = hoisted;
+/** Open a produced document the way the tools' own callers would. */
+function open(bytes: Uint8Array): Promise<PDFDocument> {
+  // `updateMetadata: false` matters in the assertions as much as it does in
+  // the engine: the default rewrites /Producer and /ModDate on load, so a test
+  // that read them back would be reading pdf-lib's own stamp and calling it
+  // the source's metadata.
+  return PDFDocument.load(bytes, { updateMetadata: false });
+}
+
+/** A document with one page per entry in `sizes`, and no /Info unless asked. */
+async function buildPdf(
+  sizes: Size[],
+  info: Partial<{
+    title: string;
+    author: string;
+    subject: string;
+    keywords: string[];
+    creator: string;
+    producer: string;
+    creationDate: Date;
+    modificationDate: Date;
+  }> = {},
+): Promise<Uint8Array> {
+  const doc = await PDFDocument.create({ updateMetadata: false });
+  for (const size of sizes) doc.addPage(size);
+  if (info.title !== undefined) doc.setTitle(info.title);
+  if (info.author !== undefined) doc.setAuthor(info.author);
+  if (info.subject !== undefined) doc.setSubject(info.subject);
+  if (info.keywords !== undefined) doc.setKeywords(info.keywords);
+  if (info.creator !== undefined) doc.setCreator(info.creator);
+  if (info.producer !== undefined) doc.setProducer(info.producer);
+  if (info.creationDate !== undefined) doc.setCreationDate(info.creationDate);
+  if (info.modificationDate !== undefined) doc.setModificationDate(info.modificationDate);
+  return doc.save();
+}
+
+/** A single page carrying /Rotate on the page dictionary itself. */
+async function buildRotatedPdf(angle: number, size: Size = A4): Promise<Uint8Array> {
+  const doc = await PDFDocument.create({ updateMetadata: false });
+  doc.addPage(size).node.set(PDFName.of("Rotate"), PDFNumber.of(angle));
+  return doc.save();
+}
+
+/**
+ * /Rotate parked on the shared /Pages node instead of on any leaf — the
+ * inheritable-attribute case that used to make rotation a silent no-op.
+ */
+async function buildInheritedRotatePdf(angle: number, pages = 2): Promise<Uint8Array> {
+  const doc = await PDFDocument.create({ updateMetadata: false });
+  for (let i = 0; i < pages; i++) doc.addPage(A4);
+  const pagesDict = doc.context.lookup(doc.catalog.get(PDFName.of("Pages"))) as PDFDict;
+  pagesDict.set(PDFName.of("Rotate"), PDFNumber.of(angle));
+  return doc.save();
+}
+
+// ── Content-stream reader ─────────────────────────────────────────
+
+/**
+ * The concatenated content streams of one page, as text.
+ *
+ * pdf-lib writes the stamp into a Flate-compressed stream, so the bytes have
+ * to be inflated before any operator is visible. Page-scoped rather than a
+ * whole-file scan so a per-page assertion cannot accidentally be satisfied by
+ * a different page's stamp.
+ */
+async function pageContent(bytes: Uint8Array, index: number): Promise<string> {
+  const doc = await open(bytes);
+  const context = doc.context;
+  const contents = context.lookup(doc.getPage(index).node.get(PDFName.of("Contents")));
+  const refs: (PDFRef | undefined)[] =
+    contents instanceof PDFArray
+      ? Array.from({ length: contents.size() }, (_, i) => contents.get(i) as PDFRef)
+      : [doc.getPage(index).node.get(PDFName.of("Contents")) as PDFRef];
+
+  return refs
+    .map((ref) => {
+      const stream = context.lookup(ref);
+      if (!(stream instanceof PDFRawStream)) return "";
+      const raw = Buffer.from(stream.getContents());
+      try {
+        return inflateSync(raw).toString("latin1");
+      } catch {
+        return raw.toString("latin1");
+      }
+    })
+    .join("\n");
+}
+
+// ── Image fixtures for imagesToPdf ────────────────────────────────
+
+// A real 2×2 PNG; pdf-lib decodes it with its own PNG reader, so it has to be
+// genuine bytes rather than a stand-in.
+const PNG_2X2 = new Uint8Array(
+  Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAFUlEQVR4nGP8z8Dwn4GBgYmBgYEBAA8+AwGmZCVAAAAAAElFTkSuQmCC",
+    "base64",
+  ),
+);
+
+const SAMPLE_JPEG = new Uint8Array(
+  readFileSync(resolve(process.cwd(), "src/__tests__/fixtures/samples", "sample-photo.jpg")),
+);
 
 // ── Tests ─────────────────────────────────────────────────────────
 
 describe("pdf-engine", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockDocuments.length = 0;
     setupCanvasMock();
 
-    // Re-setup return values after clearAllMocks
-    mockPdfDoc.embedPng.mockResolvedValue(mockEmbedded);
-    mockPdfDoc.embedJpg.mockResolvedValue(mockEmbedded);
-    mockPdfDoc.addPage.mockReturnValue(mockPdfPage);
-    mockPdfDoc.save.mockResolvedValue(new Uint8Array([37, 80, 68, 70]));
-    mockEmbedded.scale.mockReturnValue({ width: 200, height: 150 });
     mockPdfjsDoc.getPage.mockResolvedValue(mockPdfjsPage);
     mockPdfjsDoc.destroy.mockResolvedValue(undefined);
     mockPdfjsPage.getViewport.mockReturnValue({ width: 800, height: 600 });
@@ -242,578 +224,824 @@ describe("pdf-engine", () => {
   // ── getPageCount ──────────────────────────────────────────────
 
   describe("getPageCount", () => {
-    it("returns the page count from the mupdf document", async () => {
-      const count = await getPageCount(fakePdfData);
-      expect(count).toBe(3);
-    });
-
-    it("destroys the document after counting", async () => {
-      await getPageCount(fakePdfData);
-      expect(mockDocuments[0].destroy).toHaveBeenCalled();
+    it("counts the pages of a real document", async () => {
+      expect(await getPageCount(await buildPdf([A4, A4, A4, A4, A4]))).toBe(5);
     });
 
     it("accepts ArrayBuffer input", async () => {
-      const buf = fakePdfData.buffer.slice(0);
-      const count = await getPageCount(buf);
-      expect(count).toBe(3);
+      const bytes = await buildPdf([A4, A4]);
+      const buffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+      expect(await getPageCount(buffer as ArrayBuffer)).toBe(2);
+    });
+
+    it("says a file is not a PDF instead of leaking parser internals", async () => {
+      // The UIs render err.message verbatim, so "offset=5: No PDF header
+      // found" would be what the user reads.
+      await expect(getPageCount(new Uint8Array([1, 2, 3, 4, 5]))).rejects.toThrow(
+        /damaged or is not a PDF/,
+      );
+    });
+
+    it("says a document is password-protected rather than failing obscurely", async () => {
+      // MuPDF opened these silently; pdf-lib refuses, and the refusal has to
+      // read as an instruction rather than an API note about ignoreEncryption.
+      const doc = await PDFDocument.create({ updateMetadata: false });
+      doc.addPage(A4);
+      doc.context.trailerInfo.Encrypt = doc.context.register(
+        doc.context.obj({
+          Filter: PDFName.of("Standard"),
+          V: 1,
+          R: 2,
+          O: PDFString.of("owner"),
+          U: PDFString.of("user"),
+          P: -1,
+        }),
+      );
+      const bytes = await doc.save({ useObjectStreams: false });
+
+      await expect(getPageCount(bytes)).rejects.toThrow(/password-protected/);
     });
   });
 
   // ── mergePdfs ─────────────────────────────────────────────────
 
+  const asArrayBuffer = (bytes: Uint8Array): ArrayBuffer =>
+    bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
+
   describe("mergePdfs", () => {
-    it("merges multiple PDFs by grafting pages from each source", async () => {
-      const result = await mergePdfs([fakePdfData.buffer.slice(0), fakePdfData.buffer.slice(0)]);
-      expect(result).toBeInstanceOf(Uint8Array);
-      const outDoc = mockDocuments[0];
-      expect(outDoc.newGraftMap).toHaveBeenCalled();
+    it("concatenates every source in buffer order", async () => {
+      const a = await buildPdf([[100, 100], [110, 110]]);
+      const b = await buildPdf([[200, 200]]);
+      const c = await buildPdf([[300, 300], [310, 310]]);
+
+      const merged = await open(
+        await mergePdfs([asArrayBuffer(a), asArrayBuffer(b), asArrayBuffer(c)]),
+      );
+
+      expect(merged.getPageCount()).toBe(5);
+      // Distinct page sizes are the only falsifiable proof of ORDER.
+      expect(merged.getPages().map((p) => Math.round(p.getWidth()))).toEqual([
+        100, 110, 200, 300, 310,
+      ]);
     });
 
-    it("returns a valid Uint8Array from saveToBuffer", async () => {
-      const result = await mergePdfs([fakePdfData.buffer.slice(0)]);
-      expect(result).toBeInstanceOf(Uint8Array);
-      expect(result.length).toBeGreaterThan(0);
+    it("carries the FIRST document's title and author, not the last", async () => {
+      const first = await buildPdf([A4], { title: "First Title", author: "First Author" });
+      const second = await buildPdf([A4], { title: "Second Title", author: "Second Author" });
+
+      const merged = await open(await mergePdfs([asArrayBuffer(first), asArrayBuffer(second)]));
+
+      expect(merged.getTitle()).toBe("First Title");
+      expect(merged.getAuthor()).toBe("First Author");
     });
 
-    it("handles a single PDF input", async () => {
-      const result = await mergePdfs([fakePdfData.buffer.slice(0)]);
-      expect(result).toBeInstanceOf(Uint8Array);
+    it("does not borrow metadata from a later file when the first has none", async () => {
+      // "First document wins" has to mean the whole /Info, not a per-field
+      // scavenge — a merge that reported file 3's author would be describing a
+      // document that has never existed.
+      const first = await buildPdf([A4]);
+      const second = await buildPdf([A4], { title: "Second Title", author: "Second Author" });
+
+      const merged = await open(await mergePdfs([asArrayBuffer(first), asArrayBuffer(second)]));
+
+      expect(merged.getTitle()).toBeUndefined();
+      expect(merged.getAuthor()).toBeUndefined();
     });
 
-    it("handles empty array input", async () => {
-      const result = await mergePdfs([]);
-      expect(result).toBeInstanceOf(Uint8Array);
-      const outDoc = mockDocuments[0];
-      expect(outDoc.saveToBuffer).toHaveBeenCalledWith("compress");
+    it("invents no producer for a source that carried none", async () => {
+      const merged = await open(await mergePdfs([asArrayBuffer(await buildPdf([A4]))]));
+      expect(merged.getProducer()).toBeUndefined();
+      expect(merged.getCreationDate()).toBeUndefined();
     });
 
-    it("copies the FIRST source's /Info onto the merged document", async () => {
-      await mergePdfs([fakePdfData.buffer.slice(0), fakePdfData.buffer.slice(0)]);
-      const outDoc = mockDocuments[0];
-      const first = mockDocuments[1];
-      const second = mockDocuments[2];
-      expect(outDoc._trailer.put).toHaveBeenCalledTimes(1);
-      expect(outDoc._trailer.put).toHaveBeenCalledWith("Info", first._info);
-      expect(outDoc._trailer.put).not.toHaveBeenCalledWith("Info", second._info);
+    it("carries the remaining standard /Info entries too", async () => {
+      const created = new Date(Date.UTC(2019, 4, 6, 7, 8, 9));
+      const source = await buildPdf([A4], {
+        title: "T",
+        author: "A",
+        subject: "S",
+        keywords: ["alpha", "beta"],
+        creator: "C",
+        producer: "P",
+        creationDate: created,
+      });
+
+      const merged = await open(await mergePdfs([asArrayBuffer(source)]));
+
+      expect(merged.getSubject()).toBe("S");
+      expect(merged.getKeywords()).toBe("alpha beta");
+      expect(merged.getCreator()).toBe("C");
+      expect(merged.getProducer()).toBe("P");
+      expect(merged.getCreationDate()?.toISOString()).toBe(created.toISOString());
     });
 
-    it("destroys source documents after merging", async () => {
-      await mergePdfs([fakePdfData.buffer.slice(0), fakePdfData.buffer.slice(0)]);
-      expect(mockDocuments[1].destroy).toHaveBeenCalled();
-      expect(mockDocuments[2].destroy).toHaveBeenCalled();
+    it("handles a single input", async () => {
+      const merged = await open(await mergePdfs([asArrayBuffer(await buildPdf([A4, A4]))]));
+      expect(merged.getPageCount()).toBe(2);
     });
 
-    it("destroys the output document after saving", async () => {
-      await mergePdfs([fakePdfData.buffer.slice(0)]);
-      expect(mockDocuments[0].destroy).toHaveBeenCalled();
-    });
-
-    it("grafts pages in order with incrementing insertAt", async () => {
-      await mergePdfs([fakePdfData.buffer.slice(0), fakePdfData.buffer.slice(0)]);
-      const outDoc = mockDocuments[0];
-      const graftMap = outDoc.newGraftMap.mock.results[0].value;
-      expect(graftMap.graftPage).toHaveBeenCalledWith(0, mockDocuments[1], 0);
-      expect(graftMap.graftPage).toHaveBeenCalledWith(1, mockDocuments[1], 1);
-      expect(graftMap.graftPage).toHaveBeenCalledWith(2, mockDocuments[1], 2);
-      expect(graftMap.graftPage).toHaveBeenCalledWith(3, mockDocuments[2], 0);
-      expect(graftMap.graftPage).toHaveBeenCalledWith(4, mockDocuments[2], 1);
-      expect(graftMap.graftPage).toHaveBeenCalledWith(5, mockDocuments[2], 2);
+    it("produces an empty document from an empty list, not a blank page", async () => {
+      // pdf-lib's save() invents a page when a document has none; a merge of
+      // nothing must not hand back a sheet the user never supplied.
+      const merged = await open(await mergePdfs([]));
+      expect(merged.getPageCount()).toBe(0);
     });
   });
 
   // ── splitPdf ──────────────────────────────────────────────────
 
   describe("splitPdf", () => {
-    it("extracts specified pages by index", async () => {
-      const result = await splitPdf(fakePdfData, [0, 2]);
-      expect(result).toBeInstanceOf(Uint8Array);
-      const outDoc = mockDocuments[1];
-      const graftMap = outDoc.newGraftMap.mock.results[0].value;
-      expect(graftMap.graftPage).toHaveBeenCalledTimes(2);
-      expect(graftMap.graftPage).toHaveBeenCalledWith(0, mockDocuments[0], 0);
-      expect(graftMap.graftPage).toHaveBeenCalledWith(1, mockDocuments[0], 2);
+    it("does not leave an orphan page object behind an annotation's /P", async () => {
+      /*
+        An annotation may name its page with /P. pdf-lib's copyPages deep-copies
+        the annotation, follows that reference and copies the ORIGINAL page
+        dictionary too — leaving a second /Type /Page object outside the page
+        tree that the annotation, not the tree, holds alive. Viewers render it
+        fine; preflight and PDF/A validators fail on "annotation /P does not
+        reference a page in the document".
+      */
+      const doc = await PDFDocument.create({ updateMetadata: false });
+      const page = doc.addPage([300, 300]);
+      const annot = doc.context.obj({
+        Type: "Annot",
+        Subtype: "Link",
+        Rect: [10, 10, 100, 30],
+        P: page.ref,
+        A: { S: PDFName.of("URI"), URI: PDFString.of("https://example.com") },
+      });
+      page.node.set(PDFName.of("Annots"), doc.context.obj([doc.context.register(annot)]));
+
+      const out = await splitPdf(await doc.save(), [0]);
+      const result = await open(out);
+
+      const pageObjects = result.context
+        .enumerateIndirectObjects()
+        .filter(([, obj]) => obj instanceof PDFDict && obj.get(PDFName.of("Type")) === PDFName.of("Page"));
+      expect(pageObjects).toHaveLength(1);
+      expect(result.getPageCount()).toBe(1);
+
+      // and the annotation points at the page that is actually in the tree
+      const annots = result.getPage(0).node.Annots()!;
+      const copied = result.context.lookup(annots.get(0), PDFDict);
+      expect(copied.get(PDFName.of("P"))).toBe(result.getPage(0).ref);
+    });
+
+    it("extracts exactly the requested pages, in the requested order", async () => {
+      const source = await buildPdf([
+        [100, 100],
+        [200, 200],
+        [300, 300],
+        [400, 400],
+      ]);
+
+      const out = await open(await splitPdf(source, [2, 0]));
+
+      expect(out.getPageCount()).toBe(2);
+      expect(out.getPages().map((p) => Math.round(p.getWidth()))).toEqual([300, 100]);
     });
 
     it("extracts a single page", async () => {
-      await splitPdf(fakePdfData, [1]);
-      const outDoc = mockDocuments[1];
-      const graftMap = outDoc.newGraftMap.mock.results[0].value;
-      expect(graftMap.graftPage).toHaveBeenCalledTimes(1);
-      expect(graftMap.graftPage).toHaveBeenCalledWith(0, mockDocuments[0], 1);
+      const out = await open(await splitPdf(await buildPdf([A4, A4, A4]), [1]));
+      expect(out.getPageCount()).toBe(1);
     });
 
-    it("destroys both source and output documents", async () => {
-      await splitPdf(fakePdfData, [0]);
-      expect(mockDocuments[0].destroy).toHaveBeenCalled();
-      expect(mockDocuments[1].destroy).toHaveBeenCalled();
+    it("keeps the document title and author", async () => {
+      const source = await buildPdf([A4, A4], { title: "Audit Title", author: "Audit Author" });
+      const out = await open(await splitPdf(source, [0]));
+      expect(out.getTitle()).toBe("Audit Title");
+      expect(out.getAuthor()).toBe("Audit Author");
     });
 
-    it("saves with compress option", async () => {
-      await splitPdf(fakePdfData, [0]);
-      const outDoc = mockDocuments[1];
-      expect(outDoc.saveToBuffer).toHaveBeenCalledWith("compress");
+    it("preserves each extracted page's rotation", async () => {
+      const doc = await PDFDocument.create({ updateMetadata: false });
+      doc.addPage(A4);
+      doc.addPage(A4).node.set(PDFName.of("Rotate"), PDFNumber.of(270));
+      const out = await open(await splitPdf(await doc.save(), [1]));
+      expect(out.getPage(0).getRotation().angle).toBe(270);
     });
 
-    it("copies the source /Info onto the extracted document", async () => {
-      // The output is a fresh PDFDocument, so title/author would otherwise be
-      // dropped — which the split-pdf FAQ explicitly promises does not happen.
-      await splitPdf(fakePdfData, [0]);
-      const src = mockDocuments[0];
-      const outDoc = mockDocuments[1];
-      const graftMap = outDoc.newGraftMap.mock.results[0].value;
-      expect(graftMap.graftObject).toHaveBeenCalledWith(src._info);
-      expect(outDoc._trailer.put).toHaveBeenCalledWith("Info", src._info);
-    });
-
-    it("handles extracting all pages", async () => {
-      await splitPdf(fakePdfData, [0, 1, 2]);
-      const outDoc = mockDocuments[1];
-      const graftMap = outDoc.newGraftMap.mock.results[0].value;
-      expect(graftMap.graftPage).toHaveBeenCalledTimes(3);
+    it("extracting nothing yields nothing, not a blank page", async () => {
+      const out = await open(await splitPdf(await buildPdf([A4, A4]), []));
+      expect(out.getPageCount()).toBe(0);
     });
   });
 
   // ── rotatePdfPages ────────────────────────────────────────────
 
   describe("rotatePdfPages", () => {
-    it("rotates specified pages by the given angle", async () => {
-      await rotatePdfPages(fakePdfData, [0, 1], 90);
-      const doc = mockDocuments[0];
-      expect(doc.findPage).toHaveBeenCalledWith(0);
-      expect(doc.findPage).toHaveBeenCalledWith(1);
+    it("rotates only the pages it was given", async () => {
+      const out = await open(await rotatePdfPages(await buildPdf([A4, A4, A4]), [1], 90));
+      expect(out.getPages().map((p) => p.getRotation().angle)).toEqual([0, 90, 0]);
     });
 
-    it("adds rotation to existing rotation value", async () => {
-      await rotatePdfPages(fakePdfData, [0], 180);
-      const doc = mockDocuments[0];
-      expect(doc.newInteger).toHaveBeenCalledWith(180);
+    it("adds to the rotation the page already had", async () => {
+      const out = await open(await rotatePdfPages(await buildRotatedPdf(90), [0], 90));
+      expect(out.getPage(0).getRotation().angle).toBe(180);
     });
 
-    it("wraps rotation at 360 degrees", async () => {
-      const mupdf = await import("mupdf");
-      vi.mocked(mupdf.PDFDocument).mockImplementationOnce(function () {
-        const doc = createMockDocument(1);
-        doc._pages[0].get = vi.fn().mockImplementation((key: string) => {
-          if (key === "Rotate")
-            return { isNull: vi.fn().mockReturnValue(false), asNumber: vi.fn().mockReturnValue(270) };
-          return createMockPdfObj();
-        });
-        mockDocuments.push(doc);
-        return doc as never;
-      });
-
-      await rotatePdfPages(fakePdfData, [0], 180);
-      const doc = mockDocuments[0];
-      expect(doc.newInteger).toHaveBeenCalledWith(90);
+    it("wraps past 360", async () => {
+      const out = await open(await rotatePdfPages(await buildRotatedPdf(270), [0], 180));
+      expect(out.getPage(0).getRotation().angle).toBe(90);
     });
 
-    it("resolves an INHERITED /Rotate from the page tree before adding to it", async () => {
-      // Regression: /Rotate is inheritable, so a value living on the /Pages
-      // node reads as null on the raw page dict returned by findPage(). The
-      // old `?? 0` therefore wrote 0+angle and the rotation silently no-opped
-      // on every already-rotated document.
-      const mupdf = await import("mupdf");
-      vi.mocked(mupdf.PDFDocument).mockImplementationOnce(function () {
-        const doc = createMockDocument(1);
-        const parent = createMockPdfObj({
-          get: vi.fn().mockImplementation((key: string) => {
-            if (key === "Rotate")
-              return createMockPdfObj({ asNumber: vi.fn().mockReturnValue(90) });
-            if (key === "Parent")
-              return createMockPdfObj({ isNull: vi.fn().mockReturnValue(true) });
-            return createMockPdfObj();
-          }),
-        });
-        doc._pages[0].get = vi.fn().mockImplementation((key: string) => {
-          if (key === "Rotate")
-            return createMockPdfObj({ isNull: vi.fn().mockReturnValue(true) });
-          if (key === "Parent") return parent;
-          return createMockPdfObj();
-        });
-        mockDocuments.push(doc);
-        return doc as never;
-      });
-
-      await rotatePdfPages(fakePdfData, [0], 90);
-      expect(mockDocuments[0].newInteger).toHaveBeenCalledWith(180);
+    it("normalises a negative result into 0-359", async () => {
+      const out = await open(await rotatePdfPages(await buildPdf([A4]), [0], -90));
+      expect(out.getPage(0).getRotation().angle).toBe(270);
     });
 
-    it("normalises a negative resulting angle into 0-359", async () => {
-      const mupdf = await import("mupdf");
-      vi.mocked(mupdf.PDFDocument).mockImplementationOnce(function () {
-        const doc = createMockDocument(1);
-        doc._pages[0].get = vi.fn().mockImplementation((key: string) => {
-          if (key === "Rotate")
-            return createMockPdfObj({ asNumber: vi.fn().mockReturnValue(0) });
-          return createMockPdfObj();
-        });
-        mockDocuments.push(doc);
-        return doc as never;
-      });
+    it("resolves an INHERITED /Rotate before adding to it", async () => {
+      /*
+        The regression this pins: /Rotate is inheritable, so a document that
+        keeps its rotation on the /Pages node reads as unrotated at the leaf.
+        Adding 90 to that phantom 0 wrote 90 — the angle the page was already
+        displaying — and the user got a "rotated" file that had not moved.
+      */
+      const out = await open(await rotatePdfPages(await buildInheritedRotatePdf(90), [0], 90));
 
-      await rotatePdfPages(fakePdfData, [0], -90);
-      expect(mockDocuments[0].newInteger).toHaveBeenCalledWith(270);
+      expect(out.getPage(0).getRotation().angle).toBe(180);
+      // The untouched sibling keeps inheriting rather than being flattened.
+      expect(out.getPage(1).getRotation().angle).toBe(90);
     });
 
-    it("skips out-of-range page indices", async () => {
-      await rotatePdfPages(fakePdfData, [5, -1], 90);
-      const doc = mockDocuments[0];
-      expect(doc._pages[0].put).not.toHaveBeenCalled();
+    it("skips out-of-range indices instead of throwing", async () => {
+      const out = await open(await rotatePdfPages(await buildPdf([A4, A4]), [-1, 0, 5], 90));
+      expect(out.getPages().map((p) => p.getRotation().angle)).toEqual([90, 0]);
     });
 
-    it("destroys the document after rotation", async () => {
-      await rotatePdfPages(fakePdfData, [0], 90);
-      expect(mockDocuments[0].destroy).toHaveBeenCalled();
+    it("repairs a /Rotate that is not a quarter turn rather than failing", async () => {
+      // PDF 32000-1 requires a multiple of 90 and pdf-lib refuses to write
+      // anything else, so a malformed 45 has to be snapped — the alternative
+      // is throwing away the whole operation over one bad page.
+      const out = await open(await rotatePdfPages(await buildRotatedPdf(45), [0], 90));
+      expect(out.getPage(0).getRotation().angle % 90).toBe(0);
+      expect(out.getPage(0).getRotation().angle).toBe(180);
     });
 
-    it("saves with compress option", async () => {
-      await rotatePdfPages(fakePdfData, [0], 90);
-      expect(mockDocuments[0].saveToBuffer).toHaveBeenCalledWith("compress");
-    });
+    it("leaves the document's own metadata alone", async () => {
+      // An in-place edit must not silently restamp /Producer with pdf-lib's
+      // own name, which is what loading with the default options would do.
+      const created = new Date(Date.UTC(2011, 1, 2, 3, 4, 5));
+      const source = await buildPdf([A4], { producer: "Original Producer", creationDate: created });
 
-    it("handles rotating all pages", async () => {
-      await rotatePdfPages(fakePdfData, [0, 1, 2], 90);
-      const doc = mockDocuments[0];
-      expect(doc.findPage).toHaveBeenCalledTimes(3);
+      const out = await open(await rotatePdfPages(source, [0], 90));
+
+      expect(out.getProducer()).toBe("Original Producer");
+      expect(out.getCreationDate()?.toISOString()).toBe(created.toISOString());
     });
   });
 
   // ── reorderPdfPages ───────────────────────────────────────────
 
   describe("reorderPdfPages", () => {
-    it("reorders pages according to newOrder", async () => {
-      await reorderPdfPages(fakePdfData, [2, 0, 1]);
-      const outDoc = mockDocuments[1];
-      const graftMap = outDoc.newGraftMap.mock.results[0].value;
-      expect(graftMap.graftPage).toHaveBeenCalledTimes(3);
-      expect(graftMap.graftPage).toHaveBeenCalledWith(0, mockDocuments[0], 2);
-      expect(graftMap.graftPage).toHaveBeenCalledWith(1, mockDocuments[0], 0);
-      expect(graftMap.graftPage).toHaveBeenCalledWith(2, mockDocuments[0], 1);
+    it("puts the source page named at each slot into that slot", async () => {
+      const source = await buildPdf([
+        [100, 100],
+        [200, 200],
+        [300, 300],
+      ]);
+
+      const out = await open(await reorderPdfPages(source, [2, 0, 1]));
+
+      expect(out.getPages().map((p) => Math.round(p.getWidth()))).toEqual([300, 100, 200]);
     });
 
-    it("handles identity reorder (no change)", async () => {
-      await reorderPdfPages(fakePdfData, [0, 1, 2]);
-      const outDoc = mockDocuments[1];
-      const graftMap = outDoc.newGraftMap.mock.results[0].value;
-      expect(graftMap.graftPage).toHaveBeenCalledWith(0, mockDocuments[0], 0);
-      expect(graftMap.graftPage).toHaveBeenCalledWith(1, mockDocuments[0], 1);
-      expect(graftMap.graftPage).toHaveBeenCalledWith(2, mockDocuments[0], 2);
+    it("handles the identity permutation", async () => {
+      const source = await buildPdf([
+        [100, 100],
+        [200, 200],
+      ]);
+      const out = await open(await reorderPdfPages(source, [0, 1]));
+      expect(out.getPages().map((p) => Math.round(p.getWidth()))).toEqual([100, 200]);
     });
 
-    it("handles reverse order", async () => {
-      await reorderPdfPages(fakePdfData, [2, 1, 0]);
-      const outDoc = mockDocuments[1];
-      const graftMap = outDoc.newGraftMap.mock.results[0].value;
-      expect(graftMap.graftPage).toHaveBeenCalledWith(0, mockDocuments[0], 2);
-      expect(graftMap.graftPage).toHaveBeenCalledWith(1, mockDocuments[0], 1);
-      expect(graftMap.graftPage).toHaveBeenCalledWith(2, mockDocuments[0], 0);
-    });
-
-    it("copies the source /Info onto the reordered document", async () => {
-      await reorderPdfPages(fakePdfData, [0, 1, 2]);
-      const src = mockDocuments[0];
-      const outDoc = mockDocuments[1];
-      expect(outDoc._trailer.put).toHaveBeenCalledWith("Info", src._info);
-    });
-
-    it("destroys both source and output documents", async () => {
-      await reorderPdfPages(fakePdfData, [0, 1, 2]);
-      expect(mockDocuments[0].destroy).toHaveBeenCalled();
-      expect(mockDocuments[1].destroy).toHaveBeenCalled();
-    });
-
-    it("saves with compress option", async () => {
-      await reorderPdfPages(fakePdfData, [0]);
-      const outDoc = mockDocuments[1];
-      expect(outDoc.saveToBuffer).toHaveBeenCalledWith("compress");
+    it("keeps the document title and author", async () => {
+      const source = await buildPdf([A4, A4], { title: "Deck", author: "Author" });
+      const out = await open(await reorderPdfPages(source, [1, 0]));
+      expect(out.getTitle()).toBe("Deck");
+      expect(out.getAuthor()).toBe("Author");
     });
   });
 
   // ── addPageNumbers ────────────────────────────────────────────
 
   describe("addPageNumbers", () => {
-    it("adds page numbers starting at 1 by default", async () => {
-      const result = await addPageNumbers(fakePdfData, "bottom-center");
-      expect(result).toBeInstanceOf(Uint8Array);
-      const doc = mockDocuments[0];
-      expect(doc.addStream).toHaveBeenCalledTimes(3);
+    it("stamps inside a MediaBox written with reversed corners", async () => {
+      /*
+        PDF 32000-1 7.9.5 lets a rectangle be given with EITHER pair of
+        opposite corners, so [0 792 612 0] is a legal spelling of US Letter and
+        readers must normalise it. pdf-lib reports the raw numbers, which makes
+        the height negative; without normalising, bottom-center landed at
+        y = 792 + 20 — twenty points above the top of the page, invisible.
+      */
+      const doc = await PDFDocument.create({ updateMetadata: false });
+      const page = doc.addPage([612, 792]);
+      page.node.set(
+        PDFName.of("MediaBox"),
+        doc.context.obj([0, 792, 612, 0]),
+      );
+
+      const out = await addPageNumbers(await doc.save(), "bottom-center", 1);
+
+      const content = await pageContent(out, 0);
+      const td = content.match(/([\d.]+) ([\d.]+) Td/);
+      expect(td).not.toBeNull();
+      const [, x, y] = td!;
+      // Inside the page, not above it.
+      expect(Number(y)).toBeGreaterThanOrEqual(0);
+      expect(Number(y)).toBeLessThan(792);
+      expect(Number(x)).toBeGreaterThan(0);
+      expect(Number(x)).toBeLessThan(612);
     });
 
-    it("uses custom start number", async () => {
-      await addPageNumbers(fakePdfData, "bottom-center", 5);
-      const doc = mockDocuments[0];
-      expect((doc.addStream.mock.calls[0][0] as string)).toContain("(5)");
-      expect((doc.addStream.mock.calls[1][0] as string)).toContain("(6)");
-      expect((doc.addStream.mock.calls[2][0] as string)).toContain("(7)");
+    it("stamps every page and keeps the page count", async () => {
+      const out = await addPageNumbers(await buildPdf([A4, A4, A4]));
+      const doc = await open(out);
+      expect(doc.getPageCount()).toBe(3);
+      for (let i = 0; i < 3; i++) {
+        expect(await pageContent(out, i)).toMatch(/Tj/);
+      }
     });
 
-    it("positions numbers at bottom-left", async () => {
-      await addPageNumbers(fakePdfData, "bottom-left");
-      const doc = mockDocuments[0];
-      const stream = doc.addStream.mock.calls[0][0] as string;
-      expect(stream).toContain("40 20 Td");
+    it("grows the checked-in sample, because stamping adds a font and content", async () => {
+      // Mirrors the e2e assertion on the same fixture: a "numbered" file that
+      // came back the same size would mean nothing was written.
+      const source = new Uint8Array(
+        readFileSync(resolve(process.cwd(), "src/__tests__/fixtures/samples", "sample-doc.pdf")),
+      );
+      const out = await addPageNumbers(source);
+      expect(out.length).toBeGreaterThan(source.length);
+      expect((await open(out)).getPageCount()).toBe(5);
     });
 
-    it("positions numbers at top-center", async () => {
-      await addPageNumbers(fakePdfData, "top-center");
-      const doc = mockDocuments[0];
-      const stream = doc.addStream.mock.calls[0][0] as string;
-      expect(stream).toContain("812 Td");
+    it("numbers from 1 by default", async () => {
+      const out = await addPageNumbers(await buildPdf([A4, A4]));
+      // showText writes the font's encoding of the string, which for the
+      // standard-14 Helvetica is a hex literal: "1" is <31>, "2" is <32>.
+      expect(await pageContent(out, 0)).toContain("<31> Tj");
+      expect(await pageContent(out, 1)).toContain("<32> Tj");
     });
 
-    it("positions numbers at bottom-right", async () => {
-      await addPageNumbers(fakePdfData, "bottom-right");
-      const doc = mockDocuments[0];
-      const stream = doc.addStream.mock.calls[0][0] as string;
-      expect(stream).toContain("20 Td");
+    it("honours a custom start number", async () => {
+      const out = await addPageNumbers(await buildPdf([A4, A4]), "bottom-center", 7);
+      expect(await pageContent(out, 0)).toContain("<37> Tj");
+      expect(await pageContent(out, 1)).toContain("<38> Tj");
     });
 
-    it("positions numbers at top-left", async () => {
-      await addPageNumbers(fakePdfData, "top-left");
-      const doc = mockDocuments[0];
-      const stream = doc.addStream.mock.calls[0][0] as string;
-      expect(stream).toContain("40");
-      expect(stream).toContain("812 Td");
+    it("sets the number in 10-point Helvetica", async () => {
+      // faqs.ts promises "plain numerals set in 10-point Helvetica" — the
+      // font size lives in the Tf operator and the face in the page's /Font.
+      const out = await addPageNumbers(await buildPdf([A4]));
+      expect(await pageContent(out, 0)).toContain("/PgNum 10 Tf");
+
+      const doc = await open(out);
+      const resources = doc.context.lookup(
+        doc.getPage(0).node.get(PDFName.of("Resources")),
+      ) as PDFDict;
+      const fonts = doc.context.lookup(resources.get(PDFName.of("Font"))) as PDFDict;
+      const font = doc.context.lookup(fonts.get(PDFName.of("PgNum"))) as PDFDict;
+      expect((font.get(PDFName.of("BaseFont")) as PDFName).asString()).toBe("/Helvetica");
     });
 
-    it("positions numbers at top-right", async () => {
-      await addPageNumbers(fakePdfData, "top-right");
-      const doc = mockDocuments[0];
-      const stream = doc.addStream.mock.calls[0][0] as string;
-      expect(stream).toContain("812 Td");
-    });
+    const POSITIONS: [Parameters<typeof addPageNumbers>[1], RegExp][] = [
+      // 40 points in from the sides, 20 up from the bottom or 30 down from the
+      // top — the constants faqs.ts quotes. The centred x is (595 − 5.56) / 2.
+      ["bottom-left", /(^|\s)40 20 Td/],
+      ["bottom-center", /294\.\d+ 20 Td/],
+      ["bottom-right", /549\.\d+ 20 Td/],
+      ["top-left", /(^|\s)40 812 Td/],
+      ["top-center", /294\.\d+ 812 Td/],
+      ["top-right", /549\.\d+ 812 Td/],
+    ];
 
-    it("positions numbers at bottom-center", async () => {
-      await addPageNumbers(fakePdfData, "bottom-center");
-      const doc = mockDocuments[0];
-      const stream = doc.addStream.mock.calls[0][0] as string;
-      expect(stream).toContain("20 Td");
-    });
-
-    it("destroys every Page it loads", async () => {
-      // The loop only needs getBounds()'s number[], but the Page behind it is
-      // a WASM allocation the JS GC never reclaims. Leaving it undestroyed
-      // grew the MuPDF heap by one live Page per page of the document.
-      const mupdf = await import("mupdf");
-      vi.mocked(mupdf.PDFDocument).mockImplementationOnce(function () {
-        const doc = createMockDocument(40);
-        mockDocuments.push(doc);
-        return doc as never;
+    for (const [position, expected] of POSITIONS) {
+      it(`places the number for ${position}`, async () => {
+        const out = await addPageNumbers(await buildPdf([A4]), position);
+        expect(await pageContent(out, 0)).toMatch(expected);
       });
+    }
 
-      await addPageNumbers(fakePdfData, "bottom-center");
-
-      const loaded = mockDocuments[0]._loadedPages;
-      expect(loaded).toHaveLength(40);
-      for (const page of loaded) expect(page.destroy).toHaveBeenCalledTimes(1);
+    it("emits no transformation matrix on an unrotated page", async () => {
+      const content = await pageContent(await addPageNumbers(await buildPdf([A4])), 0);
+      // pdf-lib's own q/Q wrapper streams contain no operators at all, so the
+      // absence of a cm here really is the absence of a compensation matrix.
+      expect(content).not.toContain(" cm");
     });
 
-    it("counter-rotates the stamp on a rotated page", async () => {
-      // loadPage().getBounds() is the VISUAL rect (/Rotate applied) but the
-      // stream is appended to UNROTATED content space. Without the inverse
-      // matrix the number landed off the media box and drawn sideways.
-      const mupdf = await import("mupdf");
-      vi.mocked(mupdf.PDFDocument).mockImplementationOnce(function () {
-        const doc = createMockDocument(1);
-        // A 595x842 page carrying /Rotate 90 displays as 842x595.
-        doc.loadPage = vi.fn().mockImplementation(() => {
-          const page = {
-            getBounds: vi.fn().mockReturnValue([0, 0, 842, 595]),
-            destroy: vi.fn(),
-          };
-          doc._loadedPages.push(page);
-          return page;
-        });
-        doc._pages[0].get = vi.fn().mockImplementation((key: string) => {
-          if (key === "Rotate")
-            return createMockPdfObj({ asNumber: vi.fn().mockReturnValue(90) });
-          if (key === "Resources")
-            return createMockPdfObj({ isNull: vi.fn().mockReturnValue(true) });
-          if (key === "Contents")
-            return createMockPdfObj({ isNull: vi.fn().mockReturnValue(true) });
-          return createMockPdfObj();
-        });
-        mockDocuments.push(doc);
-        return doc as never;
-      });
-
-      await addPageNumbers(fakePdfData, "bottom-center");
-      const stream = mockDocuments[0].addStream.mock.calls[0][0] as string;
-      // w = the UNROTATED width (595), i.e. the visual height.
-      expect(stream).toContain("0 1 -1 0 595 0 cm");
-      // Still centred in the visual frame: (842 - textWidth) / 2.
-      expect(stream).toContain("418.5 20 Td");
+    /*
+      The counter-rotation contract. MuPDF handed back the visual rectangle;
+      pdf-lib reports the unrotated media box, so the engine derives the visual
+      frame itself and then inverts the display rotation to get back into the
+      page's own content space. Without the matrix a number on a /Rotate 90 A4
+      page was centred on 842 inside a 595-wide box and drawn sideways off the
+      edge. Each case pins both halves: the matrix, and the placement that only
+      makes sense inside it.
+    */
+    it("counter-rotates the stamp on a /Rotate 90 page", async () => {
+      const content = await pageContent(await addPageNumbers(await buildRotatedPdf(90)), 0);
+      expect(content).toContain("0 1 -1 0 595 0 cm");
+      expect(content).toMatch(/418\.\d+ 20 Td/);
     });
 
-    it("emits no matrix for an unrotated page", async () => {
-      await addPageNumbers(fakePdfData, "bottom-center");
-      const stream = mockDocuments[0].addStream.mock.calls[0][0] as string;
-      expect(stream).not.toContain("cm");
-      expect(stream).toMatch(/^q BT /);
+    it("counter-rotates the stamp on a /Rotate 180 page", async () => {
+      const content = await pageContent(await addPageNumbers(await buildRotatedPdf(180)), 0);
+      expect(content).toContain("-1 0 0 -1 595 842 cm");
+      expect(content).toMatch(/294\.\d+ 20 Td/);
     });
 
-    it("creates a Helvetica font", async () => {
-      const mupdf = await import("mupdf");
-      await addPageNumbers(fakePdfData, "bottom-center");
-      expect(mupdf.Font).toHaveBeenCalledWith("Helvetica");
+    it("counter-rotates the stamp on a /Rotate 270 page", async () => {
+      const content = await pageContent(await addPageNumbers(await buildRotatedPdf(270)), 0);
+      expect(content).toContain("0 -1 1 0 0 842 cm");
+      expect(content).toMatch(/418\.\d+ 20 Td/);
     });
 
-    it("adds font to page Resources via addSimpleFont", async () => {
-      await addPageNumbers(fakePdfData, "bottom-center");
-      const doc = mockDocuments[0];
-      expect(doc.addSimpleFont).toHaveBeenCalled();
+    it("counter-rotates against an INHERITED /Rotate", async () => {
+      const content = await pageContent(
+        await addPageNumbers(await buildInheritedRotatePdf(90, 1)),
+        0,
+      );
+      expect(content).toContain("0 1 -1 0 595 0 cm");
     });
 
-    it("destroys the document after processing", async () => {
-      await addPageNumbers(fakePdfData, "bottom-center");
-      expect(mockDocuments[0].destroy).toHaveBeenCalled();
+    it("keeps the whole stamp inside its own graphics state", async () => {
+      // An unbalanced q/Q would leak the compensation matrix into anything the
+      // page drew after it.
+      const content = await pageContent(await addPageNumbers(await buildRotatedPdf(90)), 0);
+      const stamp = content.slice(content.indexOf("0 1 -1 0 595 0 cm"));
+      expect(stamp.trim().endsWith("Q")).toBe(true);
     });
 
-    it("generates correct PDF content stream syntax", async () => {
-      await addPageNumbers(fakePdfData, "bottom-center", 1);
-      const doc = mockDocuments[0];
-      const stream = doc.addStream.mock.calls[0][0] as string;
-      expect(stream).toMatch(/^q BT \/Fn 10 Tf .+ Td \(1\) Tj ET Q$/);
-    });
+    it("does not shadow a page's inherited /Resources", async () => {
+      /*
+        /Resources is inheritable too. Attaching a fresh dictionary to a page
+        that was inheriting its fonts and XObjects hides every one of them and
+        renders the page blank. pdf-lib's normalize() resolves the inherited
+        dictionary onto the page before adding to it — this is the test that
+        says so out loud, because the hand-rolled code that used to do it here
+        was deleted rather than ported.
+      */
+      const doc = await PDFDocument.create({ updateMetadata: false });
+      const courier = await doc.embedFont(StandardFonts.Courier);
+      doc.addPage(A4).drawText("original text", { x: 10, y: 10, size: 8, font: courier });
+      const hoistable = await open(await doc.save());
+      const leaf = hoistable.getPage(0).node;
+      const resources = leaf.get(PDFName.of("Resources"))!;
+      const pagesDict = hoistable.context.lookup(
+        hoistable.catalog.get(PDFName.of("Pages")),
+      ) as PDFDict;
+      pagesDict.set(PDFName.of("Resources"), resources);
+      leaf.delete(PDFName.of("Resources"));
 
-    it("saves with compress option", async () => {
-      await addPageNumbers(fakePdfData, "bottom-center");
-      expect(mockDocuments[0].saveToBuffer).toHaveBeenCalledWith("compress");
+      const out = await addPageNumbers(await hoistable.save());
+
+      const result = await open(out);
+      const pageResources = result.context.lookup(
+        result.getPage(0).node.get(PDFName.of("Resources")),
+      ) as PDFDict;
+      const fonts = result.context.lookup(pageResources.get(PDFName.of("Font"))) as PDFDict;
+      const keys = fonts.keys().map((k) => k.asString());
+      expect(keys).toContain("/PgNum");
+      expect(keys.some((k) => k.startsWith("/Courier"))).toBe(true);
+      // And the page's original drawing survives alongside the stamp.
+      expect(await pageContent(out, 0)).toContain("Tj");
     });
   });
 
   // ── imagesToPdf ───────────────────────────────────────────────
 
   describe("imagesToPdf", () => {
-    it("creates a PDF from PNG images", async () => {
-      const images = [{ bytes: new Uint8Array([1, 2, 3]), type: "image/png" }];
-      const result = await imagesToPdf(images, "a4");
-      expect(result).toBeInstanceOf(Uint8Array);
-      expect(mockPdfDoc.embedPng).toHaveBeenCalledWith(images[0].bytes);
-      expect(mockPdfDoc.addPage).toHaveBeenCalled();
-    });
-
-    it("creates a PDF from JPEG images", async () => {
-      const images = [{ bytes: new Uint8Array([0xFF, 0xD8]), type: "image/jpeg" }];
-      await imagesToPdf(images, "a4");
-      expect(mockPdfDoc.embedJpg).toHaveBeenCalledWith(images[0].bytes);
-    });
-
-    it("handles mixed PNG and JPEG image types", async () => {
-      const images = [
-        { bytes: new Uint8Array([1]), type: "image/png" },
-        { bytes: new Uint8Array([2]), type: "image/jpeg" },
-      ];
-      await imagesToPdf(images, "a4");
-      expect(mockPdfDoc.embedPng).toHaveBeenCalledTimes(1);
-      expect(mockPdfDoc.embedJpg).toHaveBeenCalledTimes(1);
-      expect(mockPdfDoc.addPage).toHaveBeenCalledTimes(2);
-    });
-
-    it("uses A4 page dimensions (595.28 x 841.89)", async () => {
-      const images = [{ bytes: new Uint8Array([1]), type: "image/png" }];
-      await imagesToPdf(images, "a4");
-      expect(mockPdfDoc.addPage).toHaveBeenCalledWith([595.28, 841.89]);
-    });
-
-    it("uses letter page dimensions (612 x 792)", async () => {
-      const images = [{ bytes: new Uint8Array([1]), type: "image/png" }];
-      await imagesToPdf(images, "letter");
-      expect(mockPdfDoc.addPage).toHaveBeenCalledWith([612, 792]);
-    });
-
-    it("uses image dimensions for 'fit' page size", async () => {
-      const images = [{ bytes: new Uint8Array([1]), type: "image/png" }];
-      await imagesToPdf(images, "fit");
-      expect(mockPdfDoc.addPage).toHaveBeenCalledWith([200, 150]);
-    });
-
-    it("draws image at full size for 'fit' page size", async () => {
-      const images = [{ bytes: new Uint8Array([1]), type: "image/png" }];
-      await imagesToPdf(images, "fit");
-      expect(mockPdfPage.drawImage).toHaveBeenCalledWith(mockEmbedded, {
-        x: 0,
-        y: 0,
-        width: 200,
-        height: 150,
-      });
-    });
-
-    it("centers and scales image within page margins for fixed page sizes", async () => {
-      const images = [{ bytes: new Uint8Array([1]), type: "image/png" }];
-      await imagesToPdf(images, "a4");
-      expect(mockPdfPage.drawImage).toHaveBeenCalledWith(
-        mockEmbedded,
-        expect.objectContaining({ width: 200, height: 150 }),
+    it("makes one page per image", async () => {
+      const doc = await open(
+        await imagesToPdf([
+          { bytes: PNG_2X2, type: "image/png" },
+          { bytes: SAMPLE_JPEG, type: "image/jpeg" },
+          { bytes: PNG_2X2, type: "image/png" },
+        ]),
       );
+      expect(doc.getPageCount()).toBe(3);
     });
 
-    it("scales down images larger than page margins", async () => {
-      mockEmbedded.scale.mockReturnValue({ width: 2000, height: 1500 });
-      const images = [{ bytes: new Uint8Array([1]), type: "image/png" }];
-      await imagesToPdf(images, "a4");
-      expect(mockPdfPage.drawImage).toHaveBeenCalledWith(
-        mockEmbedded,
-        expect.objectContaining({
-          width: expect.closeTo(515.28, 0),
-          height: expect.closeTo(386.46, 0),
-        }),
+    it("defaults to A4 (595.28 × 841.89)", async () => {
+      const doc = await open(await imagesToPdf([{ bytes: PNG_2X2, type: "image/png" }]));
+      const page = doc.getPage(0);
+      expect(page.getWidth()).toBeCloseTo(595.28, 2);
+      expect(page.getHeight()).toBeCloseTo(841.89, 2);
+    });
+
+    it("uses US Letter (612 × 792) when asked", async () => {
+      const doc = await open(
+        await imagesToPdf([{ bytes: PNG_2X2, type: "image/png" }], "letter"),
       );
+      expect(doc.getPage(0).getWidth()).toBe(612);
+      expect(doc.getPage(0).getHeight()).toBe(792);
     });
 
-    it("handles empty images array", async () => {
-      const result = await imagesToPdf([], "a4");
-      expect(result).toBeInstanceOf(Uint8Array);
-      expect(mockPdfDoc.addPage).not.toHaveBeenCalled();
+    it("uses the image's own pixel dimensions for 'fit'", async () => {
+      const doc = await open(
+        await imagesToPdf([{ bytes: SAMPLE_JPEG, type: "image/jpeg" }], "fit"),
+      );
+      expect(doc.getPage(0).getWidth()).toBe(800);
+      expect(doc.getPage(0).getHeight()).toBe(600);
     });
 
-    it("calls save on the PDF document", async () => {
-      const images = [{ bytes: new Uint8Array([1]), type: "image/png" }];
-      await imagesToPdf(images, "a4");
-      expect(mockPdfDoc.save).toHaveBeenCalled();
-    });
-
-    it("defaults to A4 page size when not specified", async () => {
-      const images = [{ bytes: new Uint8Array([1]), type: "image/png" }];
-      await imagesToPdf(images);
-      expect(mockPdfDoc.addPage).toHaveBeenCalledWith([595.28, 841.89]);
-    });
-
-    it("treats non-PNG types as JPEG", async () => {
-      const images = [{ bytes: new Uint8Array([1]), type: "image/webp" }];
-      await imagesToPdf(images, "a4");
-      expect(mockPdfDoc.embedJpg).toHaveBeenCalled();
-      expect(mockPdfDoc.embedPng).not.toHaveBeenCalled();
+    it("treats any non-PNG type as JPEG bytes", async () => {
+      // images-to-pdf-prep.ts hands the engine exactly two byte formats and
+      // relies on this fallthrough for the second one; a type it has never
+      // heard of must still reach embedJpg rather than embedPng.
+      const doc = await open(
+        await imagesToPdf([{ bytes: SAMPLE_JPEG, type: "image/tiff" }], "fit"),
+      );
+      expect(doc.getPage(0).getWidth()).toBe(800);
     });
   });
 
   // ── compressPdf ───────────────────────────────────────────────
 
+  /**
+   * Register `count` unreferenced streams that nothing in the document points
+   * at. The fill is deliberately noisy: a run of identical bytes deflates to
+   * almost nothing, which would make the orphans free and the size assertion
+   * below meaningless.
+   */
+  function addOrphans(doc: PDFDocument, count: number, size = 20_000) {
+    for (let i = 0; i < count; i++) {
+      const junk = new Uint8Array(size).map((_, j) => (j * 2654435761 + i * 40503) % 251);
+      doc.context.register(doc.context.flateStream(junk));
+    }
+  }
+
   describe("compressPdf", () => {
-    it("compresses a PDF with compress,garbage options", async () => {
-      const result = await compressPdf(fakePdfData);
-      expect(result).toBeInstanceOf(Uint8Array);
-      expect(mockDocuments[0].saveToBuffer).toHaveBeenCalledWith("compress,garbage");
+    it("drops objects nothing references any more", async () => {
+      const doc = await PDFDocument.create({ updateMetadata: false });
+      const font = await doc.embedFont(StandardFonts.Helvetica);
+      for (let i = 0; i < 3; i++) {
+        doc.addPage([300, 300]).drawText(`page ${i}`, { x: 20, y: 20, size: 12, font });
+      }
+      addOrphans(doc, 6);
+      const source = await doc.save();
+
+      const out = await compressPdf(source);
+
+      expect(out.length).toBeLessThan(source.length / 2);
+      expect((await open(out)).getPageCount()).toBe(3);
     });
 
-    it("destroys the document after compression", async () => {
-      await compressPdf(fakePdfData);
-      expect(mockDocuments[0].destroy).toHaveBeenCalled();
+    /*
+      Rebuild a document the way a producer that never compresses anything
+      emits one: every /FlateDecode stream inflated back out and its filter
+      dropped. This is the case pdf-lib alone cannot help with — it writes a
+      stream it did not create back exactly as it found it — and the reason
+      compressPdf runs its own deflate pass.
+    */
+    async function withUncompressedStreams(bytes: Uint8Array): Promise<Uint8Array> {
+      const doc = await PDFDocument.load(bytes, { updateMetadata: false });
+      for (const [ref, obj] of doc.context.enumerateIndirectObjects()) {
+        if (!(obj instanceof PDFRawStream)) continue;
+        if (obj.dict.get(PDFName.of("Filter")) !== PDFName.of("FlateDecode")) continue;
+        const raw = new Uint8Array(inflateSync(Buffer.from(obj.contents)));
+        obj.dict.delete(PDFName.of("Filter"));
+        obj.dict.set(PDFName.of("Length"), doc.context.obj(raw.length));
+        doc.context.assign(ref, PDFRawStream.of(obj.dict, raw));
+      }
+      return doc.save({ useObjectStreams: false });
+    }
+
+    it("deflates the streams that arrived with no filter", async () => {
+      const doc = await PDFDocument.create({ updateMetadata: false });
+      const font = await doc.embedFont(StandardFonts.Helvetica);
+      for (let page = 0; page < 4; page++) {
+        const p = doc.addPage([595, 842]);
+        p.drawText(`marker ${page}`, { x: 60, y: 700, size: 18, font });
+        for (let i = 0; i < 600; i++) {
+          p.drawLine({
+            start: { x: (i * 7) % 560, y: (i * 13) % 600 },
+            end: { x: ((i * 7) % 560) + 18, y: ((i * 13) % 600) + 12 },
+            thickness: 0.4,
+          });
+        }
+      }
+      const source = await withUncompressedStreams(await doc.save({ useObjectStreams: false }));
+
+      const out = await compressPdf(source);
+
+      // A plain re-save leaves these streams alone and saves almost nothing;
+      // the deflate pass is what makes this a real reduction.
+      expect(out.length).toBeLessThan(source.length / 2);
+      const result = await open(out);
+      expect(result.getPageCount()).toBe(4);
+      // and the deflated bytes are still readable content, not just smaller
+      expect(await pageContent(out, 3)).toContain("Tj");
+    });
+
+    it("leaves a stream carrying stale /DecodeParms alone", async () => {
+      /*
+        /DecodeParms with no /Filter is inert — nothing to parameterise — so
+        readers ignore it. Writing /FlateDecode beside it would bring it back to
+        life and apply a PNG predictor to bytes that were never predictor-coded.
+        Verified against pdfjs before this guard existed: the image failed to
+        decode ("Unsupported predictor") and was dropped from the page, under a
+        tool that promises the pixels come out byte for byte identical.
+      */
+      const doc = await PDFDocument.create({ updateMetadata: false });
+      const page = doc.addPage([200, 200]);
+      const raw = new Uint8Array(5000).fill(0x41);
+      const dict = doc.context.obj({
+        Type: "XObject",
+        Subtype: "Image",
+        Width: 5,
+        Height: 40,
+        ColorSpace: "DeviceGray",
+        BitsPerComponent: 8,
+        DecodeParms: { Predictor: 12, Columns: 5, Colors: 1, BitsPerComponent: 8 },
+      });
+      const ref = doc.context.register(PDFRawStream.of(dict, raw));
+      page.node.setXObject(PDFName.of("Im0"), ref);
+
+      const out = await compressPdf(await doc.save());
+
+      const result = await open(out);
+      const xobjects = result
+        .getPage(0)
+        .node.Resources()
+        ?.lookup(PDFName.of("XObject"), PDFDict);
+      const image = result.context.lookup(
+        xobjects?.get(PDFName.of("Im0")),
+      ) as PDFRawStream;
+      expect(image.dict.get(PDFName.of("Filter"))).toBeUndefined();
+      expect(Array.from(image.contents)).toEqual(Array.from(raw));
+    });
+
+    it("leaves a stream that already declares a filter alone", async () => {
+      // Re-deflating compressed bytes costs time to gain nothing, and a
+      // filter we do not understand must not be reinterpreted at all.
+      const doc = await PDFDocument.create({ updateMetadata: false });
+      doc.addPage([200, 200]);
+      const jpegish = new Uint8Array(4096).map((_, i) => (i * 2654435761) % 251);
+      const dict = doc.context.obj({ Type: "XObject", Subtype: "Image", Filter: "DCTDecode" });
+      const ref = doc.context.register(PDFRawStream.of(dict, jpegish));
+      doc.catalog.set(PDFName.of("TestImage"), ref);
+
+      const out = await compressPdf(await doc.save());
+
+      const result = await open(out);
+      const kept = result.context.lookup(result.catalog.get(PDFName.of("TestImage")));
+      expect(kept).toBeInstanceOf(PDFRawStream);
+      expect((kept as PDFRawStream).dict.get(PDFName.of("Filter"))).toBe(PDFName.of("DCTDecode"));
+      expect(Array.from((kept as PDFRawStream).contents)).toEqual(Array.from(jpegish));
+    });
+
+    it("does not grow a document that is already packed this way", async () => {
+      // The tool's promise is "smaller or unchanged"; a compressor that
+      // reliably added bytes would be the opposite of what it says it is.
+      // CompressPdfUI ships the original when the rewrite does not pay, and
+      // this keeps the engine's own output from making that the normal case.
+      const source = new Uint8Array(
+        readFileSync(resolve(process.cwd(), "src/__tests__/fixtures/samples", "sample-doc.pdf")),
+      );
+      const out = await compressPdf(source);
+      expect(out.length).toBeLessThanOrEqual(source.length);
+      expect((await open(out)).getPageCount()).toBe((await open(source)).getPageCount());
+    });
+
+    it("keeps interactive form fields and their values", async () => {
+      const doc = await PDFDocument.create({ updateMetadata: false });
+      const page = doc.addPage([400, 400]);
+      const form = doc.getForm();
+      const text = form.createTextField("contact.name");
+      text.setText("Ada Lovelace");
+      text.addToPage(page, { x: 20, y: 300, width: 200, height: 20 });
+      const check = form.createCheckBox("contact.subscribed");
+      check.check();
+      check.addToPage(page, { x: 20, y: 260, width: 15, height: 15 });
+      addOrphans(doc, 2);
+
+      const out = await compressPdf(await doc.save());
+
+      const result = await open(out);
+      const resultForm = result.getForm();
+      expect(resultForm.getFields().map((f) => f.getName()).sort()).toEqual([
+        "contact.name",
+        "contact.subscribed",
+      ]);
+      expect(resultForm.getTextField("contact.name").getText()).toBe("Ada Lovelace");
+      expect(resultForm.getCheckBox("contact.subscribed").isChecked()).toBe(true);
+    });
+
+    it("keeps the outline tree, page labels and named destinations", async () => {
+      const doc = await PDFDocument.create({ updateMetadata: false });
+      doc.addPage([400, 400]);
+      const target = doc.addPage([400, 400]);
+      const ctx = doc.context;
+
+      const outlinesRef = PDFRef.of(ctx.largestObjectNumber + 1);
+      const itemRef = PDFRef.of(ctx.largestObjectNumber + 2);
+      ctx.assign(
+        itemRef,
+        ctx.obj({
+          Title: PDFString.of("Chapter One"),
+          Parent: outlinesRef,
+          Dest: ctx.obj([target.ref, PDFName.of("Fit")]),
+        }),
+      );
+      ctx.assign(
+        outlinesRef,
+        ctx.obj({ Type: PDFName.of("Outlines"), First: itemRef, Last: itemRef, Count: 1 }),
+      );
+      doc.catalog.set(PDFName.of("Outlines"), outlinesRef);
+
+      const destRef = ctx.register(ctx.obj({ D: ctx.obj([target.ref, PDFName.of("Fit")]) }));
+      doc.catalog.set(
+        PDFName.of("Names"),
+        ctx.register(
+          ctx.obj({ Dests: ctx.obj({ Names: ctx.obj([PDFString.of("intro"), destRef]) }) }),
+        ),
+      );
+      doc.catalog.set(
+        PDFName.of("PageLabels"),
+        ctx.obj({ Nums: ctx.obj([0, ctx.obj({ S: PDFName.of("r") })]) }),
+      );
+      addOrphans(doc, 3);
+
+      const result = await open(await compressPdf(await doc.save()));
+      const ctx2 = result.context;
+
+      const outlines = ctx2.lookup(result.catalog.get(PDFName.of("Outlines"))) as PDFDict;
+      const first = ctx2.lookup(outlines.get(PDFName.of("First"))) as PDFDict;
+      expect((first.get(PDFName.of("Title")) as PDFString).decodeText()).toBe("Chapter One");
+
+      const names = ctx2.lookup(result.catalog.get(PDFName.of("Names"))) as PDFDict;
+      const dests = ctx2.lookup(names.get(PDFName.of("Dests"))) as PDFDict;
+      const list = ctx2.lookup(dests.get(PDFName.of("Names"))) as PDFArray;
+      expect((list.get(0) as PDFString).decodeText()).toBe("intro");
+
+      expect(result.catalog.get(PDFName.of("PageLabels"))).toBeDefined();
+    });
+
+    it("keeps page annotations", async () => {
+      const doc = await PDFDocument.create({ updateMetadata: false });
+      const page = doc.addPage([400, 400]);
+      const ctx = doc.context;
+      page.node.set(
+        PDFName.of("Annots"),
+        ctx.obj([
+          ctx.register(
+            ctx.obj({
+              Type: PDFName.of("Annot"),
+              Subtype: PDFName.of("Link"),
+              Rect: ctx.obj([10, 10, 100, 30]),
+              A: ctx.obj({
+                Type: PDFName.of("Action"),
+                S: PDFName.of("URI"),
+                URI: PDFString.of("https://transmute.tools"),
+              }),
+            }),
+          ),
+        ]),
+      );
+      addOrphans(doc, 2);
+
+      const result = await open(await compressPdf(await doc.save()));
+      const annots = result.context.lookup(
+        result.getPage(0).node.get(PDFName.of("Annots")),
+      ) as PDFArray;
+      expect(annots.size()).toBe(1);
+      const annot = result.context.lookup(annots.get(0)) as PDFDict;
+      const action = result.context.lookup(annot.get(PDFName.of("A"))) as PDFDict;
+      expect((action.get(PDFName.of("URI")) as PDFString).decodeText()).toBe(
+        "https://transmute.tools",
+      );
+    });
+
+    it("keeps the document's own metadata", async () => {
+      // tools.ts promises compression carries title and author through
+      // unchanged; the sweep must not treat /Info as unreachable, and the load
+      // must not restamp it.
+      const created = new Date(Date.UTC(2020, 2, 3, 4, 5, 6));
+      const source = await buildPdf([A4, A4], {
+        title: "Kept Title",
+        author: "Kept Author",
+        producer: "Kept Producer",
+        creationDate: created,
+      });
+
+      const result = await open(await compressPdf(source));
+
+      expect(result.getTitle()).toBe("Kept Title");
+      expect(result.getAuthor()).toBe("Kept Author");
+      expect(result.getProducer()).toBe("Kept Producer");
+      expect(result.getCreationDate()?.toISOString()).toBe(created.toISOString());
     });
 
     it("accepts ArrayBuffer input", async () => {
-      const result = await compressPdf(fakePdfData.buffer.slice(0));
-      expect(result).toBeInstanceOf(Uint8Array);
-    });
-
-    it("returns a Uint8Array result", async () => {
-      const result = await compressPdf(fakePdfData);
-      expect(result).toBeInstanceOf(Uint8Array);
-      expect(result.length).toBeGreaterThan(0);
+      const bytes = await buildPdf([A4]);
+      const out = await compressPdf(asArrayBuffer(bytes));
+      expect(out).toBeInstanceOf(Uint8Array);
+      expect((await open(out)).getPageCount()).toBe(1);
     });
   });
 
   // ── pdfToImages ───────────────────────────────────────────────
+
+  const fakePdfData = new Uint8Array([37, 80, 68, 70, 45, 49, 46, 52]); // %PDF-1.4
 
   describe("pdfToImages", () => {
     it("converts PDF pages to JPEG images by default", async () => {

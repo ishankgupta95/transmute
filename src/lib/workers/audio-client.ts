@@ -85,7 +85,10 @@ export async function encodeMp3(
     for (let ch = 0; ch < buffer.numberOfChannels; ch++) {
       channels.push(buffer.getChannelData(ch));
     }
-    return encodePcmToMp3(channels, buffer.sampleRate, bitrate);
+    // Awaited, not just returned: the encode is asynchronous now because
+    // lamejs is fetched from /vendor/ rather than bundled, and a rejection
+    // from that fetch should surface with this frame on the stack.
+    return await encodePcmToMp3(channels, buffer.sampleRate, bitrate);
   }
   return runEncode(buffer, (channels) => ({
     op: "mp3",

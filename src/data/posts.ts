@@ -170,7 +170,7 @@ export const posts: BlogPost[] = [
     description:
       "Most email providers cap attachments at 25 MB. Here are three browser-only ways to shrink a PDF: structural compression, image down-sampling, and page splitting.",
     indexBlurb:
-      "Object deduplication, image downsampling and page splitting, in the order worth trying.",
+      "Structural compression, image down-sampling and page splitting, in the order worth trying.",
     publishedAt: "2026-05-03",
     readingTime: 9,
     keywords: [

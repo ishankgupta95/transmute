@@ -28,7 +28,7 @@ const SECTIONS = [
   },
   {
     h: "External resources",
-    b: "The heavy WebAssembly engines some tools rely on — FFmpeg.wasm and MuPDF — are served from this site rather than a third-party CDN, so opening a video or PDF tool hands nobody else your IP address. Every font is self-hosted too, including the Markdown to PDF tool's print typefaces. Beyond the analytics described above, the site makes no third-party requests at all — and nothing it fetches ever carries your file data.",
+    b: "A few tools fetch a library the first time you use them, and every one of those files comes from this domain rather than a third-party CDN — so opening a tool hands nobody else your IP address. That list is the FFmpeg.wasm video engine, the MP3 encoder, and the HEIC decoder for iPhone photos. The PDF tools no longer pull a WebAssembly engine at all — the 10 MB one they used to download has been removed, and what replaced it is ordinary JavaScript that ships with the page. Every font is self-hosted too, including the Markdown to PDF tool's print typefaces. Beyond the analytics described above, the site makes no third-party requests at all — and nothing it fetches ever carries your file data.",
   },
   {
     h: "Children's privacy",

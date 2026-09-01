@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "copy:wasm": "cp node_modules/mupdf/dist/mupdf-wasm.wasm public/mupdf-wasm.wasm && cp node_modules/@ffmpeg/core/dist/umd/ffmpeg-core.js node_modules/@ffmpeg/core/dist/umd/ffmpeg-core.wasm public/ && node scripts/build-workers.mjs && mkdir -p public/fonts/print && cp node_modules/@fontsource-variable/newsreader/files/newsreader-latin-wght-normal.woff2 node_modules/@fontsource-variable/newsreader/files/newsreader-latin-wght-italic.woff2 node_modules/@fontsource-variable/outfit/files/outfit-latin-wght-normal.woff2 node_modules/@fontsource-variable/syne/files/syne-latin-wght-normal.woff2 node_modules/@fontsource-variable/jetbrains-mono/files/jetbrains-mono-latin-wght-normal.woff2 public/fonts/print/",
+    "copy:wasm": "cp node_modules/@ffmpeg/core/dist/umd/ffmpeg-core.js node_modules/@ffmpeg/core/dist/umd/ffmpeg-core.wasm public/ && mkdir -p public/vendor && cp node_modules/@breezystack/lamejs/dist/lamejs.js node_modules/heic2any/dist/heic2any.js public/vendor/ && node scripts/build-workers.mjs && mkdir -p public/fonts/print && cp node_modules/@fontsource-variable/newsreader/files/newsreader-latin-wght-normal.woff2 node_modules/@fontsource-variable/newsreader/files/newsreader-latin-wght-italic.woff2 node_modules/@fontsource-variable/outfit/files/outfit-latin-wght-normal.woff2 node_modules/@fontsource-variable/syne/files/syne-latin-wght-normal.woff2 node_modules/@fontsource-variable/jetbrains-mono/files/jetbrains-mono-latin-wght-normal.woff2 public/fonts/print/",
     "dev": "npm run copy:wasm && next dev",
     "build": "npm run copy:wasm && next build",
     "start": "next start",
@@ -41,7 +41,6 @@
     "lucide-react": "^1.7.0",
     "marked": "^17.0.5",
     "mp4-muxer": "^5.2.2",
-    "mupdf": "^1.27.0",
     "next": "16.2.2",
     "pdf-lib": "^1.17.1",
     "pdfjs-dist": "^5.6.205",

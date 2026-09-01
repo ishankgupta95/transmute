@@ -79,13 +79,14 @@ There are real limits. A truly honest description of browser-based tools needs t
 
 **Memory-bound operations on large files** can fail. A 4 GB video, a 1 GB PDF, a multi-million-row CSV — these can exceed what a browser tab can hold. Server-based tools can stream and process incrementally; browser-based tools need to fit everything in a single tab's memory.
 
-**CDN dependencies for one-time downloads.** Some browser-based tools need to download large WebAssembly modules from a CDN on first use. FFmpeg.wasm is ~25 MB; MuPDF is ~10 MB; the heic2any library is several MB. The download is a one-time event on first use; the browser caches it after that. But the act of downloading the module *does* mean that the CDN operator can see your IP and the fact that you used the tool. They cannot see what you're processing.
+**One-time engine downloads.** Some browser-based tools have to fetch a large WebAssembly module before they can do anything at all. An FFmpeg build runs to tens of megabytes; an image codec like the one that decodes iPhone HEIC runs to a few. The download happens once and the browser caches it after that. But where the module is fetched *from* matters: if it comes off a public CDN, that CDN's operator sees your IP address and the fact that you opened that particular tool. They cannot see what you are processing.
 
 The way browser-based tools handle this:
 
-- Module downloads are from public CDNs (unpkg, jsDelivr) where the same modules serve millions of users — you blend into a crowd
-- Modules are static assets, not endpoints that log which user requested them with file context
-- After cache, no further network requests are needed
+- Some serve the modules from public CDNs (unpkg, jsDelivr), where the same files serve millions of users and you blend into a crowd
+- Some — this site included — self-host every module, so the only machine that sees the request is the one already serving you the page
+- Either way, the modules are static assets, not endpoints that log which user asked for what alongside any file context
+- After the first fetch, the cache answers and no further request is made
 
 This is meaningfully better than a server-based tool that necessarily transmits your file content, but it's not zero-network. Honest descriptions should say so.
 
@@ -133,9 +134,9 @@ When you do reach for a server-based tool, do so with eyes open: this service wi
 
 ## Verifying Transmute itself
 
-The same Network-tab check applies to any tool on this site. Pick a tool — say, the [HEIC to JPG converter](/heic-to-jpg), the [PDF compressor](/compress-pdf), or the [JWT decoder](/jwt-decoder) — open DevTools, drop in a file, watch the network log. There should be no upload request during the conversion step. If there's a CDN request for a WASM module on first use, that's the codec library being downloaded; it will not happen on subsequent uses.
+The same Network-tab check applies to any tool on this site. Pick a tool — say, the [HEIC to JPG converter](/heic-to-jpg), the [PDF compressor](/compress-pdf), or the [JWT decoder](/jwt-decoder) — open DevTools, drop in a file, watch the network log. There should be no upload request during the conversion step. If you do see a request on first use, check the domain on it: that is a library being fetched, it comes from this site rather than a CDN, and the cache answers the next time. The PDF tools fetch no engine at all any more — the WebAssembly one they used to download has been taken out.
 
-The whole codebase is open and statically exported. There is no server endpoint to verify *because there is no server*; the entire site is HTML, CSS, JavaScript, and WASM modules served as static files from GitHub Pages. The architecture itself is the privacy guarantee.
+There is no server endpoint to verify *because there is no server*: the entire site is statically exported HTML, CSS, JavaScript and WASM, served as files from GitHub Pages. That is why the Network tab settles the question on its own, without anyone having to take a privacy policy's word for it — the architecture is the guarantee.
 
 ## The short version
 

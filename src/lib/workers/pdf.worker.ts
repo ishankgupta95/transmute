@@ -3,14 +3,14 @@ import type { PoolWorkerRequest, PoolWorkerResponse } from "./pool";
 import type { PdfJob, PdfJobResult } from "./pdf-protocol";
 
 /**
- * Pool worker for the MuPDF / pdf-lib operations — graft, save, compress on
- * multi-hundred-page documents are seconds of synchronous WASM that used to
- * freeze the tab.
+ * Pool worker for the pdf-lib operations — copying pages, saving and
+ * compressing a multi-hundred-page document is seconds of uninterrupted
+ * synchronous work that used to freeze the tab.
  *
- * The pool above this holds ONE worker (see pdf-engine.ts): every op loads
- * the same ~10 MB MuPDF heap, so N workers would cost N heaps for tools that
- * process one document at a time. One worker serialises ops, exactly like
- * the FFmpeg queue.
+ * The pool above this holds ONE worker (see pdf-engine.ts): every op holds a
+ * whole document's parsed object graph, so N workers would cost N documents'
+ * worth of peak memory for tools that process one document at a time. One
+ * worker serialises ops, exactly like the FFmpeg queue.
  */
 
 declare const self: DedicatedWorkerGlobalScope;

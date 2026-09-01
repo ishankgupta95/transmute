@@ -31,8 +31,15 @@ const LIVE = [
     inMeta: "4 files\n61 pages",
     outMeta: "1 file\n8.9 MB",
     note: "Merge, split, rotate, reorder and compress — page thumbnails, no upload.",
-    engine: "MUPDF WASM",
-    time: "~1.2 s / 100 p",
+    engine: "PDF-LIB",
+    // The old "~1.2 s / 100 p" was timed against MuPDF's WASM, which this app
+    // no longer ships; carrying that number over to a pure-JS engine would be
+    // inventing a measurement. What replaced it is bounded rather than precise:
+    // pdf-lib merging four 25-page documents and re-saving them measures ~12 ms
+    // here, and rotating 100 pages ~14 ms, so "under a second" holds with room
+    // for the file read, the worker hop, and pages far heavier than a test
+    // fixture's. Re-time it before making the claim any tighter.
+    time: "under a second / 100 p",
   },
   {
     from: "WAV",

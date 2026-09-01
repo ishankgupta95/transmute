@@ -4,8 +4,16 @@ import path from "node:path";
 
 /**
  * Bundle the pool workers into `public/workers/` as self-contained module
- * scripts — the same self-hosting treatment the mupdf/ffmpeg WASM gets via
- * `copy:wasm` (which invokes this script; outputs are gitignored).
+ * scripts — the same self-hosting treatment the ffmpeg WASM core and the
+ * vendored LGPL libraries in `public/vendor/` get via `copy:wasm` (which
+ * invokes this script; outputs are gitignored).
+ *
+ * "Self-contained" has one deliberate exception: audio-encode.worker.ts pulls
+ * lamejs from `/vendor/lamejs.js` at runtime rather than having it bundled in,
+ * because an LGPL library has to stay replaceable. The specifier is built by a
+ * function call so esbuild cannot fold it to a literal and re-inline the
+ * library; see the comment on `vendorUrl` in src/lib/tools/audio-pcm.ts before
+ * touching that code.
  *
  * Why not let Next bundle them: Turbopack's `next build` does NOT compile
  * `new Worker(new URL("./x.worker.ts", import.meta.url))` into a worker
@@ -41,11 +49,11 @@ await build({
   platform: "browser",
   target: ["es2022"],
   alias: {
+    // The only alias left. `module` and `node:fs` used to be stubbed out here
+    // (and in next.config.ts) because mupdf's glue conditionally imports them
+    // when it thinks it is running under Node; nothing else in the dependency
+    // set reaches for either, so both stubs left with mupdf.
     "@": path.join(root, "src"),
-    // mupdf's glue conditionally imports Node-only modules; stub them for the
-    // browser exactly like next.config.ts's turbopack.resolveAlias does.
-    module: path.join(root, "src/lib/empty-module.js"),
-    "node:fs": path.join(root, "src/lib/empty-module.js"),
   },
   define: {
     "process.env.__NEXT_ROUTER_BASEPATH": JSON.stringify(""),

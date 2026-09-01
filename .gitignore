@@ -3,13 +3,18 @@
 # WASM engines (copied from node_modules by `npm run copy:wasm` on dev/build).
 # Kept out of git so the ~31 MB ffmpeg core never enters history — it ships in
 # the built artifact only.
-/public/mupdf-wasm.wasm
 /public/ffmpeg-core.js
 /public/ffmpeg-core.wasm
 
 # Pool workers (bundled from src/lib/workers by scripts/build-workers.mjs,
 # invoked by `npm run copy:wasm` — same build-artifact treatment as the WASM).
 /public/workers/
+
+# LGPL libraries copied verbatim from node_modules by `npm run copy:wasm`.
+# They are loaded from here at runtime instead of being bundled, which is what
+# keeps them replaceable — but they are still generated copies, so they get the
+# same build-artifact treatment as the workers above.
+/public/vendor/
 
 # Markdown→PDF print fonts (copied from @fontsource-variable/* by
 # `npm run copy:wasm` — self-hosted so the export makes no third-party request).

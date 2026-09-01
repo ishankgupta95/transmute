@@ -20,11 +20,13 @@ Most online PDF mergers do steps 1–5 well and skip 6 and 7 — which is why li
 
 ## The browser-based approach
 
-The [merge PDF tool](/merge-pdf) on Transmute uses [`mupdf-wasm`](https://github.com/ArtifexSoftware/mupdf), a WebAssembly port of the open-source MuPDF rendering and manipulation library. The merge logic runs entirely in your browser:
+The [merge PDF tool](/merge-pdf) on Transmute runs on [`pdf-lib`](https://github.com/Hopding/pdf-lib), a PDF library written in plain JavaScript. There is no WebAssembly engine to download before the first merge and nothing to install; the merge logic runs entirely in your browser:
 
 1. Drop one or more PDFs into the drop zone
 2. Drag the file thumbnails to set the order they should appear
 3. Click Download — the merged PDF saves locally
+
+One honest caveat against the seven-step list above: pages come across with their own resources and their page-level annotations, but the outline tree does not survive the copy, so a merged document starts with no bookmarks. If the inputs had a table of contents you cared about, that is the thing to check before you send the result.
 
 There is no upload step, no server involvement, and no temporary copy stored anywhere. Once you close the tab, the merged file is the only artifact. If you want, you can verify this by opening DevTools → Network and confirming nothing is sent during the merge.
 
@@ -53,7 +55,7 @@ A correctly implemented merge keeps:
 What may not survive cleanly:
 
 - **Internal links** — if document A has a link to "page 47" and after merging that page is now page 142, the link should point to 142. Many mergers don't update this.
-- **Bookmarks (table of contents)** — bookmarks pointing to pages are usually preserved with updated page numbers, but bookmarks pointing to specific named destinations sometimes break.
+- **Bookmarks (table of contents)** — desktop tools usually preserve bookmarks that point at pages and renumber them, while bookmarks pointing at named destinations sometimes break. Transmute's merge does not rebuild the outline at all, as noted above: the merged file has none.
 - **Document structure / tagged PDF** — accessibility tags (used by screen readers) require deep tree manipulation to merge correctly. Most mergers strip them.
 - **Digital signatures** — by definition, a digital signature is invalidated when the document is modified. Merging a signed PDF will break the signature.
 
@@ -68,7 +70,7 @@ In practice, merging up to **50 PDFs totaling under 200 MB** works comfortably i
 If you need to merge a very large set of documents:
 
 1. **Process in batches.** Merge groups of 10 files at a time, then merge the resulting groups together. Each step uses less peak memory than merging all at once.
-2. **Strip metadata and images first.** If your input PDFs are bloated with embedded images at higher resolution than needed, [compress each PDF](/compress-pdf) before merging.
+2. **Compress each input first.** If your input PDFs carry objects nothing references any more, or streams that were stored uncompressed, [compressing each one](/compress-pdf) first gives the merge less to hold in memory. It will not touch embedded images — for those, see the next point.
 3. **Convert images to JPG first.** A PDF that's mostly scanned pages will be significantly smaller after [PDF to JPG](/pdf-to-jpg) and [images to PDF](/images-to-pdf) round-trip with appropriate JPG quality.
 4. **Close other tabs.** A merge happens in the active tab's memory; other heavy tabs reduce what's available.
 
@@ -108,7 +110,7 @@ Digital signatures, as mentioned, become invalid after merging. If signature int
 
 There are situations where a browser-based tool is the wrong choice:
 
-- **Hundreds of small files needing automated processing** — a server-side script with `pdf-lib` or `pypdf` is better
+- **Hundreds of small files needing automated processing** — the same `pdf-lib` driven from a Node script, or `pypdf`, is better
 - **Compliance / audit-required workflows** where the merge needs to be logged and signed
 - **Massive documents (single files over 1 GB)** — desktop tools like Acrobat Pro or scriptable command-line tools like `qpdf` handle these without memory pressure
 - **PDF/A archival format requirements** — proper PDF/A merging is rare even in desktop tools and almost never available in browser-based ones

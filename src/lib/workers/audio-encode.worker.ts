@@ -13,6 +13,13 @@ import type { AudioEncodeJob, AudioEncodeResult } from "./audio-protocol";
  * back into audio-client (which names this worker's URL) — importing them
  * would put this worker inside its own bundle graph, which hangs the
  * production build's chunker.
+ *
+ * lamejs is not bundled into this file: audio-pcm.ts fetches it from
+ * `/vendor/lamejs.js` at first MP3 encode, which is why the mp3 branch below
+ * is awaited. That works here only because audio-client.ts constructs this
+ * worker as a same-origin `{ type: "module" }` script — a classic worker has
+ * no `import()`, and a blob: worker has no base to resolve `/vendor/…`
+ * against.
  */
 
 declare const self: DedicatedWorkerGlobalScope;
@@ -25,7 +32,7 @@ self.onmessage = async (event: MessageEvent<PoolWorkerRequest>) => {
     const channels = job.channels.map((buf) => new Float32Array(buf));
     const blob =
       job.op === "mp3"
-        ? encodePcmToMp3(channels, job.sampleRate, job.bitrate, (value) =>
+        ? await encodePcmToMp3(channels, job.sampleRate, job.bitrate, (value) =>
             self.postMessage({
               id,
               type: "progress",

@@ -6,7 +6,7 @@
  * Why this exists: the unit suite runs in jsdom (no canvas, no WASM) and the
  * older E2E specs fed tools stub blobs — a 16-byte "MP4", a silent WAV, a blank
  * PDF. Those prove the UI renders; they cannot prove FFmpeg.wasm / WebCodecs /
- * MuPDF / lamejs still produce correct output. `src/__tests__/e2e/conversion/`
+ * pdf-lib / lamejs still produce correct output. `src/__tests__/e2e/conversion/`
  * needs inputs a real decoder will accept, so this script produces them.
  *
  * There is no `ffmpeg` binary on the dev box and Playwright's bundled build is

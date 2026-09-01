@@ -69,12 +69,34 @@ export function CompressPdfUI() {
   }
 
   /*
-    MuPDF re-encodes small or already-linearised documents into a LARGER file
-    (sample-doc.pdf: 5.1 KB in, 8.9 KB out). Handing that back under a
-    "-compressed" name is a lie, so the smaller of the two is what ships — and
-    every readout describes THAT file, not the discarded re-encode.
+    A rewrite is not guaranteed to be smaller than what it was given, and
+    handing back a bigger file under a "-compressed" name is a lie. So the
+    smaller of the two ships, and every readout below describes THAT file
+    rather than the discarded re-encode.
+
+    This guard is not vestigial. The old MuPDF engine tripped it constantly —
+    it wrote a plain cross-reference table and no object streams, so an already
+    optimised document came back 74–88% LARGER and the user only ever saw the
+    original because of this comparison. pdf-lib does not inflate like that,
+    but it still cannot beat a file that is already garbage-collected, already
+    deflated and already packed into object streams: the two checked-in samples
+    come back byte for byte identical, `grew` fires on the `>=`, and the
+    footnote below explains why nothing was saved.
   */
   const grew = result !== null && result.size >= file.size;
+  /*
+    Two different outcomes hide behind `grew`, and saying the wrong one is a
+    lie the user can check against the two sizes printed directly above the
+    sentence. Under the old MuPDF engine the rewrite genuinely came back
+    BIGGER, so "would make it larger" was the only case worth describing.
+    pdf-lib does not inflate: on a document that is already garbage-collected
+    and already packed into object streams it comes back the SAME size — which
+    is now the ordinary no-win outcome, and the one the two checked-in samples
+    produce. Telling that user their file "would be larger" while the readout
+    shows two identical numbers is exactly the kind of claim this project
+    treats as a bug.
+  */
+  const noSmaller = result !== null && result.size === file.size;
   const output = result === null ? null : grew ? file : result;
 
   return (
@@ -102,7 +124,7 @@ export function CompressPdfUI() {
               value: !output ? "—" : grew ? "0%" : `${((1 - output.size / file.size) * 100).toFixed(1)}%`,
               tone: grew ? "neutral" : "ok",
             },
-            { label: "ENGINE", value: "MUPDF", tone: "neutral" },
+            { label: "ENGINE", value: "PDF-LIB", tone: "neutral" },
           ]}
         />
 
@@ -110,8 +132,18 @@ export function CompressPdfUI() {
 
         {result && grew && (
           <CanvasFootnote>
-            RE-ENCODING THIS PDF WOULD MAKE IT LARGER ({formatFileSize(result.size)})
-            — YOUR ORIGINAL IS ALREADY SMALLER, SO THE DOWNLOAD HANDS BACK THE ORIGINAL BYTES
+            {noSmaller ? (
+              <>
+                THIS PDF IS ALREADY COMPRESSED AS FAR AS THIS TOOL CAN TAKE IT — NOTHING
+                UNREFERENCED TO DROP, NOTHING LEFT UNDEFLATED, SO THE DOWNLOAD IS YOUR
+                ORIGINAL BYTES
+              </>
+            ) : (
+              <>
+                REWRITING THIS PDF WOULD MAKE IT LARGER ({formatFileSize(result.size)})
+                — YOUR ORIGINAL IS ALREADY SMALLER, SO THE DOWNLOAD HANDS BACK THE ORIGINAL BYTES
+              </>
+            )}
           </CanvasFootnote>
         )}
       </div>
@@ -148,7 +180,9 @@ export function CompressPdfUI() {
             ]}
           />
           <span className="font-body text-[10.5px] leading-[1.5] text-text-muted">
-            Streams are deflated and duplicate objects removed. Image-heavy PDFs shrink least.
+            Objects nothing references are dropped, streams that arrived uncompressed are
+            deflated, and the file is repacked into object streams. Images are never
+            re-encoded, so PDFs that are mostly photographs shrink least.
           </span>
         </ToolAsideSection>
       </ToolAside>

@@ -7,8 +7,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Commands
 
 ```bash
-npm run dev          # Dev server (auto-copies mupdf WASM to public/)
-npm run build        # Static export to ./out (also copies mupdf WASM)
+npm run dev          # Dev server (auto-copies the FFmpeg core + vendored libs to public/)
+npm run build        # Static export to ./out (same copy step)
 npm run lint         # ESLint (flat config, v9)
 npm test             # Vitest unit/integration tests (single run)
 npm run test:watch   # Vitest in watch mode
@@ -24,7 +24,7 @@ npm run test:all     # Unit + E2E sequentially
 ### Stack
 - Next.js 16.2.2 (App Router, `output: "export"`), React 19, TypeScript (strict)
 - Tailwind CSS 4 with custom dark theme via CSS variables in `globals.css`
-- Heavy WASM usage: FFmpeg.wasm (video/audio), MuPDF (PDF), WebCodecs (H.264 encoding)
+- Heavy WASM usage: FFmpeg.wasm (video/audio), WebCodecs (H.264 encoding). PDF is pure JS — there is no PDF WASM engine any more.
 
 ### Key directories
 - `src/data/tools.ts` — Central registry of 40+ tool definitions (slug, metadata, category)
@@ -44,8 +44,8 @@ Each tool follows a three-layer pattern to handle the Server/Client Component bo
 ### Media processing
 - **FFmpeg.wasm** — Singleton loaded via `lib/tools/ffmpeg-loader.ts`. The core is **self-hosted, never a CDN**: `npm run copy:wasm` copies `ffmpeg-core.js`/`ffmpeg-core.wasm` (~31 MB, from the `@ffmpeg/core` devDependency) into `public/` on dev and build; the copies are gitignored, and the conversion suite's `forbidCdnCore` check fails the run on any CDN regression. Single-threaded build only (multi-threaded causes pthread deadlocks).
 - **Video compression** — Uses WebCodecs API (`VideoEncoder`) + `mp4-muxer`, not FFmpeg. See `lib/tools/video-compress.ts`.
-- **Audio** — `AudioContext.decodeAudioData()` for decoding; `lamejs` for MP3 encoding.
-- **PDF** — MuPDF WASM (~10 MB, copied to `public/` at build time), `pdf-lib` for manipulation, `pdfjs-dist` for rendering.
+- **Audio** — `AudioContext.decodeAudioData()` for decoding; `lamejs` for MP3 encoding. lamejs is **not bundled**: `copy:wasm` copies it to `public/vendor/lamejs.js` and `lib/tools/audio-pcm.ts` loads it with a runtime `import()` of that same-origin URL. Same arrangement for `heic2any` (`lib/tools/image-convert.ts`). Both are LGPL and the runtime-load keeps them replaceable; do not let a bundler inline either one back in — read the load-bearing comments in those two files before touching the specifier.
+- **PDF** — `pdf-lib` (MIT, pure JS) for every document and page operation: merge, split, rotate, reorder, page numbers, compress, images→PDF. `pdfjs-dist` for rendering (thumbnails, PDF→image). MuPDF is **gone** — it was AGPL and the repo is closed-source, so it was removed rather than licensed; do not reintroduce it. That also removed a 10 MB WASM download from every PDF page.
 
 ### Styling rules
 - `globals.css` uses `@theme` for CSS variables. Do not add custom CSS rules — use Tailwind utility classes only.

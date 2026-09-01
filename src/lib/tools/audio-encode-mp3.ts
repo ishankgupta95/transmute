@@ -32,8 +32,14 @@ export async function resampleForMp3(buffer: AudioBuffer): Promise<AudioBuffer> 
   return ctx.startRendering();
 }
 
-/** Encode an AudioBuffer to MP3 (synchronously, on the calling thread). */
-export function encodeToMp3(buffer: AudioBuffer, bitrate: number): Blob {
+/**
+ * Encode an AudioBuffer to MP3 on the calling thread — no worker, no
+ * progress reporting. Async because the encoder is fetched from
+ * `/vendor/lamejs.js` rather than bundled (see audio-pcm.ts); the encode loop
+ * itself still blocks whichever thread calls this, which is why the tools go
+ * through `convertToMp3` and the worker pool instead.
+ */
+export async function encodeToMp3(buffer: AudioBuffer, bitrate: number): Promise<Blob> {
   return encodePcmToMp3(extractChannels(buffer), buffer.sampleRate, bitrate);
 }
 

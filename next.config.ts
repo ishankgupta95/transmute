@@ -8,13 +8,6 @@ const nextConfig: NextConfig = {
     unoptimized: true, // Required for static export
   },
   trailingSlash: false,
-  turbopack: {
-    resolveAlias: {
-      // mupdf WASM conditionally imports Node.js-only modules; stub them for browser
-      module: { browser: "./src/lib/empty-module.js" },
-      "node:fs": { browser: "./src/lib/empty-module.js" },
-    },
-  },
 };
 
 /*

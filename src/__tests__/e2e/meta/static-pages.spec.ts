@@ -2,8 +2,9 @@ import { test, expect } from "@playwright/test";
 import { assertSeoBasics } from "../helpers";
 
 /**
- * Static pages (about, privacy) are entirely server-rendered and stable —
- * worth catching regressions in their copy, link structure, and SEO scaffolding.
+ * Static pages (about, privacy, licenses) are entirely server-rendered and
+ * stable — worth catching regressions in their copy, link structure, and SEO
+ * scaffolding.
  */
 
 test.describe("static pages", () => {
@@ -65,6 +66,55 @@ test.describe("static pages", () => {
     const contact = page.getByText(/Reach the maintainer/i);
     await expect(contact).toBeVisible();
     await expect(contact.locator("a")).toHaveAttribute("href", /^(https?:|mailto:)/);
+  });
+
+  test("licenses page lists the shipped engines", async ({ page }) => {
+    await page.goto("/licenses");
+    await assertSeoBasics(page, { requireJsonLd: false });
+    await expect(page.locator("h1")).toHaveText(/^Licenses and notices$/i);
+
+    // One section per thing that imposes an obligation. Losing a heading here
+    // means an obligation stopped being discharged, which is the whole point
+    // of the page — so each is asserted individually rather than by count.
+    for (const heading of [
+      /^FFmpeg$/i,
+      /^lamejs$/i,
+      /^libheif and libde265$/i,
+      /^ExifReader$/i,
+      /^Permissive libraries$/i,
+      /^Fonts$/i,
+      /^Full dependency notices$/i,
+    ]) {
+      await expect(
+        page.getByRole("heading", { level: 2, name: heading }),
+        `licenses page must render section matching ${heading}`,
+      ).toBeVisible();
+    }
+
+    // The credit line upstream requires be displayed, and the build command
+    // that makes the source offer verifiable. Both are exact-text contracts.
+    await expect(
+      page.getByText("This software uses code of FFmpeg licensed under the GPLv2 or later."),
+    ).toBeVisible();
+    await expect(page.locator("main pre")).toContainText("--enable-gpl");
+
+    // The offer is only an offer if the texts it points at actually resolve.
+    // A 404 here would be a silent compliance failure, so fetch them for real
+    // rather than trusting that the anchors exist.
+    for (const file of ["gpl-2.0.txt", "lgpl-3.0.txt", "third-party-notices.txt"]) {
+      const anchor = page.locator(`main a[href$="/licenses/${file}"]`).first();
+      await expect(anchor, `licenses page must link ${file}`).toBeVisible();
+      const href = await anchor.getAttribute("href");
+      const res = await page.request.get(href!);
+      expect(res.status(), `${file} must be served, not 404`).toBe(200);
+    }
+
+    // MuPDF was removed from the shipped stack; a notice for it reappearing
+    // would mean either the engine came back or the copy went stale.
+    await expect(page.locator("main")).not.toContainText(/mupdf/i);
+
+    // Reachable from every page, not just by knowing the URL.
+    await expect(page.locator('footer a[href="/licenses"]')).toBeVisible();
   });
 
   test("404 page renders content (not just a status code)", async ({ page }) => {

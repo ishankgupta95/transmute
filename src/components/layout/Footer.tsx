@@ -15,6 +15,7 @@ const SITE_LINKS = [
   { href: "/blog", label: "Blog" },
   { href: "/about", label: "About" },
   { href: "/privacy", label: "Privacy" },
+  { href: "/licenses", label: "Licenses" },
 ];
 
 const linkClass =

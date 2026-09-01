@@ -10,13 +10,15 @@ export type { PageNumberPosition, PageSize };
 /**
  * PDF operations, split across two engines (Phase 3):
  *
- * - MuPDF / pdf-lib ops (merge, split, rotate, reorder, page numbers,
- *   compress, images→PDF) run in a single pool worker — their synchronous
- *   WASM saves froze the tab on multi-hundred-page documents. The
- *   implementations live in pdf-engine-core.ts; the wrappers here keep the
- *   old call signatures so UIs don't care where the work runs. One worker
- *   only: each would hold its own ~10 MB MuPDF heap, and these tools handle
- *   one document at a time — ops serialise, like the FFmpeg queue.
+ * - pdf-lib ops (merge, split, rotate, reorder, page numbers, compress,
+ *   images→PDF) run in a single pool worker — parsing and re-serialising a
+ *   multi-hundred-page document is seconds of uninterrupted synchronous work
+ *   that froze the tab. The implementations live in pdf-engine-core.ts; the
+ *   wrappers here keep the old call signatures so UIs don't care where the
+ *   work runs. One worker only: each op holds a whole document's object graph
+ *   in memory, and these tools handle one document at a time — so N workers
+ *   would buy nothing but N documents' worth of peak memory. Ops serialise,
+ *   like the FFmpeg queue.
  *
  * - pdfjs rendering (pdfToImages, page thumbnails) stays here: pdfjs ships
  *   its own worker for the raster math, and its output canvases are DOM
@@ -27,7 +29,7 @@ export type { PageNumberPosition, PageSize };
  * Environments without Worker (jsdom) fall back to running the core inline.
  */
 
-// ── MuPDF / pdf-lib ops via the PDF worker ─────────────────────────
+// ── pdf-lib ops via the PDF worker ─────────────────────────────────
 
 let pdfWorkerPool: import("@/lib/workers/pool").WorkerPool | null = null;
 
@@ -50,7 +52,8 @@ async function runPdfJob<T extends PdfJobResult>(job: PdfJob): Promise<T> {
   }
   const bytes = jobBytes(job);
   return pdfWorkerPool.run<T>(job, {
-    // Peak ≈ source bytes pinned in the WASM heap + the saved copy.
+    // Peak ≈ the source bytes the parser holds onto + the object graph it
+    // builds from them + the serialised copy on the way back out.
     memoryBytes: bytes * 3,
   });
 }

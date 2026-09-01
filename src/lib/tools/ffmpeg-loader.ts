@@ -154,8 +154,8 @@ export function describeFFmpegFailure(err: unknown): Error {
  *
  * `@ffmpeg/core` is a devDependency; `npm run copy:wasm` copies
  * `ffmpeg-core.js` + `ffmpeg-core.wasm` into `public/` on dev and build (the
- * same treatment the mupdf WASM gets), and the copies are gitignored so the
- * ~31 MB binary never enters git history.
+ * same step that vendors lamejs and heic2any into `public/vendor/`), and the
+ * copies are gitignored so the ~31 MB binary never enters git history.
  *
  * Why not unpkg: the product promises "nothing leaves this tab", but a CDN
  * fetch hands a third party the user's IP and referrer the first time they

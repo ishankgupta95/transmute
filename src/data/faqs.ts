@@ -1149,27 +1149,27 @@ export const faqs: ToolFAQs = {
     {
       question: "How much smaller will my PDF get?",
       answer:
-        "Results vary. PDFs with lots of metadata or redundant internal objects see the biggest reduction. Heavily optimized PDFs may not shrink much. The tool shows the before and after file sizes.",
+        "It depends entirely on what is inside the file. A PDF carrying objects nothing references any more, or content streams that were never compressed, can lose the large majority of its size. A PDF that has already been through this treatment loses nothing at all. The readout shows the before and after sizes, so you never have to guess which case you were in.",
     },
     {
       question: "Does compression reduce image quality?",
       answer:
-        "This tool focuses on structural optimization (removing metadata, using object streams). It does not re-compress embedded images, so visual quality is preserved.",
+        "No. The work is structural only: unreferenced objects are dropped, streams that arrived uncompressed are deflated, and the objects are repacked into compressed object streams. Embedded images are never re-encoded or downsampled, so every pixel comes out identical to the one that went in.",
     },
     {
       question: "Will compression work on scanned PDFs?",
       answer:
-        "Scanned PDFs are mostly raster image data, so structural optimization makes only a small dent. For scans, the highest-leverage move is reducing image resolution before producing the PDF; this tool can still strip redundant metadata on top of that.",
+        "Scanned PDFs are mostly raster image data, already compressed by the scanner, so structural work makes only a small dent. For scans the highest-leverage move is reducing image resolution before the PDF is produced. This tool can still drop whatever the file no longer references on top of that, which on a scanner’s output is sometimes more than you would expect.",
     },
     {
       question: "What happens if compression would make my file bigger?",
       answer:
-        "You get your original bytes back. Small or already-optimized PDFs can re-encode larger, so the tool compares the two files and serves whichever is smaller — the readout then shows 0% saved and a note explains that the original won.",
+        "You get your original bytes back. A PDF that is already garbage-collected, already deflated and already packed into object streams has nothing left to give, and rewriting it can come out the same size or a shade larger. The two files are compared and whichever is smaller is what you get — the readout then shows 0% saved and a note explains that the original won.",
     },
     {
       question: "Why are there no quality settings?",
       answer:
-        "Compression is a single automatic pass — content streams are recompressed and unreferenced objects dropped — and it starts the moment you drop the file. Since it never touches your images or text, there is no dial that would trade visual quality for size.",
+        "There is nothing to trade. The whole operation is lossless — unreferenced objects dropped, uncompressed streams deflated, the structure repacked — and it starts the moment you drop the file. Because it never re-encodes your images or your text, a quality dial would have nothing to turn down.",
     },
   ],
   "pdf-to-jpg": [

@@ -64,5 +64,14 @@ export default function sitemap(): MetadataRoute.Sitemap {
       changeFrequency: "yearly",
       priority: 0.2,
     },
+    {
+      // Third-party notices. Low priority to crawl, but it must be reachable
+      // and indexable: the FFmpeg source offer is only an offer if it can be
+      // found without knowing the URL already.
+      url: `${BASE_URL}/licenses`,
+      lastModified: new Date(),
+      changeFrequency: "yearly",
+      priority: 0.2,
+    },
   ];
 }

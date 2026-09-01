@@ -1,9 +1,37 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, type Mock } from "vitest";
 
-// Mock heic2any
-vi.mock("heic2any", () => ({
-  default: vi.fn().mockResolvedValue(new Blob(["png-data"], { type: "image/png" })),
-}));
+/*
+ * heic2any stub — deliberately shaped like the real vendored load, which looks
+ * wrong at first glance.
+ *
+ * heic2any embeds LGPL libheif/libde265, so it is no longer bundled:
+ * `npm run copy:wasm` copies upstream's UMD dist to `public/vendor/heic2any.js`
+ * and lib/tools/image-convert.ts imports that URL at first HEIC. A UMD bundle
+ * executed as an ES module matches none of its module-system branches and
+ * falls through to `global.heic2any = factory()` — so the module namespace is
+ * EMPTY and the decoder arrives on `globalThis`. The factory below therefore
+ * returns nothing, and `installHeic2Any` (called per test) supplies the spy the
+ * way the real script would.
+ *
+ * Mocking the URL rather than the package name is also what pins the cure in
+ * place: a regression back to `import("heic2any")` would leave this spy
+ * uncalled and every HEIC assertion below would fail.
+ */
+vi.mock("/vendor/heic2any.js", () => ({}));
+
+/** Put a fresh decoder spy where the vendored UMD script would leave one. */
+function installHeic2Any(): Mock {
+  const spy = vi.fn().mockResolvedValue(new Blob(["png-data"], { type: "image/png" }));
+  (globalThis as { heic2any?: Mock }).heic2any = spy;
+  return spy;
+}
+
+/** The spy currently standing in for the vendored decoder. */
+function heic2any(): Mock {
+  const spy = (globalThis as { heic2any?: Mock }).heic2any;
+  if (!spy) throw new Error("installHeic2Any() was not called for this test");
+  return spy;
+}
 
 // Mock utif2
 /*
@@ -31,7 +59,6 @@ vi.mock("utif2", () => ({
 
 import { convertImage, type ImageConvertOptions } from "@/lib/tools/image-convert";
 import { ANIMATED_GIF_WARNING, ANIMATED_WEBP_WARNING } from "@/lib/tools/image-frames";
-import heic2any from "heic2any";
 import * as UTIF from "utif2";
 import { animatedWebpBytes, gifBytes } from "./image-byte-fixtures";
 
@@ -96,6 +123,8 @@ function makeFile(name: string, type = "image/png"): File {
 describe("convertImage", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
+    // After restoreAllMocks so the global spy is never torn down under a test.
+    installHeic2Any();
     setupCanvasMock();
     setupImageMock();
   });
@@ -175,7 +204,7 @@ describe("convertImage", () => {
     const opts: ImageConvertOptions = { targetFormat: "jpeg", quality: 0.9 };
     await convertImage(file, opts);
 
-    expect(heic2any).toHaveBeenCalledWith({ blob: file, toType: "image/png" });
+    expect(heic2any()).toHaveBeenCalledWith({ blob: file, toType: "image/png" });
   });
 
   it("handles HEIF files by converting via heic2any", async () => {
@@ -183,16 +212,13 @@ describe("convertImage", () => {
     const opts: ImageConvertOptions = { targetFormat: "png", quality: 1 };
     await convertImage(file, opts);
 
-    expect(heic2any).toHaveBeenCalledWith({ blob: file, toType: "image/png" });
+    expect(heic2any()).toHaveBeenCalledWith({ blob: file, toType: "image/png" });
   });
 
   it("handles heic2any returning an array", async () => {
     const firstBlob = new Blob(["first"], { type: "image/png" });
     const secondBlob = new Blob(["second-longer"], { type: "image/png" });
-    vi.mocked(heic2any).mockResolvedValueOnce([
-      firstBlob,
-      secondBlob,
-    ] as unknown as Blob);
+    heic2any().mockResolvedValueOnce([firstBlob, secondBlob]);
 
     const file = makeFile("multi.heic", "image/heic");
     const opts: ImageConvertOptions = { targetFormat: "jpeg", quality: 0.8 };
@@ -203,6 +229,18 @@ describe("convertImage", () => {
     // Verify createObjectURL was called with the first blob (size 5), not the second (size 13)
     expect(URL.createObjectURL).toHaveBeenCalledWith(firstBlob);
     expect(result.fileName).toBe("multi.jpg");
+  });
+
+  it("reports a clear failure when the vendored decoder registers no global", async () => {
+    // The one genuinely new way HEIC can fail now that the decoder is fetched
+    // rather than bundled: the script loads (or is cached) but leaves nothing
+    // on globalThis. Without this guard the next line would be
+    // `undefined is not a function`, which tells a user nothing.
+    delete (globalThis as { heic2any?: Mock }).heic2any;
+
+    const file = makeFile("photo.heic", "image/heic");
+    const opts: ImageConvertOptions = { targetFormat: "jpeg", quality: 0.9 };
+    await expect(convertImage(file, opts)).rejects.toThrow("Could not load the HEIC decoder");
   });
 
   it("handles TIFF files by decoding via utif2", async () => {

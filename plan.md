@@ -52,7 +52,13 @@
 
 ## Engine facts — measured 2026-08-31, not assumed
 
-### MuPDF (`public/mupdf-wasm.wasm`, 9.5 MB, already shipped on every PDF page)
+### MuPDF — HISTORICAL, REMOVED 2026-08-31 (Wave 2). Do not reason from this as current.
+
+> The whole section below describes an engine this app **no longer ships**. It is kept because
+> it is the record of what was measured and what was compiled OUT, so nobody re-proposes an
+> OCR or DOCX-writer feature on the strength of a MuPDF capability list. Under the closed-source
+> decision MuPDF is gone (AGPL); the seven PDF operations run on pdf-lib. Anything below marked
+> "verified present" is verified present *in a dependency that is no longer installed*.
 
 **Runtime-verified this session** (Node round-trips against the exact npm build we copy):
 
@@ -316,8 +322,28 @@ format-specific copy (per Wave 0 architecture decision), a registry entry in `to
   per category, one link per tool with its hubLine, derived counts only; footer "All
   tools" link on every page, sitemap entry, self-canonical. The responsive-sweep ROUTES
   arithmetic includes it, and a new meta spec asserts exactly `tools.length` tool links.)*
-- [ ] **Post-deploy verification (FIRST THING in the next session's preflight, once the
-  owner has committed and CI has deployed Wave 1):** (1) Search Console — look for
+- [ ] **Post-deploy verification — 2 of 3 CLOSED LOCALLY 2026-09-01; only Search Console is
+  genuinely deploy-blocked.** `master` is one commit ahead of `origin/master` (Wave 0+1 is
+  committed at `c828b0b` but NOT pushed), so transmute.tools still serves the **67-tool**
+  build. That blocks less than it first appeared:
+  - **(2) Lighthouse CLS — DONE, no deploy needed.** CLS is a layout metric and measures fine
+    against the built `out/`. Measured at a 375x812 mobile viewport with a full-page scroll
+    (shifts below the fold count), on the real static export: home **0.0001**, a Wave-1
+    variant (`/compress-image-to-20kb`) **0.0000**, `/all-tools` **0.0000**, the new
+    `/licenses` **0.0000**. The <= 0.1 gate holds with three orders of magnitude to spare.
+    Home LCP stays the known separate item — that one IS network-sensitive and worth a real
+    run post-deploy.
+  - **(3) /all-tools crawlability — DONE, no deploy needed.** Verified in the built output:
+    present in `sitemap.xml`, self-canonical to `https://transmute.tools/all-tools`, no
+    `robots` meta (so indexable), linked from the footer on every page, and `robots.txt` is
+    `Allow: /`. Nothing in the configuration can stop a crawler. Whether Google HAS crawled
+    it is the only part that needs the deploy.
+  - **(1) Search Console — genuinely blocked.** Doorway-style demotion signals on the 16
+    variant pages need Google to crawl the live pages and accumulate impressions, which is
+    days-to-weeks of real-world data that cannot be synthesised. Re-check after the push.
+    Rollback lever unchanged: canonicalize variants back to their engine page.
+  *(Original wording, kept for the record:)* **(FIRST THING in the next session's preflight,
+  once the owner has committed and CI has deployed Wave 1):** (1) Search Console — look for
   doorway-style demotion signals on the 16 variant pages; the rollback lever is
   canonicalizing variants back to their engine page. (2) Re-run Lighthouse (mobile)
   on home + one variant page — CLS must hold ≤ 0.1 (the reservation map covers all 83
@@ -334,34 +360,160 @@ format-specific copy (per Wave 0 architecture decision), a registry entry in `to
 > the 2026-08-31 dependency audits). **The next wave is licensing remediation + the
 > permissive PDF ports:**
 >
-> - [ ] **Remove MuPDF** (one import site: `pdf-engine-core.ts`; 10 MB wasm + AGPL glue
+> **WAVE 2 LANDED 2026-08-31** (uncommitted, awaiting owner review). Built multi-agent:
+> 6 scouts → 3 implementation agents on disjoint file sets (one killed by a content
+> filter for reproducing licence text; re-run split in two with the texts pre-generated)
+> → orchestrator integration → a 6-finder / 3-refuter-per-finding adversarial review over
+> the full diff (81 agents). Gates: tsc clean · lint 0 err / 2 standing warnings ·
+> unit **1910** pass (75 files, 83 pre-existing `describe.skip`) · conversion e2e 153 pass
+> + 2 designed skips in BOTH projects · default e2e 250 pass · `npm run build` succeeds and
+> the output is verifiably AGPL-free · a real merge driven through the BUILT static export
+> returns the right pages, carries the first document's title, and issues no mupdf request.
+>
+> **The review found 25 candidates; 14 survived three refuters and ALL were fixed.** The six
+> that mattered, each now covered by a regression test proven to fail without its fix:
+> 1. **compress corrupted images carrying a stale `/DecodeParms`.** The deflate pass checked
+>    only for `/Filter`. A `/DecodeParms << /Predictor 12 … >>` left behind by a tool that
+>    stripped the filter but not its parameters is inert *until* something writes
+>    `/FlateDecode` beside it — then a conforming reader applies PNG un-filtering to bytes
+>    that were never predictor-coded. Reproduced against pdfjs: the image failed to decode
+>    and was dropped from the page, under copy promising the pixels come out byte-identical.
+>    Such streams are now left exactly as found.
+> 2. **The vendor-loader retry was inert.** Clearing the memo is NOT enough: a browser
+>    records a failed module fetch in the realm's module map, and re-importing the same
+>    specifier rejects without touching the network. Measured in Chromium and WebKit — the
+>    same-URL retry made no request at all. Retries now carry a `?retry=N` cache-buster; the
+>    base `/vendor/x.js` URL, which is what the LGPL replaceability argument rests on, is
+>    unchanged.
+> 3. **add-page-numbers stamped off-page on a reversed-corner MediaBox.** `[0 792 612 0]` is
+>    a legal spelling (PDF 32000-1 7.9.5, readers must normalise); pdf-lib reports the raw
+>    numbers, so the number landed 20pt above the top edge. The rect is normalised now.
+> 4. **copyPages left an orphan page object behind every annotation's `/P`.** Split/merge/
+>    reorder produced twice as many `/Type /Page` objects as pages — renders fine, fails
+>    preflight and PDF/A. `/P` is repointed at the real page and the sweep collects the
+>    duplicate.
+> 5. **The compress footnote lied on the equal-size case,** which is now the ORDINARY no-win
+>    outcome (MuPDF used to genuinely inflate; pdf-lib does not). It said "would make it
+>    larger — your original is already smaller" while the readout above it showed two
+>    identical numbers. Split into the two real outcomes.
+> 6. **/licenses overstated its own coverage.** The generated notices walked only DIRECT
+>    dependencies while the page claimed a superset of what the browser receives — pako and
+>    `@pdf-lib/standard-fonts` execute in the tab and had no notice. The generator is now
+>    transitive (239 of 245 runtime packages, the 6 that publish no licence file named by
+>    hand on the page), typefaces get per-face copyright lines instead of one font's OFL
+>    file standing in for six, and a new unit test regenerates and diffs so the page's
+>    "cannot quietly drift" claim is now enforced rather than asserted.
+>
+> - [x] **Remove MuPDF** (one import site: `pdf-engine-core.ts`; 10 MB wasm + AGPL glue
 >   chunk out of `public/`): port its 7 ops to pdf-lib — merge/split/reorder via
 >   `copyPages`, rotate via `setRotation` (native inherited-/Rotate handling),
 >   page counts, add-page-numbers via `StandardFonts.Helvetica` +
 >   `widthOfTextAtSize` (port the rotation-compensation matrix,
 >   pdf-engine-core.ts:250–281). Rewrite `pdf-engine.test.ts` against real pdf-lib
 >   (mupdf-mock harness today); retune `golden-paths.spec.ts:102`.
-> - [ ] **compress-pdf**: qpdf-wasm spike (qpdf is Apache-2.0 — verify the wasm
+>   *(2026-08-31: done. The `mupdf` dependency is uninstalled, `public/mupdf-wasm.wasm`
+>   is gone, and the `module`/`node:fs` → `empty-module.js` aliases in `next.config.ts`
+>   and `build-workers.mjs` went with it — verified those two aliases existed ONLY for
+>   mupdf's glue (`mupdf-wasm.js:1` `import("module")`, `mupdf.js:26` `import("node:fs")`;
+>   nothing else in the dependency set imports either), so `empty-module.js` is deleted
+>   and `next.config.ts` has no `turbopack` block at all now.
+>   Findings that changed the plan, each proven not guessed: `updateMetadata:false` is a
+>   pdf-lib **Load**Option, not a SaveOption (it stamps /Producer + /ModDate at load);
+>   `addDefaultPage` defaults TRUE, so `splitPdf(data, [])` would have invented a blank
+>   page — every op deriving from a user file now passes `addDefaultPage:false`;
+>   pdf-lib 1.17.1 is ES5-compiled so `err instanceof EncryptedPDFError` is ALWAYS false
+>   (tslib `__extends` over native Error) — error matching is on message text, with a
+>   comment saying not to "fix" it; and `page.drawText()` emits `Tm`, which would have
+>   broken `pdf.spec.ts:291`'s literal `/418\.\d+ 20 Td/`, so the stamp is composed from
+>   pdf-lib's low-level ops (`beginText`/`setFontAndSize`/`moveText`/`showText`/`endText`)
+>   and the emitted operator bytes stay parity-identical with MuPDF's. `golden-paths.spec.ts`
+>   needed NO retune. `resolveInherited()` is deleted — `page.getRotation()` is already
+>   inheritance-aware — and the manual /Resources+/Font plumbing went too, because
+>   pdf-lib's `PDFPageLeaf.normalize()` does both natively. `pdf-engine.test.ts` is now
+>   83 REAL round-trip tests (build a PDF, run the op, reparse, assert document state)
+>   in place of 971 lines of mock-shape assertions.)*
+> - [x] **compress-pdf**: qpdf-wasm spike (qpdf is Apache-2.0 — verify the wasm
 >   package's own license) for GC/recompress + repair + encrypt/decrypt; fallback is
 >   pdf-lib `useObjectStreams` with honestly weakened copy (never-grow already holds).
-> - [ ] **lamejs LGPL cure**: vendor `dist/lamejs.js` → `public/vendor/` (copy:wasm
+>   *(2026-08-31: **no qpdf needed, and the copy got STRONGER, not weaker** — the premise
+>   that pdf-lib is the weaker engine was measured and is false. MuPDF saved with
+>   `"compress,garbage"`, which writes a plain xref table and NO object streams, so it
+>   INFLATED already-optimised PDFs by 74–88%; the never-grow guard was hiding that.
+>   The replacement is three passes in `pdf-engine-core.ts`: a real mark-and-sweep GC over
+>   `PDFContext` (roots = trailer Root/Info/Encrypt/ID), a re-deflate of streams that
+>   arrived with NO /Filter using the platform's own `CompressionStream("deflate")`
+>   (zlib format, magic 78 9c — zero added bytes), then `save({useObjectStreams:true})`.
+>   Measured through the shipped function: already-optimal 0.0% (byte-identical) vs
+>   MuPDF −74%/−88%; uncompressed-streams 83.8% vs 83.5%; plain-xref 50.5% vs 7.3%;
+>   orphan-heavy 73.7%. It matches or beats MuPDF on every corpus tested. The GC is
+>   mark-and-sweep, NOT a `copyPages` rebuild, so form field values, checkbox state,
+>   outlines, page labels, named destinations, annotations and /Info all survive —
+>   each covered by its own unit test. qpdf remains an OPEN OWNER QUESTION for
+>   protect/unlock/repair only; see the standing question below.)*
+> - [x] **lamejs LGPL cure**: vendor `dist/lamejs.js` → `public/vendor/` (copy:wasm
 >   step), runtime `import()` of the stable URL (non-analyzable specifier so no
 >   bundler inlines it); cures the worker bundle + both Next client chunks at once.
-> - [ ] **heic2any LGPL cure (found 2026-08-31: it embeds libheif/libde265 TODAY)**:
+>   *(2026-08-31: done. `encodePcmToMp3` is async now; both shipped callers were already
+>   async. THE SPECIFIER TRAP IS REAL: esbuild `define`s `__NEXT_ROUTER_BASEPATH` to `""`,
+>   so a bare template literal folds to a resolvable literal and gets inlined straight
+>   back — the specifier goes through a `vendorUrl(name)` function call, and the emitted
+>   bundle shows `import(k("lamejs.js"))`, unfolded. `audio-encode.worker.js` went
+>   171 005 B → 2 117 B (−98.8%) with zero lamejs fingerprints. Proven in a real browser,
+>   not assumed: the BUILT worker loaded in a same-origin `{type:"module"}` Worker encoded
+>   1 s of 44.1 kHz stereo to a real MP3 (frame sync `FF FB`), with exactly one
+>   `/vendor/lamejs.js` request in the network log.)*
+> - [x] **heic2any LGPL cure (found 2026-08-31: it embeds libheif/libde265 TODAY)**:
 >   same `/vendor/` treatment for its 1.35 MB chunk.
-> - [ ] **/licenses page** (`src/app/licenses/page.tsx` mirroring privacy; footer
+>   *(2026-08-31: done. GOTCHA worth keeping: heic2any's dist is UMD, and executed as an
+>   ES module its namespace comes back EMPTY — `default` is undefined. Its UMD fallback
+>   branch `(global = global || self, global.heic2any = factory())` fires instead, so the
+>   loader awaits the import for its SIDE EFFECT and reads `globalThis.heic2any`, throwing
+>   a clear error if absent. Verified in both Chromium and WebKit. Behaviour unchanged:
+>   main-thread decode, PNG out, same warnings; `image-convert.ts` is still unreachable
+>   from every worker entrypoint.)*
+> - [x] **/licenses page** (`src/app/licenses/page.tsx` mirroring privacy; footer
 >   SITE_LINKS + sitemap): full inventory incl. FFmpeg GPL source offer (core 0.12.10,
 >   release tag, configure line, static libs, credit line), lamejs/libheif/libde265
 >   LGPL notices + replaceable-file pointers, exifreader MPL, pdfjs Apache text,
 >   jszip-elect-MIT, dompurify-elect-Apache, diff BSD-3, pako, OFL fonts. Texts as
 >   `public/licenses/*.txt`.
-> - [ ] **Copy consistency sweep with MuPDF removal**: homepage ENGINES table +
+>   *(2026-08-31: shipped, 7 sections + footer link + sitemap + responsive-sweep ROUTES
+>   (+1, arithmetic guard updated) + a `static-pages.spec.ts` case that asserts the exact
+>   FFmpeg credit line, real HTTP 200s for the linked `.txt` files, and that the page
+>   contains no `/mupdf/i`. The configure line is reproduced VERBATIM from `strings` on
+>   the shipped `ffmpeg-core.wasm`, not from memory; the source offer pins FFmpeg
+>   **n5.1.4** from the `v0.12.10` Dockerfile rather than a vague "5.1 line".
+>   `public/licenses/third-party-notices.txt` is GENERATED by the new
+>   `scripts/generate-license-notices.mjs` — it reproduces each installed dependency's own
+>   licence file verbatim (31 of 33) and PRINTS the ones that ship none, which today is
+>   `@ffmpeg/ffmpeg` and `@ffmpeg/util` (both MIT, covered by hand on the page). Re-run it
+>   after ANY dependency change. One correctness fix made during integration: a shared
+>   `mit.txt` was being linked for jszip/mp4-muxer/heic2any, i.e. pdf-lib's copyright line
+>   presented as theirs — those now point at the generated per-package notices and the
+>   misattributed file is deleted.)*
+> - [x] **Copy consistency sweep with MuPDF removal**: homepage ENGINES table +
 >   LiveEngine + CompressPdfUI badge + about + privacy + six `MUPDF WASM` workspace
 >   rows + `how-to-merge-pdfs-in-browser.mdx` + CLAUDE.md.
-> - [ ] **FFmpeg posture**: keep GPL core under the separate-program argument
+>   *(2026-08-31: done, plus the 16 extra sites the licensing-posture checklist missed.
+>   Four pre-existing copy lies were found and fixed while sweeping, none of which were
+>   about MuPDF: the homepage POPULAR line claimed compress-pdf "strips metadata and
+>   deduplicates objects" (false under BOTH engines); `posts.ts` indexBlurb claimed
+>   "image downsampling" (never true); the compress-pdf FAQs said metadata is stripped
+>   while aboutText said it is carried through (the code carries it); and
+>   `how-to-merge-pdfs-in-browser.mdx` promised bookmarks survive a merge (they never
+>   did — MuPDF's graft dropped /Outlines too). LiveEngine's `~1.2 s / 100 p` was a MuPDF
+>   measurement and was replaced with a re-measured claim. The homepage ENGINES table
+>   loses the 10 MB MuPDF row and gains a lamejs row, because lamejs is now a real
+>   runtime `/vendor/` fetch that "Web Audio · 0 KB · BUILT IN" was concealing. The
+>   privacy page's "no third-party requests" sentence is UNTOUCHED and still true —
+>   `/vendor/` is same-origin.)*
+> - [x] **FFmpeg posture**: keep GPL core under the separate-program argument
 >   (MIT wrapper worker, postMessage, CLI-shaped exec) + the /licenses source offer;
 >   belt-and-braces spike later: custom LGPL core (`--disable-gpl` — nothing shipped
 >   encodes via x264/x265; H.264 encode is WebCodecs).
+>   *(2026-08-31: the /licenses half is shipped — credit line, verbatim configure line,
+>   pinned source links, static-lib inventory. The LGPL-core spike is NOT done and is an
+>   open owner question below.)*
 >
 > **Disposition of the original items below** — pdf-lib/pdfjs-portable survivors move to
 > a later wave: `delete-pdf-pages`/`extract-pdf-pages` (existing split machinery),

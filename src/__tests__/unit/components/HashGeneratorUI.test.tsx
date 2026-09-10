@@ -16,21 +16,31 @@ beforeAll(async () => {
   }
 });
 
+/*
+  The file the mocked zone hands over, swappable per test. A `let` inside the
+  factory is not reachable (vi.mock hoists), so it lives in a hoisted box.
+*/
+const dropped = vi.hoisted(() => ({
+  make: (): File => new File(["hello world"], "test.txt", { type: "text/plain" }),
+}));
+
+const GOOD_FILE = () => new File(["hello world"], "test.txt", { type: "text/plain" });
+
 // Mock DropZone to avoid complex file drag interactions
 vi.mock("@/components/tools/DropZone", () => ({
   DropZone: ({
     onFiles,
+    practicalLimitNote,
   }: {
     onFiles: (files: File[]) => void;
     accept: string;
+    practicalLimitNote?: string;
   }) => (
     <button
       data-testid="dropzone"
+      data-practical-limit-note={practicalLimitNote ?? ""}
       onClick={() => {
-        const file = new File(["hello world"], "test.txt", {
-          type: "text/plain",
-        });
-        onFiles([file]);
+        onFiles([dropped.make()]);
       }}
     >
       Drop file here
@@ -41,6 +51,7 @@ vi.mock("@/components/tools/DropZone", () => ({
 describe("HashGeneratorUI", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    dropped.make = GOOD_FILE;
   });
 
   it("renders text mode by default with textarea", () => {
@@ -156,6 +167,45 @@ describe("HashGeneratorUI", () => {
       const codes = document.querySelectorAll("code");
       expect(codes.length).toBe(0);
     });
+  });
+
+  /*
+    The File arm reads the whole file into ONE ArrayBuffer, and past V8's
+    single-allocation wall that read REJECTS. Before this, the rejection
+    escaped `handleFiles` unhandled and the surface just sat there: the file
+    name, no digests, no progress bar, no message. Reproduced live with a
+    2.2 GB ISO, under a drop zone that said "NO SIZE CAP".
+  */
+  it("says so when the whole-file read is refused, instead of showing nothing", async () => {
+    dropped.make = () => {
+      const big = new File([], "big.iso");
+      Object.defineProperty(big, "arrayBuffer", {
+        value: () =>
+          Promise.reject(
+            new DOMException("The requested file could not be read", "NotReadableError"),
+          ),
+      });
+      return big;
+    };
+
+    render(<HashGeneratorUI />);
+    fireEvent.click(screen.getByText("File"));
+    fireEvent.click(screen.getByTestId("dropzone"));
+
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toMatch(/big\.iso/);
+    expect(alert.textContent).toMatch(/one buffer/i);
+    expect(document.querySelectorAll("code").length).toBe(0);
+  });
+
+  it("does not print the absolute no-cap claim over that read", () => {
+    // The zone's note comes off the registry, so the sentence under the zone
+    // and the MAX SIZE row on the page cannot drift apart.
+    render(<HashGeneratorUI />);
+    fireEvent.click(screen.getByText("File"));
+    const note = screen.getByTestId("dropzone").getAttribute("data-practical-limit-note");
+    expect(note, "the drop zone is back to NO SIZE CAP").toBeTruthy();
+    expect(note).toMatch(/one piece/);
   });
 
   it("produces known MD5 hash for 'hello'", async () => {

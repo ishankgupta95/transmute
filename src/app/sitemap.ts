@@ -65,6 +65,16 @@ export default function sitemap(): MetadataRoute.Sitemap {
       priority: 0.2,
     },
     {
+      // The offline opt-in. Indexable for the same reason /licenses is: the
+      // privacy policy promises engines are only ever stored "at your explicit
+      // request, one named engine at a time, with its size shown before the
+      // download starts", and this is the page where that request is made.
+      url: `${BASE_URL}/offline-access`,
+      lastModified: new Date(),
+      changeFrequency: "monthly",
+      priority: 0.3,
+    },
+    {
       // Third-party notices. Low priority to crawl, but it must be reachable
       // and indexable: the FFmpeg source offer is only an offer if it can be
       // found without knowing the URL already.

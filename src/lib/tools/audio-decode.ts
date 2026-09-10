@@ -30,32 +30,134 @@ function sniffWav(b: Uint8Array, view: DataView): number | null {
   return null;
 }
 
+/** Byte offset just past an ID3v2 tag, or 0 when the file does not open with one. */
+function skipId3v2(b: Uint8Array): number {
+  if (b.length < 10) return 0;
+  if (b[0] !== 0x49 || b[1] !== 0x44 || b[2] !== 0x33) return 0;
+  // ID3v2: synchsafe length at 6..9, header is 10 bytes.
+  return 10 + ((b[6] << 21) | (b[7] << 14) | (b[8] << 7) | b[9]);
+}
+
+/**
+ * Raw ADTS AAC — a bare elementary stream (`.aac`) with no container box to
+ * key off, which is why it used to fall through to `sniffMp3`.
+ *
+ * That fall-through was a live bug, not a theoretical one. AAC payload bytes
+ * hit the MPEG sync pattern by chance often enough that every scan window
+ * position of a real stream produced a false sync, so the same audio decoded
+ * at 48 kHz as a `.aac` and 44.1 kHz as a `.m4a` — `decodeAudioData` RESAMPLES
+ * to the context rate, which is precisely the loss this module exists to
+ * prevent. `.aac` is accepted by aac-to-mp3, m4a-to-wav, m4a-to-mp3,
+ * audio-trimmer and merge-audio.
+ *
+ * ADTS is only recognised at the START of the file (after any ID3v2 tag),
+ * never by scanning: that is where an elementary stream actually begins, and
+ * refusing to scan is what stops this sniffer from doing to other containers
+ * what `sniffMp3` was doing to this one.
+ */
+const ADTS_RATES = [
+  96000, 88200, 64000, 48000, 44100, 32000, 24000, 22050, 16000, 12000, 11025, 8000, 7350,
+];
+
+function adtsFrameAt(b: Uint8Array, off: number): { rate: number; length: number } | null {
+  if (off < 0 || off + 7 > b.length) return null;
+  // Syncword 0xFFF plus layer == 00. Layer is the field that separates ADTS
+  // from an MPEG audio frame header: 00 is reserved in MPEG audio, so a real
+  // MP3 frame can never satisfy this and a real ADTS frame always does.
+  if (b[off] !== 0xff || (b[off + 1] & 0xf6) !== 0xf0) return null;
+  const rate = ADTS_RATES[(b[off + 2] >> 2) & 0x0f];
+  if (rate === undefined) return null;
+  // aac_frame_length: 13 bits spanning bytes 3..5, header included.
+  const length = ((b[off + 3] & 0x03) << 11) | (b[off + 4] << 3) | (b[off + 5] >> 5);
+  if (length < 7) return null;
+  return { rate, length };
+}
+
+function sniffAdts(b: Uint8Array): number | null {
+  const off = skipId3v2(b);
+  const first = adtsFrameAt(b, off);
+  if (!first) return null;
+  const second = adtsFrameAt(b, off + first.length);
+  // A second frame exactly one aac_frame_length on proves the length field was
+  // real rather than two bytes that happened to line up. Only a read too short
+  // to hold one is excused.
+  if (second) return second.rate === first.rate ? first.rate : null;
+  return off + first.length + 7 <= b.length ? null : first.rate;
+}
+
 const MP3_RATES: Record<number, [number, number, number]> = {
   3: [44100, 48000, 32000], // MPEG1
   2: [22050, 24000, 16000], // MPEG2
   0: [11025, 12000, 8000], // MPEG2.5
 };
 
+/** kbps by bitrate index, keyed by the layer field (3 = I, 2 = II, 1 = III). */
+const MPEG1_BITRATES: Record<number, number[]> = {
+  3: [0, 32, 64, 96, 128, 160, 192, 224, 256, 288, 320, 352, 384, 416, 448, 0],
+  2: [0, 32, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320, 384, 0],
+  1: [0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320, 0],
+};
+const MPEG2_BITRATES: Record<number, number[]> = {
+  3: [0, 32, 48, 56, 64, 80, 96, 112, 128, 144, 160, 176, 192, 224, 256, 0],
+  2: [0, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160, 0],
+  1: [0, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160, 0],
+};
+
+/**
+ * A fully validated MPEG audio frame header at `off`, or null.
+ *
+ * Eleven sync bits alone are cheap to hit by accident, so every reserved
+ * encoding is rejected here — layer 00, version 01, bitrate index 0 (free) or
+ * 15, sampling index 11 — and the frame length is computed so the caller can
+ * demand a second frame where this one says it ends.
+ */
+function mpegFrameAt(
+  b: Uint8Array,
+  off: number,
+): { rate: number; length: number; key: number } | null {
+  if (off < 0 || off + 4 > b.length) return null;
+  if (b[off] !== 0xff || (b[off + 1] & 0xe0) !== 0xe0) return null;
+  const version = (b[off + 1] >> 3) & 0x03;
+  const layer = (b[off + 1] >> 1) & 0x03;
+  if (version === 1 || layer === 0) return null; // reserved
+  const bitrateIdx = (b[off + 2] >> 4) & 0x0f;
+  const rateIdx = (b[off + 2] >> 2) & 0x03;
+  if (bitrateIdx === 0 || bitrateIdx === 15 || rateIdx === 3) return null;
+  const rates = MP3_RATES[version];
+  const kbps = (version === 3 ? MPEG1_BITRATES : MPEG2_BITRATES)[layer]?.[bitrateIdx];
+  if (!rates || !kbps) return null;
+  const rate = rates[rateIdx];
+  const padding = (b[off + 2] >> 1) & 0x01;
+  // Layer I carries 384 samples a frame in 4-byte slots; Layer II and MPEG1
+  // Layer III carry 1152; MPEG2/2.5 Layer III carries 576.
+  const length =
+    layer === 3
+      ? (Math.floor((12 * kbps * 1000) / rate) + padding) * 4
+      : Math.floor(((layer === 1 && version !== 3 ? 72 : 144) * kbps * 1000) / rate) + padding;
+  if (length < 4) return null;
+  return { rate, length, key: (version << 4) | (layer << 2) | rateIdx };
+}
+
 /** First MPEG audio frame header after any ID3v2 tag. */
 function sniffMp3(b: Uint8Array): number | null {
   if (b.length < 10) return null;
-  let off = 0;
-  if (b[0] === 0x49 && b[1] === 0x44 && b[2] === 0x33) {
-    // ID3v2: synchsafe length at 6..9, header is 10 bytes.
-    off = 10 + ((b[6] << 21) | (b[7] << 14) | (b[8] << 7) | b[9]);
-  }
+  let off = skipId3v2(b);
   // Scan a bounded window for the frame sync so junk can't loop us forever.
   const limit = Math.min(b.length - 4, off + 4096);
   for (; off <= limit; off++) {
-    if (b[off] === 0xff && (b[off + 1] & 0xe0) === 0xe0) {
-      const version = (b[off + 1] >> 3) & 0x03;
-      const layer = (b[off + 1] >> 1) & 0x03;
-      const rateIdx = (b[off + 2] >> 2) & 0x03;
-      if (version === 1 || layer === 0 || rateIdx === 3) continue; // reserved
-      const rates = MP3_RATES[version];
-      if (!rates) continue;
-      return rates[rateIdx];
+    const frame = mpegFrameAt(b, off);
+    if (!frame) continue;
+    const next = mpegFrameAt(b, off + frame.length);
+    // Version, layer and sampling rate are fixed for the life of a stream, so
+    // a matching header exactly one frame on is the cross-check that a lone
+    // sync pattern inside somebody else's payload cannot fake.
+    if (next) {
+      if (next.key === frame.key) return frame.rate;
+      continue;
     }
+    // A read too short to hold the next frame has nothing to check against;
+    // take the well-formed header rather than reporting nothing.
+    if (off + frame.length + 4 > b.length) return frame.rate;
   }
   return null;
 }
@@ -185,6 +287,9 @@ export function sniffSampleRate(bytes: Uint8Array): number | null {
     sniffFlac(bytes) ??
     sniffOgg(bytes, view) ??
     sniffMp4(bytes, view) ??
+    // Ahead of the MP3 fall-through: a raw ADTS stream is not a container, so
+    // sniffMp3 used to scan its payload and false-sync on it.
+    sniffAdts(bytes) ??
     sniffMp3(bytes);
   // Web Audio contexts reject rates outside a sane band; treat absurd sniffs
   // (corrupt headers) as unknown rather than crashing the decode.
@@ -194,10 +299,23 @@ export function sniffSampleRate(bytes: Uint8Array): number | null {
 
 /**
  * Containers worth handing to FFmpeg when the browser's own decoder gives up:
- * AAC/M4A outside Chromium, Ogg Vorbis/Opus and FLAC in Safari. A deliberate
- * allowlist — an unknown extension must fail fast, not pull a 31 MB engine.
+ * AAC/M4A outside Chromium, Ogg Vorbis/Opus and FLAC in Safari, and WMA
+ * everywhere. A deliberate allowlist — an unknown extension must fail fast,
+ * not pull a 31 MB engine.
+ *
+ * `wma` is the one entry here that is not a fallback but the ONLY path. No
+ * browser decodes WMA at all; measured 2026-09-04 on a real 35 744-byte
+ * `wmav2`-in-ASF file, `decodeAudioData` rejected it in every engine:
+ *   Chromium "Unable to decode audio data"
+ *   WebKit   "Decoding failed"
+ *   Firefox  "The buffer passed to decodeAudioData contains an unknown content type."
+ * and the fallback below then handled it — the exact argv on line ~228,
+ * against the shipped core in headless Chromium, returned EXIT=0 in 16 ms with
+ * a 352 334-byte WAV, which `decodeAudioData` decoded to 2.0 s of stereo audio
+ * at peak 0.3694. So a `.wma` here always costs the 31 MB engine, and there is
+ * no cheaper way to open one in a browser.
  */
-const FFMPEG_FALLBACK_EXTS = new Set(["m4a", "m4b", "aac", "mp4", "ogg", "oga", "opus", "flac", "mp3", "wav"]);
+const FFMPEG_FALLBACK_EXTS = new Set(["m4a", "m4b", "aac", "mp4", "ogg", "oga", "opus", "flac", "mp3", "wav", "wma"]);
 
 function canFallbackToFFmpeg(file: File): boolean {
   const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
@@ -225,12 +343,22 @@ async function decodeViaFFmpeg(
 
   const wavBytes = await runFFmpegTask(async (ffmpeg) => {
     await ffmpeg.writeFile(inputName, await fileToUint8Array(file));
-    const ret = await ffmpeg.exec(["-i", inputName, "-acodec", "pcm_s16le", "-f", "wav", outputName]);
-    if (ret !== 0) throw new Error("FFmpeg could not decode this audio file");
-    const data = await ffmpeg.readFile(outputName);
-    await ffmpeg.deleteFile(inputName);
-    await ffmpeg.deleteFile(outputName);
-    return data as Uint8Array;
+    try {
+      const ret = await ffmpeg.exec(["-i", inputName, "-acodec", "pcm_s16le", "-f", "wav", outputName]);
+      if (ret !== 0) throw new Error("FFmpeg could not decode this audio file");
+      return (await ffmpeg.readFile(outputName)) as Uint8Array;
+    } finally {
+      // Both have to run even when exec threw. A failure is the ordinary path
+      // here — /wma-to-mp3 is FFmpeg-only, and a DRM'd or truncated file fails
+      // every time — and without this the whole source stays pinned in MEMFS
+      // for the life of the tab, one full copy per attempt.
+      await ffmpeg.deleteFile(inputName).catch(() => {
+        /* never written */
+      });
+      await ffmpeg.deleteFile(outputName).catch(() => {
+        /* never written */
+      });
+    }
   }, { signal: ctx.signal });
 
   const bytes =

@@ -45,7 +45,10 @@ test.describe("static pages", () => {
     // `Children's` uses a typographic apostrophe, hence the `.`.
     for (const heading of [
       /^Files you process$/i,
-      /^Cookies and local storage$/i,
+      // Renamed from "Cookies and local storage": the section now also covers
+      // the copy of the site's own code a browser keeps, which is not
+      // localStorage. The legal surface is the same, the heading is wider.
+      /^Cookies and browser storage$/i,
       /^Analytics$/i,
       // Was "Third-party advertising" while the dead AdSense wiring was still
       // in the layout; the section now states plainly that there is none.
@@ -81,6 +84,10 @@ test.describe("static pages", () => {
       /^lamejs$/i,
       /^libheif and libde265$/i,
       /^ExifReader$/i,
+      // Apache-2.0 §4(d): the qpdf NOTICE has to travel with the binary we
+      // serve, and qpdf is compiled first-party so no generator produces it.
+      // This page is the only thing discharging that obligation.
+      /^qpdf$/i,
       /^Permissive libraries$/i,
       /^Fonts$/i,
       /^Full dependency notices$/i,
@@ -96,12 +103,26 @@ test.describe("static pages", () => {
     await expect(
       page.getByText("This software uses code of FFmpeg licensed under the GPLv2 or later."),
     ).toBeVisible();
-    await expect(page.locator("main pre")).toContainText("--enable-gpl");
+    // Two engines now publish a build command — FFmpeg's configure line and
+    // qpdf's cmake/em++ invocation — so `main pre` resolves to two elements and
+    // a bare toContainText would be a strict-mode violation. Each is filtered
+    // down to its own block so both claims stay asserted independently.
+    const builds = page.locator("main pre");
+    await expect(builds.filter({ hasText: "--enable-gpl" })).toBeVisible();
+    // Not a tuning flag: without it qpdf's throw-on-error becomes a bare wasm
+    // abort, and a wrong password fails silently instead of being reported.
+    await expect(builds.filter({ hasText: "-fwasm-exceptions" })).toBeVisible();
 
     // The offer is only an offer if the texts it points at actually resolve.
     // A 404 here would be a silent compliance failure, so fetch them for real
     // rather than trusting that the anchors exist.
-    for (const file of ["gpl-2.0.txt", "lgpl-3.0.txt", "third-party-notices.txt"]) {
+    for (const file of [
+      "gpl-2.0.txt",
+      "lgpl-3.0.txt",
+      "third-party-notices.txt",
+      "apache-2.0.txt",
+      "qpdf-notice.txt",
+    ]) {
       const anchor = page.locator(`main a[href$="/licenses/${file}"]`).first();
       await expect(anchor, `licenses page must link ${file}`).toBeVisible();
       const href = await anchor.getAttribute("href");

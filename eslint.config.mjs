@@ -18,9 +18,49 @@ const eslintConfig = defineConfig([
     // WASM engine bundles copied in by `npm run copy:wasm`. Third-party,
     // minified, and not ours to lint.
     "public/**",
+    // The qpdf artifact this repo compiles itself and checks in (the source
+    // `public/**` is copied FROM). It is Emscripten's minified glue: it must
+    // stay byte-identical to what `scripts/build-qpdf-wasm.sh` emitted, or the
+    // licensing gate's pinned SHA-256 no longer attests to anything.
+    "vendor/**",
   ]),
   {
     rules: {
+      /*
+        oxipng ships two builds and only one of them can ever run here. The
+        parallel build imports its memory as `shared: true` and needs
+        SharedArrayBuffer, which is undefined on an origin that is not
+        cross-origin-isolated — and GitHub Pages cannot send COOP/COEP, so this
+        one never will be. Importing it would ship 236,042 bytes of wasm that
+        cannot execute, on top of the 164,172 that can.
+
+        The package entry is banned for a second, duller reason: `index.js` is
+        one re-export line with no default export and no `init`, so
+        `import init from "@jsquash/oxipng"` is a build error — and the shape
+        that does resolve drags the parallel build into the module graph.
+
+        The single legal specifier is the deep single-thread one:
+          @jsquash/oxipng/codec/pkg/squoosh_oxipng.js
+      */
+      "no-restricted-imports": [
+        "error",
+        {
+          paths: [
+            {
+              name: "@jsquash/oxipng",
+              message:
+                "Import @jsquash/oxipng/codec/pkg/squoosh_oxipng.js — the package entry has no default export and pulls in the parallel build.",
+            },
+          ],
+          patterns: [
+            {
+              group: ["@jsquash/oxipng/codec/pkg-parallel/*"],
+              message:
+                "The parallel oxipng build needs SharedArrayBuffer; this origin is not cross-origin-isolated. Use codec/pkg/squoosh_oxipng.js.",
+            },
+          ],
+        },
+      ],
       // A leading underscore is already used across the codebase to mark a
       // binding as deliberately unused (unused callback params, positional
       // args kept for signature shape). Honour it instead of flagging it.

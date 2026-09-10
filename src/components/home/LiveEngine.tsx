@@ -51,9 +51,16 @@ const LIVE = [
     time: "~2 s / minute",
   },
   {
-    from: "MOV",
+    /*
+      This was MOV -> MP4 and described a WebCodecs GPU re-encode. Since
+      `mov-to-mp4` shipped that is a stream copy through FFmpeg — no decode, no
+      GPU, milliseconds — so the row was advertising the wrong engine for a
+      page that now exists. WEBM -> MP4 is the conversion that really is
+      WebCodecs (`webm-to-mp4`), so the claim moved to the tool it is true of.
+    */
+    from: "WEBM",
     to: "MP4",
-    inMeta: "ProRes 4K\n1.2 GB",
+    inMeta: "VP9 1080p\n420 MB",
     outMeta: "H.264 1080p\n84 MB",
     note: "Re-encoded with WebCodecs on your own GPU, not in a queue behind other people.",
     engine: "WEBCODECS",

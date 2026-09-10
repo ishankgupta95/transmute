@@ -1,10 +1,10 @@
 "use client";
 
-import { useCallback, useState, useEffect, useRef } from "react";
+import { useCallback, useState } from "react";
 import { ErrorMessage } from "@/components/tools/ErrorMessage";
 import { DropZone } from "@/components/tools/DropZone";
 import { DownloadButton } from "@/components/tools/DownloadButton";
-import { splitPdf, getPageCount, loadPdfjsDocument, renderPageFromDoc } from "@/lib/tools/pdf-engine";
+import { splitPdf, getPageCount } from "@/lib/tools/pdf-engine";
 import {
   ToolActions,
   ToolAside,
@@ -13,12 +13,8 @@ import {
   ToolOutput,
   ToolResetLink,
 } from "@/components/tools/ToolAside";
-import {
-  CanvasHeader,
-  PageDeck,
-  PageTile,
-  RangeField,
-} from "@/components/tools/ToolCanvas";
+import { CanvasHeader, RangeField } from "@/components/tools/ToolCanvas";
+import { PdfPageDeck, usePdfPageThumbnails } from "@/components/tools/PdfPagePicker";
 import { ToolProgress } from "@/components/tools/ToolControls";
 import { parsePageRange, toPageRange } from "@/lib/tools/media-preview";
 import { formatFileSize } from "@/lib/utils/file-helpers";
@@ -29,14 +25,13 @@ export function SplitPdfUI() {
   const [pageCount, setPageCount] = useState(0);
   const [selectedPages, setSelectedPages] = useState<Set<number>>(new Set());
   const [rangeInput, setRangeInput] = useState("");
-  const [thumbnails, setThumbnails] = useState<string[]>([]);
   const [status, setStatus] = useState<"idle" | "loading" | "processing" | "done" | "error">("idle");
   const [result, setResult] = useState<Blob | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const thumbsLoadedRef = useRef(false);
   // The doc pins a "Done in 1.4 s" card above the primary once a run
   // finishes. Timed for real; cleared the moment the inputs change.
   const [elapsed, setElapsed] = useState<string | null>(null);
+  const thumbnails = usePdfPageThumbnails(file, pageCount);
 
   const handleFiles = useCallback(async (files: File[]) => {
     const f = files[0];
@@ -47,8 +42,6 @@ export function SplitPdfUI() {
     setError(null);
     setSelectedPages(new Set());
     setRangeInput("");
-    setThumbnails([]);
-    thumbsLoadedRef.current = false;
     try {
       const buf = await f.arrayBuffer();
       const count = await getPageCount(buf);
@@ -59,52 +52,6 @@ export function SplitPdfUI() {
       setStatus("error");
     }
   }, []);
-
-  useEffect(() => {
-    if (!file || pageCount === 0 || thumbsLoadedRef.current) return;
-    thumbsLoadedRef.current = true;
-    let cancelled = false;
-    let doc: Awaited<ReturnType<typeof loadPdfjsDocument>> | null = null;
-    (async () => {
-      const freshBuf = await file.arrayBuffer();
-      doc = await loadPdfjsDocument(freshBuf);
-      const thumbs: string[] = [];
-      try {
-        for (let i = 1; i <= Math.min(pageCount, 50); i++) {
-          // `break`, not `return` — the finally below has to run or the pdfjs
-          // document stays pinned in its worker for the tab's lifetime.
-          if (cancelled) break;
-          try {
-            const canvas = await renderPageFromDoc(doc, i, 0.3);
-            thumbs.push(canvas.toDataURL("image/jpeg", 0.6));
-          } catch {
-            thumbs.push("");
-          }
-          // Publish in batches so the deck fills in as it renders rather than
-          // staying blank for several seconds — same as the reorder deck.
-          if (!cancelled && i % 5 === 0) setThumbnails([...thumbs]);
-        }
-        if (!cancelled) setThumbnails(thumbs);
-      } finally {
-        await doc.destroy();
-        doc = null;
-      }
-    })();
-    return () => {
-      cancelled = true;
-      /*
-        The ref means "a thumbnail pass is in flight, or finished, for this
-        file + page count". Tearing the effect down makes both false, so it
-        has to clear HERE and not only in handleFiles / handleReset —
-        otherwise any teardown-then-rerun of the same effect instance
-        (StrictMode's mount double-invoke, Fast Refresh) leaves it stuck
-        true, the re-run returns early, and the deck never fills in. Kept
-        identical in RotatePdfUI and PdfPageReorderUI.
-      */
-      thumbsLoadedRef.current = false;
-      void doc?.destroy();
-    };
-  }, [file, pageCount]);
 
   /*
     The doc's RANGE field and the page deck are one control in two shapes, so
@@ -187,8 +134,6 @@ export function SplitPdfUI() {
     setFile(null);
     setPageCount(0);
     setSelectedPages(new Set());
-    setThumbnails([]);
-    thumbsLoadedRef.current = false;
     setResult(null);
     setElapsed(null);
     setStatus("idle");
@@ -209,26 +154,12 @@ export function SplitPdfUI() {
           trailing={`${selectedPages.size} PAGES SELECTED`}
         />
 
-        <PageDeck>
-          {Array.from({ length: pageCount }, (_, idx) => (
-            <PageTile
-              key={idx}
-              number={idx + 1}
-              thumb={thumbnails[idx] || undefined}
-              selected={selectedPages.has(idx)}
-              // Dimming marks pages the selection has left out. With nothing
-              // selected yet there is nothing to contrast against, so a freshly
-              // loaded deck would grey out whole and read as disabled.
-              dimUnselected={selectedPages.size > 0}
-              onClick={() => togglePage(idx)}
-            />
-          ))}
-        </PageDeck>
-        {pageCount > 50 && (
-          <p className="m-0 font-mono text-[9.5px] leading-none tracking-[0.06em] text-text-muted">
-            THUMBNAILS RENDERED FOR THE FIRST 50 OF {pageCount} PAGES — EVERY PAGE STAYS SELECTABLE VIA THE RANGE FIELD
-          </p>
-        )}
+        <PdfPageDeck
+          pageCount={pageCount}
+          selected={selectedPages}
+          onToggle={togglePage}
+          thumbnails={thumbnails}
+        />
 
         <RangeField
           value={rangeInput}

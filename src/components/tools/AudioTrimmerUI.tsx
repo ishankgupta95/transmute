@@ -24,11 +24,22 @@ import { ToolControl, ToolControlGroup, ToolProgress } from "@/components/tools/
   The doc's presets, constrained to the format/bitrate chips this tool has —
   its "Podcast: mono" and "64 kbps" claims need channel and lower-bitrate
   controls that don't exist, so those presets say only what they set.
+
+  The WAV preset's note names 16-bit because the writer behind it has only one
+  depth: `audio-trim.ts` encodes through `encodeWav` → `encodePcmToWav`, which
+  is hard-wired to `BYTES_PER_SAMPLE = 2` (`audio-pcm.ts`). Uncompressed is not
+  the same claim as lossless — a 24-bit source is quantised on the way out —
+  and a chip called "Lossless" over an unqualified note was making the stronger
+  one.
 */
 const PRESETS = [
   { id: "podcast", label: "Podcast", note: "MP3 at 128 kbps — speech-tuned, small file." },
   { id: "music", label: "Music", note: "MP3 at 320 kbps. No normalisation applied." },
-  { id: "lossless", label: "Lossless", note: "WAV — uncompressed, roughly ten times the size." },
+  {
+    id: "lossless",
+    label: "Lossless",
+    note: "WAV — uncompressed, written at 16 bits per sample, roughly ten times the size. Nothing is compressed away; a 24-bit source is still reduced to 16-bit.",
+  },
   { id: "custom", label: "Custom", note: "Every control unlocked. Nothing is assumed." },
 ] as const;
 import {
@@ -43,9 +54,17 @@ import { TrimOverlay } from "@/components/tools/ToolCanvas";
 import { computeWaveform } from "@/lib/tools/media-preview";
 import { CANVAS_COLUMN, STAGE_GROW } from "@/components/workspace/shared";
 import { cn } from "@/lib/utils/cn";
+import { getToolBySlug } from "@/data/tools";
 
 /** Bar count the doc's waveform draws at; wide enough to read as a shape. */
 const WAVEFORM_BARS = 90;
+
+/*
+  Read from the registry so the zone and the spec panel say one thing. This is
+  a disclosure, not a check — nothing is compared against `file.size`, and the
+  tool still accepts every file it accepted before.
+*/
+const PRACTICAL_LIMIT_NOTE = getToolBySlug("audio-trimmer")?.practicalLimitNote;
 
 export function AudioTrimmerUI() {
   const [file, setFile] = useState<File | null>(null);
@@ -89,6 +108,24 @@ export function AudioTrimmerUI() {
   */
   const decodedDurationRef = useRef<number | null>(null);
 
+  /*
+    THE PREVIEW DECODE IS ASYNCHRONOUS AND CANNOT BE STOPPED.
+
+    `computeWaveform` resolves when it resolves; `reset()` and the setState
+    calls beside it only clear what is on screen. Here the stale value is not
+    decoration: it writes `decodedDurationRef`, `duration`, and the clamps on
+    `startTime`/`endTime` — it IS the ruler the handles are drawn and computed
+    against. A user who drops a long file, changes their mind and drops a short
+    one gets the short clip presented on the long one's timeline, with the
+    selection bracket that really covers the whole clip drawn across a fraction
+    of a percent of the waveform.
+
+    Same fence as `useFileProcessor.runIdRef` and `ExtractAudioUI.runToken`. A
+    ref, not state: the check has to see the value at the moment the promise
+    settles.
+  */
+  const waveformRunRef = useRef(0);
+
   const processFn = useCallback(
     (f: File, opts: AudioTrimOptions, ctx: FileProcessorContext) => trimAudio(f, opts, ctx),
     [],
@@ -100,23 +137,29 @@ export function AudioTrimmerUI() {
   /*
     Any hand edit un-lights the preset chip, so what's lit is what runs — and
     invalidates a finished trim, so the controls can never describe an output
-    the download does not contain. Guarded on `result` so a slider drag is not
-    calling reset() on every tick. Declared below the hook: `reset` is in the
+    the download does not contain. Guarded so a slider drag is not calling
+    reset() on every tick. Declared below the hook: `reset` is in the
     dependency list.
+
+    A FAILED run is dropped by the same guard. The FORMAT cell, the OUTPUT rows
+    and the SEL readout all follow the controls, so an error left standing gets
+    re-labelled with the settings the user has just switched to — the surface
+    then reads "FORMAT WAV" above an MP3 encoder's failure text, describing a
+    run that was never attempted.
   */
   const touch = useCallback(
     <T,>(setter: (v: T) => void) =>
       (v: T) => {
         setPreset("custom");
-        if (result) reset();
+        if (result || error) reset();
         setter(v);
       },
-    [result, reset],
+    [result, error, reset],
   );
 
   const applyPreset = useCallback(
     (id: string) => {
-      if (result) reset();
+      if (result || error) reset();
       setPreset(id);
       if (id === "podcast") {
         setOutputFormat("mp3");
@@ -128,13 +171,16 @@ export function AudioTrimmerUI() {
         setOutputFormat("wav");
       }
     },
-    [result, reset],
+    [result, error, reset],
   );
 
   const handleFiles = useCallback(
     (files: File[]) => {
       const f = files[0];
       if (!f) return;
+      // Supersede any preview decode still in flight for the file being
+      // replaced; its writes are dropped below.
+      const run = ++waveformRunRef.current;
       // Revoke any prior URL before allocating a new one.
       if (audioUrlRef.current) URL.revokeObjectURL(audioUrlRef.current);
       const url = URL.createObjectURL(f);
@@ -157,6 +203,7 @@ export function AudioTrimmerUI() {
       */
       computeWaveform(f, WAVEFORM_BARS)
         .then((w) => {
+          if (waveformRunRef.current !== run) return;
           setPeaks(w.peaks);
           setStream({ sampleRate: w.sampleRate, channels: w.channels });
           if (!Number.isFinite(w.duration) || w.duration <= 0) return;
@@ -165,7 +212,12 @@ export function AudioTrimmerUI() {
           setStartTime((s) => Math.min(s, w.duration));
           setEndTime((e) => (e === 0 || e > w.duration ? w.duration : e));
         })
-        .catch(() => setPeaks(null));
+        .catch(() => {
+          // Fenced on the failure path too: a discarded file's rejection must
+          // not blank a waveform that has since drawn.
+          if (waveformRunRef.current !== run) return;
+          setPeaks(null);
+        });
     },
     [reset],
   );
@@ -192,6 +244,9 @@ export function AudioTrimmerUI() {
   }, [file, process, startTime, endTime, outputFormat, bitrate]);
 
   const handleReset = useCallback(() => {
+    // START OVER throws the file away, so the decode still running for it has
+    // no timeline left to set.
+    waveformRunRef.current += 1;
     if (audioUrlRef.current) URL.revokeObjectURL(audioUrlRef.current);
     audioUrlRef.current = null;
     setFile(null);
@@ -207,6 +262,7 @@ export function AudioTrimmerUI() {
     return (
       <DropZone
         accept=".mp3,.wav,.ogg,.m4a,.flac,.aac"
+        practicalLimitNote={PRACTICAL_LIMIT_NOTE}
         onFiles={handleFiles}
         label="Upload an audio file to trim"
       />
@@ -255,13 +311,14 @@ export function AudioTrimmerUI() {
           end={endTime}
           duration={duration}
           // Moving a handle changes what a re-run would produce, so a finished
-          // trim of the old selection stops being offered.
+          // trim of the old selection stops being offered — and a failed one
+          // stops being shown under a selection it was never run against.
           onStartChange={(v) => {
-            if (result) reset();
+            if (result || error) reset();
             setStartTime(v);
           }}
           onEndChange={(v) => {
-            if (result) reset();
+            if (result || error) reset();
             setEndTime(v);
           }}
           format={formatTime}

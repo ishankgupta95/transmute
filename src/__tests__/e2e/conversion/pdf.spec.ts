@@ -11,9 +11,18 @@ import {
 import { assertPdf, assertZip, assertJpeg } from "./validators";
 
 /**
- * PDF pipelines run on MuPDF WASM and pdf-lib. The fixture is a real 5-page
- * A4 document with embedded text and a filled rectangle per page, so page
- * counts, rasterisation and stamping are all falsifiable.
+ * PDF pipelines run on pdf-lib (every document and page operation) and pdfjs
+ * (rendering). The fixture is a real 5-page A4 document with embedded text and
+ * a filled rectangle per page, so page counts, rasterisation and stamping are
+ * all falsifiable.
+ *
+ * The page-geometry and extraction tools that landed alongside these —
+ * extract-pdf-pages, delete-pdf-pages, crop-pdf, change-pdf-page-size,
+ * pdf-resizer and pdf-to-text — are covered in `pdf-pages.spec.ts`.
+ *
+ * NOTE ON TITLES: the conversion-webkit project greps out /gif|FFmpeg|MP4/i,
+ * and every case here must run in BOTH engines — pdf-lib and pdfjs have no
+ * Chromium-only dependency — so no title may contain those words.
  */
 
 test.describe("pdf conversions — real output", () => {

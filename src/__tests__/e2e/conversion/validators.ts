@@ -298,6 +298,127 @@ export async function assertPdf(
 }
 
 // ────────────────────────────────────────────────────────────────────────────
+// Encrypted PDF (the qpdf tools: protect-pdf, unlock-pdf, pdf-permissions)
+// ────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Assert a document is genuinely encrypted, and report what its encryption
+ * dictionary says.
+ *
+ * DO NOT route encrypted bytes through `assertPdf`. Measured against qpdf
+ * 12.4.1's own output: pdf-lib cannot parse an AES-256 document even with
+ * `ignoreEncryption: true` — it throws "Expected instance of PDFDict, but got
+ * instance of undefined" long before it reaches the page tree, because the
+ * cross-reference stream it needs is itself encrypted. That holds for a
+ * restrictions-only file (empty user password) just as much as for a
+ * password-locked one, so there is no encrypted shape here that pdf-lib can be
+ * asked about at all. This validator therefore reads the raw bytes, and it is
+ * not a candidate for "simplifying" back onto `assertPdf`.
+ *
+ * Reading the bytes is sound rather than a shortcut: the encryption dictionary
+ * is the one dictionary that may never live in an object stream — a reader has
+ * to read it *before* it can decrypt anything — so it is always plainly
+ * visible. Measured, from `--encrypt … --bits=256` and `--bits=128 --use-aes=y`
+ * respectively:
+ *
+ *     << /CF << /StdCF << … /CFM /AESV3 … >> >> /Filter /Standard /Length 256
+ *        /O <…> /OE <…> /P -4 /Perms <…> /R 6 /StmF /StdCF /StrF /StdCF
+ *        /U <…> /UE <…> /V 5 >>
+ *     << /CF << /StdCF << … /CFM /AESV2 … >> >> /Filter /Standard /Length 128
+ *        /O <…> /OE <> /P -4 /R 4 /StmF /StdCF /StrF /StdCF /U <…> /UE <> /V 4 >>
+ */
+export function assertEncryptedPdf(buf: Buffer): {
+  /** Algorithm: V 5 / R 6 is AES-256, V 4 / R 4 is AES-128. */
+  v: number | null;
+  r: number | null;
+  /** The permission bitfield exactly as written. -4 means "everything allowed". */
+  p: number | null;
+} {
+  expect(buf.length).toBeGreaterThan(256);
+  expect(buf.toString("latin1", 0, 5), "PDF header").toBe("%PDF-");
+  expect(buf.toString("latin1", Math.max(0, buf.length - 2048)), "PDF must be terminated")
+    .toContain("%%EOF");
+
+  const text = buf.toString("latin1");
+  expect(text, "an encrypted PDF must point its trailer at an /Encrypt dictionary")
+    .toMatch(/\/Encrypt \d+ \d+ R/);
+  const start = text.indexOf("/Filter /Standard");
+  expect(start, "encryption must be handled by the standard security handler")
+    .toBeGreaterThan(-1);
+
+  // Scope the numbers to the encryption dictionary itself, so a stray "/V 1"
+  // elsewhere in the file cannot be read as the algorithm.
+  const end = text.indexOf("endobj", start);
+  const dict = text.slice(start, end < 0 ? start + 2048 : end);
+  const num = (key: string): number | null => {
+    const match = dict.match(new RegExp(`/${key} (-?\\d+)`));
+    return match ? Number(match[1]) : null;
+  };
+  return { v: num("V"), r: num("R"), p: num("P") };
+}
+
+/** A valid PDF carrying no encryption at all — what unlock-pdf owes its users. */
+export async function assertNotEncryptedPdf(
+  buf: Buffer,
+  opts: { pages?: number } = {},
+): Promise<Awaited<ReturnType<typeof assertPdf>>> {
+  // Safe to use `assertPdf` here, unlike above: a document with no /Encrypt is
+  // exactly the shape pdf-lib parses.
+  const info = await assertPdf(buf, opts);
+  expect(info.text, "the document must carry no encryption dictionary").not.toContain("/Encrypt");
+  return info;
+}
+
+/**
+ * Open a document with pdfjs' own decryptor, the way a reader would.
+ *
+ * The only thing available here that can answer "does this file actually open,
+ * and what does it forbid" for an encrypted document — pdf-lib cannot parse one
+ * at all (see `assertEncryptedPdf`), so without this the strongest available
+ * claim would be "the bytes mention /Encrypt", which a file that no reader can
+ * open would also satisfy.
+ *
+ * Returns null when the document demands a password that was not supplied or
+ * was wrong. Every other failure is rethrown, so a genuinely broken file goes
+ * red rather than passing for "locked". The legacy build is deliberate: the
+ * default entry point does not run under Node (verified — it needs browser
+ * globals at import time), the legacy one does.
+ */
+export async function openPdfAsReader(
+  buf: Buffer,
+  password?: string,
+): Promise<{ pages: number; allowed: string[] | null } | null> {
+  const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+  let doc;
+  try {
+    doc = await pdfjs.getDocument({
+      data: new Uint8Array(buf),
+      password,
+      isEvalSupported: false,
+      useSystemFonts: false,
+    }).promise;
+  } catch (err) {
+    if ((err as { name?: string }).name === "PasswordException") return null;
+    throw err;
+  }
+  try {
+    // `getPermissions()` returns the granted flags, or null when the document
+    // is not encrypted at all. Translating them back through pdfjs' own
+    // `PermissionFlag` keeps the names honest if the enum ever moves.
+    const granted = await doc.getPermissions();
+    const allowed =
+      granted === null
+        ? null
+        : Object.entries(pdfjs.PermissionFlag)
+            .filter(([, bit]) => granted.includes(bit))
+            .map(([name]) => name);
+    return { pages: doc.numPages, allowed };
+  } finally {
+    await doc.destroy();
+  }
+}
+
+// ────────────────────────────────────────────────────────────────────────────
 // Images
 // ────────────────────────────────────────────────────────────────────────────
 

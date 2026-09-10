@@ -2,6 +2,7 @@
 
 import { useCallback, useRef, useState } from "react";
 import { DropZone } from "@/components/tools/DropZone";
+import { ErrorMessage } from "@/components/tools/ErrorMessage";
 import { ProgressBar } from "@/components/tools/ProgressBar";
 import {
   ToolAside,
@@ -18,6 +19,7 @@ import {
   TextPane,
   TextPanes,
 } from "@/components/tools/ToolCanvas";
+import { getToolBySlug } from "@/data/tools";
 import type { Hashes } from "@/lib/tools/hash-digest";
 import { computeHashesGuarded } from "@/lib/workers/hash-client";
 import { CANVAS_COLUMN } from "@/components/workspace/shared";
@@ -26,12 +28,22 @@ import { formatFileSize } from "@/lib/utils/file-helpers";
 
 const ALGOS = ["md5", "sha1", "sha256", "sha512"] as const;
 
+/*
+  The File arm reads the whole file into one ArrayBuffer before hashing
+  anything, so this zone may not print the absolute "NO SIZE CAP" — see the
+  block on `practicalLimitNote` in the registry entry for the measurement.
+  Read off the registry rather than retyped, so the spec row on the page and
+  the line under the zone cannot drift apart.
+*/
+const PRACTICAL_LIMIT_NOTE = getToolBySlug("hash-generator")?.practicalLimitNote;
+
 export function HashGeneratorUI() {
   const [mode, setMode] = useState<"text" | "file">("text");
   const [input, setInput] = useState("");
   const [fileName, setFileName] = useState("");
   const [hashes, setHashes] = useState<Hashes | null>(null);
   const [progress, setProgress] = useState<number | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const { copied, copy } = useCopied<string>();
 
   /*
@@ -76,7 +88,30 @@ export function HashGeneratorUI() {
       if (!f) return;
       setFileName(f.name);
       setHashes(null);
-      await run(await f.arrayBuffer());
+      setError(null);
+      /*
+        `f.arrayBuffer()` is one allocation of the WHOLE file, and past V8's
+        single-buffer wall it REJECTS rather than resolving short. Unhandled,
+        that rejection escaped as a page error and left the canvas showing a
+        file name with no digests, no progress and nothing to read — the
+        ceiling the registry note now discloses had no visible failure to
+        match it. The token keeps a slow read that fails from posting its
+        error over a file the user has since replaced.
+      */
+      const id = ++runIdRef.current;
+      let data: ArrayBuffer;
+      try {
+        data = await f.arrayBuffer();
+      } catch {
+        if (runIdRef.current !== id) return;
+        setProgress(null);
+        setError(
+          `Could not read ${f.name}. Hashing needs the whole file in one buffer, and this browser would not allocate one that large — files much past 2 GB do not load.`,
+        );
+        return;
+      }
+      if (runIdRef.current !== id) return;
+      await run(data);
     },
     [run],
   );
@@ -115,7 +150,12 @@ export function HashGeneratorUI() {
             {/* The zone stays mounted, as it does in the sibling Base64 tool:
                 swapping it for a header made hashing a SECOND file impossible
                 without toggling the INPUT chip to Text and back. */}
-            <DropZone accept="*/*" onFiles={handleFiles} />
+            <DropZone
+              accept="*/*"
+              onFiles={handleFiles}
+              practicalLimitNote={PRACTICAL_LIMIT_NOTE}
+            />
+            {error && <ErrorMessage message={error} />}
             {fileName && (
               <CanvasHeader
                 file={fileName}
@@ -158,6 +198,7 @@ export function HashGeneratorUI() {
               setInput("");
               setFileName("");
               setProgress(null);
+              setError(null);
             }}
             options={[
               { value: "text" as const, label: "Text" },

@@ -152,7 +152,19 @@ export function VideoTrimmerUI() {
   }, [reset]);
 
   if (!file) {
-    return <DropZone accept=".mp4,.webm,.mov,.avi,.mkv" sizeCapMB={SIZE_CAP_MB} onFiles={handleFiles} />;
+    return (
+      <DropZone
+        accept=".mp4,.webm,.mov,.avi,.mkv"
+        sizeCapMB={SIZE_CAP_MB}
+        /*
+          The same reason `validateFFmpegInput` gives when the engine-level
+          check fires (ffmpeg-loader.ts) — a rejection at the zone should not
+          be more mysterious than a rejection one layer down.
+        */
+        sizeCapReason="A trim keeps the original quality, so the clip comes out as large as the source and has to be held in the tab beside it. Extracting just the audio (MP4 to MP3) reads the video in place and has no cap."
+        onFiles={handleFiles}
+      />
+    );
   }
 
   // The filmstrip overlay works in percentages of the clip.

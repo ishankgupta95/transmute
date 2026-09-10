@@ -20,6 +20,16 @@ import { CANVAS_COLUMN } from "@/components/workspace/shared";
 import { useCopied } from "@/hooks/useCopied";
 import { formatFileSize } from "@/lib/utils/file-helpers";
 
+/**
+ * Focus ring for the keyboard-focusable text panes below. It cannot live in
+ * `TEXT_PANE_BODY` today, and it needs `outline-solid` of its own:
+ * `TEXT_PANE_BODY` ends in `focus:outline-none`, which sets
+ * `--tw-outline-style: none`, and a bare `focus-visible:outline-2` resolves
+ * its style from that same variable — so the ring would compile to nothing.
+ */
+const PANE_FOCUS =
+  "focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-accent";
+
 export function MarkdownToHtmlUI() {
   const [input, setInput] = useState("");
   const { copied, copy } = useCopied();
@@ -72,11 +82,25 @@ export function MarkdownToHtmlUI() {
           >
             {view === "preview" ? (
               <div
-                className={cn(TEXT_PANE_BODY, "prose prose-invert max-w-none font-body text-sm leading-normal")}
+                tabIndex={0}
+                role="region"
+                aria-label="Rendered preview"
+                className={cn(
+                  TEXT_PANE_BODY,
+                  "prose prose-invert max-w-none font-body text-sm leading-normal",
+                  PANE_FOCUS,
+                )}
                 dangerouslySetInnerHTML={{ __html: safeHtml }}
               />
             ) : (
-              <pre className={TEXT_PANE_BODY} aria-label="HTML output">{html}</pre>
+              <pre
+                tabIndex={0}
+                role="region"
+                className={cn(TEXT_PANE_BODY, PANE_FOCUS)}
+                aria-label="HTML output"
+              >
+                {html}
+              </pre>
             )}
           </TextPane>
         </TextPanes>

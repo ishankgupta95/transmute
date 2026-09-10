@@ -1,0 +1,133 @@
+Most of the time, "convert this video to MP4" is the wrong description of what needs to happen. The video is usually already in a format MP4 can hold. What is wrong is the box around it.
+
+That distinction is worth caring about because the two operations differ by a factor of about a thousand. Rewrapping a clip takes milliseconds and changes nothing about the picture. Converting it decodes every frame, encodes every frame again, takes minutes, and costs quality you cannot get back. Tools that treat these as the same button hand you the slow, lossy one every time — and, worse, some of them hand you a broken file when the fast path was never going to work.
+
+Here is what is actually going on, what the fast path can and cannot do, and where the honest caveats are.
+
+## A video file is a box with streams in it
+
+Open any video file and you find two separable things.
+
+The first is the **codec data**: a long run of compressed bytes produced by an encoder like H.264, H.265, VP9 or the older MPEG-4 Part 2. This is where all the size and all the quality live. Decoding it is expensive; encoding it is much more expensive.
+
+The second is the **container**: MP4, MOV, MKV, AVI, WebM. The container holds the codec data, plus an index saying where each frame starts, plus track headers, timestamps, and whatever metadata the format supports. It is bookkeeping. It is typically a fraction of a percent of the file.
+
+When someone says "my TV won't play this MKV", the codec inside is very often plain H.264 — exactly what the TV wants. The TV is refusing the box, not the contents.
+
+**Remuxing** — short for re-multiplexing — takes the streams out of one container and writes them into another without decoding anything. The compressed video comes out the other side byte for byte identical. That is why it is fast, and that is why it is lossless: there is no lossy step anywhere in the operation.
+
+## The numbers
+
+These were measured against the same FFmpeg build this site ships, on a short test clip:
+
+| Operation | What it does | Time |
+| --- | --- | --- |
+| Rewrap to MOV | Copy streams into a new container | 12 ms |
+| Rewrap to MKV | Copy streams into a new container | 4 ms |
+| Remove the audio track | Copy video, drop audio | 7 ms |
+| Rewrite the rotation flag | Change one metadata field | 6 ms |
+| Rotate by re-encoding | Decode and re-encode every frame | 7,579 ms |
+
+The last two rows are the same visible outcome by two routes, and the ratio between them is roughly 1,200 to 1. FFmpeg reported the container rewrites running at 774× and 1,720× realtime — the work is so slight that the measurement is mostly overhead.
+
+Scale matters here in a way that is easy to miss: a re-encode gets slower in proportion to the length and resolution of your video, while a stream copy barely does. A ten-second clip and a ten-minute one both rewrap in well under a second, because in both cases nothing is being looked at, only moved.
+
+## When the fast path works
+
+A remux works when the target container is allowed to hold the codec you already have. Roughly:
+
+| Container | Comfortably holds |
+| --- | --- |
+| MP4 | H.264, H.265, AAC, MP3 |
+| MOV | The same set — it is the container MP4 was derived from |
+| MKV | Very nearly anything |
+| AVI | Older codecs; awkward with modern ones |
+| WebM | VP8, VP9, Opus, Vorbis |
+
+Read that table in both directions and the useful cases fall out immediately.
+
+**MKV to MP4** usually works, because a downloader's MKV is usually H.264 in a permissive box, and MP4 will take H.264. **MP4 to MKV** essentially always works, because Matroska will take whatever MP4 was holding. **MOV to MP4** and **MP4 to MOV** are the easiest of all: the two formats share the same underlying box structure, and the swap is close to a rename with correct bookkeeping.
+
+**WebM to MP4 never works as a remux.** VP8 and VP9 have no place in an MP4 container — there is no tag for them. Attempt it and FFmpeg refuses with "Could not find tag for codec vp8", producing a zero-byte file. That conversion has to be a real re-encode, which is why [WebM to MP4](/webm-to-mp4) is a separate tool that says so plainly rather than pretending.
+
+**AVI is the coin flip.** An AVI holding H.264 rewraps into MP4 in milliseconds. An AVI from a 2005 camcorder holding MPEG-4 Part 2 or an old DivX variant does not, and needs a genuine conversion. You cannot tell from the extension, which is exactly the problem.
+
+## The iPhone trap
+
+Here is the case that makes probing non-negotiable.
+
+Since iOS 11, iPhones have recorded in H.265 (HEVC) by default, in a `.mov` container. H.265 is a legal codec inside an MP4. So a naive converter reads "MOV in, MP4 out", performs a stream copy, succeeds, reports success, and hands you a file.
+
+That file has exactly the problem you were trying to solve. It is still H.265. The upload form that rejected it, the Windows machine that would not play it, the editor that could not import it — none of them care what the extension says. The conversion technically worked and practically achieved nothing, and the tool told you it went fine.
+
+This is the worst kind of failure: silent, plausible, and only discovered later by somebody else.
+
+The fix is not clever, it is just work: read the streams before deciding anything. Probing a file for its codec takes about 29 milliseconds, which is to say it is free. Once you know the video is H.265, you can say so, and offer the two real options honestly:
+
+- **Rewrap it anyway** — instant and lossless, useful if your destination handles H.265 and only objects to the container.
+- **Convert to H.264** — a full decode and re-encode. Slow, proportional to the length of the clip, and lossy, because every generation of encoding throws something away. But it produces a file that genuinely plays everywhere.
+
+Those are different operations with different costs, and the user is the one who knows which they need. A tool's job is to name the choice, not to make it quietly. [MOV to MP4](/mov-to-mp4) and the general [video to MP4](/video-to-mp4) page both do the probe first and show you what they found before you commit.
+
+One thing worth being clear about: the browser build of FFmpeg used here can *decode* H.265 perfectly well. It cannot usefully *encode* it — the H.265 encoder in a single-threaded WebAssembly build is unusable in practice. So when a conversion is genuinely needed, the target is H.264. That is also the right target on the merits, since H.264 is the codec with the widest hardware support in existence.
+
+## The same trick, other verbs
+
+Once you see a video file as "streams in a box", a few operations that sound like editing turn out to be bookkeeping.
+
+### Removing audio
+
+[Muting a video](/mute-video) does not require touching the picture. The audio track is left out of the new file, the compressed video is copied across unchanged, and the result is the same resolution and the same bitrate as the source with no soundtrack. Seven milliseconds on the test clip. FFmpeg's own log line for the run reads `video:147kB audio:0kB` — the video accounted for, the audio simply absent.
+
+Useful when a clip caught background conversation, or carries music that will get it muted by a platform anyway, or is headed for an edit that will get its own audio later.
+
+### Rotation
+
+This one is the clearest example of the whole principle, and it comes with the sharpest caveat.
+
+A video shot sideways is almost never sideways in the file. MP4 and MOV store a **display matrix** — a small piece of container metadata that tells a player how to turn the frames before drawing them. A phone held the wrong way just writes a different value into that field. Fixing the orientation means rewriting one number.
+
+Measured: 6 milliseconds for the flag rewrite, against 7,579 milliseconds to bake the same rotation into the pixels by re-encoding. The flag rewrite is also lossless, and the re-encode is not. As trades go it is not close.
+
+**But a rotation flag is a request, not a guarantee.** Most modern players — QuickTime, VLC, iOS, Android, current browsers — read it and rotate accordingly. Some editing suites, some older players and some upload pipelines ignore it entirely and show the clip exactly as it was shot. And because the frames themselves were never touched, the stored dimensions do not swap either: a 1920×1080 clip rotated 90 degrees still reports 1920×1080, with a flag attached.
+
+If you know your destination reads the flag — you are watching the file, sending it to someone with a normal player, putting it in a browser — the [rotation flag rewrite](/rotate-video) is the right answer and the re-encode is waste. If your destination is a pipeline you do not control and cannot test, baking the rotation into the pixels is the only thing that cannot be ignored. Preview before you rely on either.
+
+This is the same shape of problem as EXIF orientation in photographs, where some readers apply the tag and some do not, and it has the same resolution: know which side of the fence your destination sits on.
+
+### Trimming
+
+Cutting a section out of a video is also a stream copy — the [video trimmer](/video-trimmer) copies the frames between two points rather than re-encoding them. The catch specific to trimming is that a stream copy can only cut on a keyframe, so the clip begins at the nearest keyframe at or before the time you asked for, usually within a second or two. Frame-accurate cutting requires a re-encode. That is a real limitation and worth knowing before you build an edit around it.
+
+## What a rewrap cannot do
+
+Being clear about the limits is what makes the fast path trustworthy.
+
+**It cannot make a file smaller.** The video data is copied unchanged, so the output is the same size as the input give or take the container overhead — a few hundred bytes to a few kilobytes in either direction, because MP4 and Matroska keep their indexes differently. If you need a smaller file, you need [compression](/compress-video), and that is a re-encode with the quality cost that implies.
+
+**It cannot improve quality.** Nothing can. A conversion either preserves what is there or degrades it. An old camcorder AVI rewrapped as MP4 is still old camcorder footage; it is just footage a phone will open.
+
+**It cannot change the codec.** That is what a re-encode is for, and the entire point of probing first is to tell you which of the two you are about to get.
+
+**It does not carry everything across.** This bites hardest going from MKV to MP4. Matroska is happy to hold several audio tracks, chapter markers and subtitle formats that MP4 either supports narrowly or not at all. Expect the main video and audio track to survive; do not build a workflow on the assumption that the rest does. If those extras matter, keep the MKV as your master.
+
+## Why doing this in a browser makes sense
+
+Container work is unusually well suited to running locally, for a reason that is almost arithmetic: the operation is close to free, so the only expensive part of using a web service for it would be the two file transfers. Uploading a 900 MB clip so a server can spend twelve milliseconds on it and then send 900 MB back is an absurd amount of network for an amount of computation you would struggle to measure.
+
+Running it in the tab removes both transfers. The video never leaves the device, which matters more than convenience for anything confidential — meeting recordings, unreleased footage, personal video, medical or legal material. There is no server that could keep a copy because there is no server.
+
+Two honest costs come with that. The first is a one-time download of the FFmpeg engine, about 31 MB of WebAssembly, fetched the first time you use a video or audio tool in a session and kept in memory afterwards. It is served from this site's own origin rather than a third-party CDN, so no other host learns you loaded it. In practice that download is the part you wait for; the rewrap afterwards is instant.
+
+The second is a real ceiling. A stream copy has to hold its output in the browser tab, and a tab tops out a little under 2 GB in a single buffer — a limit of the JavaScript engine, not of your machine's memory. The container tools therefore cap input at 1.5 GB and enforce it before starting rather than failing halfway through. For a full-length MKV rip, trim the section you need first, or keep the original.
+
+## Practical shortcuts
+
+- **Phone video that "won't upload":** convert with [MOV to MP4](/mov-to-mp4) and read what it tells you about the codec. H.264 means you needed a rename with correct bookkeeping. H.265 means you genuinely need the H.264 conversion, and now you know why the upload was failing.
+- **A download that your TV refuses:** [MKV to MP4](/mkv-to-mp4). Usually instant. Check whether you needed the extra audio tracks first.
+- **Old files from a camcorder or an ancient hard drive:** [AVI to MP4](/avi-to-mp4). It will tell you whether you got the fast path or the slow one.
+- **Archiving something with multiple audio tracks:** [MP4 to MKV](/mp4-to-mkv) — Matroska is the permissive box, so this direction always works losslessly.
+- **A clip whose audio you do not want to publish:** [mute it](/mute-video) rather than re-exporting it from an editor.
+- **A sideways clip:** [rewrite the rotation flag](/rotate-video), then check it looks right in the player you actually intend to use.
+
+The general rule underneath all of these: find out what is in the file before deciding what to do to it. Almost every needlessly slow video conversion, and every silently broken one, comes from skipping that step.

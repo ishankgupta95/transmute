@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { Upload } from "lucide-react";
 import { cn } from "@/lib/utils/cn";
 
@@ -21,6 +21,14 @@ interface DropZoneProps {
    * message. A bare number tells the user nothing they can act on.
    */
   sizeCapReason?: string;
+  /**
+   * Mirror of `Tool.practicalLimitNote`: the ceiling this tool has but does
+   * not enforce. Nothing is checked against it — it only replaces the
+   * "NO SIZE CAP" line, which a tool that holds the whole file in memory and
+   * then expands it has no business printing. Ignored when `sizeCapMB` is set,
+   * because a real cap is the more useful answer.
+   */
+  practicalLimitNote?: string;
   /**
    * The same ACCEPTS string the pipeline strip and the spec panel show
    * (`getWorkspaceTool(slug).accept`) — alias-collapsed and space-joined.
@@ -106,9 +114,15 @@ function formatBytes(bytes: number): string {
  * `globals.css`'s `@theme` block (that file is another scope this pass); until
  * it lands the class is simply not generated and the rule renders static,
  * which is the correct fallback either way.
+ *
+ * The dash is `--color-neutral-600`, not `-700`. This rule is the ONLY visible
+ * edge of the drop target — the plate's own border is `border-transparent`
+ * until hover/focus — so WCAG 1.4.11 applies to it as a user-interface
+ * component boundary. `#595d6c` (neutral-700) measures 2.83:1 against
+ * `--color-nocturne-canvas` and fails; `#75798c` (neutral-600) measures 4.3:1.
  */
 const MARCHING_RULE = cn(
-  "bg-[image:repeating-linear-gradient(90deg,var(--color-neutral-700)_0_9px,transparent_9px_18px),repeating-linear-gradient(90deg,var(--color-neutral-700)_0_9px,transparent_9px_18px),repeating-linear-gradient(0deg,var(--color-neutral-700)_0_9px,transparent_9px_18px),repeating-linear-gradient(0deg,var(--color-neutral-700)_0_9px,transparent_9px_18px)]",
+  "bg-[image:repeating-linear-gradient(90deg,var(--color-neutral-600)_0_9px,transparent_9px_18px),repeating-linear-gradient(90deg,var(--color-neutral-600)_0_9px,transparent_9px_18px),repeating-linear-gradient(0deg,var(--color-neutral-600)_0_9px,transparent_9px_18px),repeating-linear-gradient(0deg,var(--color-neutral-600)_0_9px,transparent_9px_18px)]",
   "bg-[length:200%_1px,200%_1px,1px_200%,1px_200%]",
   "bg-[position:0_0,0_100%,0_0,100%_0] bg-no-repeat",
   "animate-tm-march motion-reduce:animate-none",
@@ -128,12 +142,24 @@ export function DropZone({
   label = "Drop a file to begin",
   sizeCapMB,
   sizeCapReason,
+  practicalLimitNote,
   acceptLabel,
   disabled = false,
 }: DropZoneProps) {
   const [dragging, setDragging] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  /*
+    The accepted formats and the size cap are the two facts a user needs
+    BEFORE the OS picker opens, and the input's name was only ever the plate's
+    heading ("Drop a file to begin"), so a screen-reader user reached the
+    picker knowing neither. They are wired as a description rather than folded
+    into the name because they are supporting detail, not the control's name.
+    Derived from `useId()` because several zones can mount on one page.
+  */
+  const ids = useId();
+  const metaId = `${ids}meta`;
+  const noteId = `${ids}note`;
   /*
     dragenter/dragleave fire again for every CHILD the cursor crosses, so a
     plain boolean flickered the highlight while dragging over the icon and
@@ -279,7 +305,10 @@ export function DropZone({
         Choose file
       </span>
 
-      <span className="text-center font-mono text-[10px] leading-none tracking-[0.05em] text-text-muted">
+      <span
+        id={metaId}
+        className="text-center font-mono text-[10px] leading-none tracking-[0.05em] text-text-muted"
+      >
         {metaFormats && (
           <>
             ACCEPTS {metaFormats}
@@ -296,8 +325,28 @@ export function DropZone({
             </span>
           </>
         )}
-        {sizeCapMB ? `MAX ${formatCap(sizeCapMB)}` : "NO SIZE CAP"}
+        {/*
+          Three states, not two. "NO SIZE CAP" is an absolute claim and stays
+          reserved for the tools it is true of (mp4-to-mp3 mounts its input and
+          never copies it — ffmpeg-loader.ts:54-58). A tool that enforces a cap
+          prints the cap; one that merely HAS a ceiling says so and explains it
+          below, rather than claiming the ceiling isn't there.
+        */}
+        {sizeCapMB
+          ? `MAX ${formatCap(sizeCapMB)}`
+          : practicalLimitNote
+            ? "MEMORY-BOUND"
+            : "NO SIZE CAP"}
       </span>
+
+      {!sizeCapMB && practicalLimitNote && (
+        <span
+          id={noteId}
+          className="mx-auto block max-w-[420px] text-center font-body text-[11.5px] leading-[1.5] text-text-muted"
+        >
+          {practicalLimitNote}
+        </span>
+      )}
 
       {error && (
         <span role="alert" className="max-w-[420px] text-center text-xs leading-[1.5] text-error">
@@ -312,6 +361,9 @@ export function DropZone({
         disabled={disabled}
         onChange={handleChange}
         aria-label={label}
+        aria-describedby={
+          !sizeCapMB && practicalLimitNote ? `${metaId} ${noteId}` : metaId
+        }
         className="sr-only"
       />
     </label>

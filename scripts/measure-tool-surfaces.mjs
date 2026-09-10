@@ -40,6 +40,22 @@ for (const vp of VIEWPORTS) {
   const page = await ctx.newPage();
   for (const slug of slugs) {
     await page.goto(`http://localhost:3000/${slug}`, { waitUntil: "domcontentloaded", timeout: 30000 });
+    /*
+      Neutralise the reservation THIS FILE's previous output is already making.
+      ToolPageLayout sets `min-h-[var(--surface-min-sm)]` on the very element we
+      measure, from `toolSurfaceHeights` — so without this the measurement is
+      floored by the last generated number and the map can only ever GROW. A
+      tool whose initial surface is made shorter re-measures at its old height
+      and the page keeps reserving blank space that nothing fills. (Found
+      2026-09-05, when five Wave-4 pages were trimmed and every one of them
+      re-measured unchanged.)
+
+      Injected after `goto` because a client-side navigation would drop it, and
+      `!important` because the utility sets min-height at the same specificity.
+    */
+    await page.addStyleTag({
+      content: "[data-tool-surface]{min-height:0 !important}",
+    });
     // Mounted = the surface has real height; the SSR wrapper alone has none.
     await page.waitForFunction(
       () => (document.querySelector("[data-tool-surface]")?.offsetHeight ?? 0) > 100,

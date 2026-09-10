@@ -17,6 +17,17 @@ import {
 } from "@/components/tools/ToolCanvas";
 import { CANVAS_COLUMN } from "@/components/workspace/shared";
 import { formatFileSize } from "@/lib/utils/file-helpers";
+import { cn } from "@/lib/utils/cn";
+
+/**
+ * Focus ring for the keyboard-focusable text panes below. It cannot live in
+ * `TEXT_PANE_BODY` today, and it needs `outline-solid` of its own:
+ * `TEXT_PANE_BODY` ends in `focus:outline-none`, which sets
+ * `--tw-outline-style: none`, and a bare `focus-visible:outline-2` resolves
+ * its style from that same variable — so the ring would compile to nothing.
+ */
+const PANE_FOCUS =
+  "focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-accent";
 
 /*
   The chips name the GRANULARITY, which is all this control has ever changed.
@@ -89,7 +100,12 @@ export function TextDiffUI() {
               lines={lineCount(diff.map((p) => p.value).join(""))}
               size={formatFileSize(new Blob([diff.map((p) => p.value).join("")]).size)}
             >
-              <div className={TEXT_PANE_BODY}>
+              <div
+                tabIndex={0}
+                role="region"
+                aria-label="Diff output"
+                className={cn(TEXT_PANE_BODY, PANE_FOCUS)}
+              >
                 {diff.map((part, i) => (
                   <span
                     key={i}

@@ -314,3 +314,120 @@ describe("playAndExtractFrames — cancellation", () => {
     expect(onFrame).not.toHaveBeenCalled();
   });
 });
+
+describe("playAndExtractFrames — where the walk stops", () => {
+  /**
+   * These pin the END-OF-CLIP contract, which was carried as a defect ("the
+   * last planned frame is dropped at end-of-clip") and measured instead of
+   * repaired — see the long note on `playAndExtractFrames`. The measurement
+   * says the walk loses nothing that rVFC delivers, so what is worth guarding
+   * is the shape a repair must not break: the promise has to settle when the
+   * queued callback never arrives, and a callback that lands after it settled
+   * must not reach `onFrame`.
+   *
+   * jsdom has neither rVFC nor a media pipeline, so the playhead is moved by
+   * hand and each frame is presented explicitly. That is the point: a frame
+   * can be delivered at an EXACT moment, which a real element never lets a
+   * test do.
+   */
+  function scriptedVideo(at = 0) {
+    const video = document.createElement("video");
+    const frameCallbacks: (() => void)[] = [];
+    let playhead = at;
+    Object.defineProperty(video, "currentTime", {
+      get: () => playhead,
+      set: (value: number) => { playhead = value; },
+      configurable: true,
+    });
+    Object.assign(video, {
+      play: vi.fn().mockResolvedValue(undefined),
+      pause: vi.fn(),
+      requestVideoFrameCallback: vi.fn((cb: () => void) => {
+        frameCallbacks.push(cb);
+        return 1;
+      }),
+    });
+    /** Present one frame at `t`: move the playhead there, then run the pending callback. */
+    const present = async (t: number) => {
+      playhead = t;
+      frameCallbacks.shift()?.();
+      // `processFrame` is async (it awaits `onFrame`); let it run to the end.
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    };
+    /** Playback runs out. */
+    const end = async () => {
+      video.dispatchEvent(new Event("ended"));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    };
+    return { video, present, end, frameCallbacks };
+  }
+
+  it("settles on `ended` rather than waiting for a callback that never arrives", async () => {
+    const { video, present, end } = scriptedVideo();
+    const onFrame = vi.fn();
+
+    const walk = playAndExtractFrames(video, 0, 5, onFrame);
+    await present(1);
+    expect(onFrame).toHaveBeenCalledTimes(1);
+
+    // One rVFC is now queued and, because the media has run out, will never
+    // fire. A repair that waits on it WITHOUT A BOUND hangs the tool here —
+    // this test then fails by timing out, which is the whole reason it exists.
+    await end();
+
+    await expect(walk).resolves.toBeUndefined();
+    expect(video.isConnected, "the hidden element must not be left in the DOM").toBe(false);
+  });
+
+  it("ignores a frame delivered after the walk has already ended", async () => {
+    const { video, present, end, frameCallbacks } = scriptedVideo();
+    const onFrame = vi.fn();
+
+    const walk = playAndExtractFrames(video, 0, 5, onFrame);
+    await present(1);
+    await end();
+    await walk;
+
+    // The caller has closed its encoder / finished its archive by now, so a
+    // late callback reaching `onFrame` is a write after the end of the run.
+    frameCallbacks.forEach((cb) => cb());
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(onFrame).toHaveBeenCalledTimes(1);
+  });
+
+  it("treats the window as half-open, so a frame AT endTime is not handed over", async () => {
+    const { video, present } = scriptedVideo();
+    const onFrame = vi.fn();
+
+    const walk = playAndExtractFrames(video, 0, 2, onFrame);
+    await present(2);
+
+    await expect(walk).resolves.toBeUndefined();
+    // `video-frames.ts` builds THUMBNAIL_MIN_WINDOW_SECONDS on exactly this:
+    // it holds the requested moment back from the end BECAUSE a walk that ends
+    // at the requested instant captures nothing. Relax `>=` to `>` here and
+    // that constant becomes unexplained.
+    expect(onFrame).not.toHaveBeenCalled();
+  });
+
+  it("stamps each frame with its offset from startTime, not its clip time", async () => {
+    const { video, present } = scriptedVideo(0);
+    const onFrame = vi.fn();
+
+    const walk = playAndExtractFrames(video, 2, 5, onFrame);
+    // The seek path resolves on `seeked`; nothing is presented until it does.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    video.dispatchEvent(new Event("seeked"));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    await present(2.5);
+    // 0.5 s into the SELECTION. /video-to-gif and /compress-video feed this
+    // straight to a muxer as a presentation timestamp, so a clip-relative
+    // value here would offset every trimmed export by its own start time.
+    expect(onFrame).toHaveBeenCalledWith(video, 500_000);
+
+    await present(5);
+    await expect(walk).resolves.toBeUndefined();
+  });
+});

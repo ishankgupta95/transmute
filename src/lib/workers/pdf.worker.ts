@@ -32,6 +32,18 @@ self.onmessage = async (event: MessageEvent<PoolWorkerRequest>) => {
       case "splitPdf":
         result = await core.splitPdf(job.data, job.pageIndices);
         break;
+      case "splitPdfToPages":
+        result = await core.splitPdfToPages(job.data, job.pageIndices);
+        break;
+      case "deletePdfPages":
+        result = await core.deletePdfPages(job.data, job.pageIndices);
+        break;
+      case "cropPdfPages":
+        result = await core.cropPdfPages(job.data, job.rect, job.pageIndices);
+        break;
+      case "changePdfPageSize":
+        result = await core.changePdfPageSize(job.data, job.options);
+        break;
       case "rotatePdfPages":
         result = await core.rotatePdfPages(job.data, job.pageIndices, job.angle);
         break;
@@ -47,8 +59,49 @@ self.onmessage = async (event: MessageEvent<PoolWorkerRequest>) => {
       case "imagesToPdf":
         result = await core.imagesToPdf(job.images, job.pageSize);
         break;
+      case "stampPdf":
+        result = await core.stampPdf(job.data, job.stamps);
+        break;
+      case "readPdfForm":
+        result = await core.readPdfForm(job.data);
+        break;
+      case "fillPdfForm":
+        result = await core.fillPdfForm(job.data, job.values, { flatten: job.flatten });
+        break;
+      case "flattenPdfForm":
+        result = await core.flattenPdfForm(job.data);
+        break;
+      case "readPdfMetadata":
+        result = await core.readPdfMetadata(job.data);
+        break;
+      case "removePdfMetadata":
+        result = await core.removePdfMetadata(job.data);
+        break;
     }
-    const transfer = typeof result === "number" ? [] : [result.buffer as ArrayBuffer];
+    /*
+      Every byte array in the result is TRANSFERRED, not copied — the outputs
+      are whole documents and structured-cloning them would double peak memory
+      at exactly the moment the worker is holding the most.
+
+      splitPdfToPages is the case that needs the array branch: handing
+      postMessage a bare `result.buffer` for an array is `undefined`, which is
+      not a transferable and throws, and omitting the transfer list entirely
+      would silently clone N documents instead. Each save() allocates its own
+      buffer, so the list can never name the same ArrayBuffer twice (which
+      postMessage also rejects). Inputs are deliberately NOT transferred — see
+      pdf-protocol.ts.
+    */
+    const transfer: ArrayBuffer[] =
+      typeof result === "number"
+        ? []
+        : Array.isArray(result)
+          ? result.map((bytes) => bytes.buffer as ArrayBuffer)
+          : result instanceof Uint8Array
+            ? [result.buffer as ArrayBuffer]
+            : // A report object: structured-cloned like any other plain value.
+              // It has no `.buffer`, and naming `undefined` as a transferable
+              // throws, which would turn a successful read into a worker error.
+              [];
     self.postMessage({ id, type: "done", result } satisfies PoolWorkerResponse, transfer);
   } catch (err) {
     self.postMessage({

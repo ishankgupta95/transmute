@@ -167,6 +167,47 @@ export async function pickH264Config(base: {
  * rejects with an `AbortError`. Both waits here — the initial seek and the
  * frame loop — are event-driven with no timeout, so each needs its own abort
  * listener or a cancel mid-seek would simply be ignored.
+ *
+ * ── WHY THE WALK ENDS ON `ended` AND DOES NOT CHASE THE LAST PLANNED MOMENT ──
+ *
+ * This was carried as a defect — "a planned moment inside the final GOP whose
+ * `requestVideoFrameCallback` has not been delivered is lost", shared by
+ * /video-to-gif, /compress-video, /video-to-images and /webm-to-mp4. It was
+ * measured in headless Chromium against the checked-in fixtures rather than
+ * repaired, because it does not reproduce and the sketched repair is worse:
+ *
+ *   · `sample-video.mp4`'s video track is 48 samples of 2400/57600 s (one
+ *     `stts` entry), so its PICTURE ends at exactly 2.000000 s. The 2.089796 s
+ *     that `video.duration` reports is the AUDIO track (`mdhd` timescale 44100,
+ *     duration 92160). The two are not the same number and nothing in the
+ *     platform tells a caller that.
+ *   · rVFC delivered every one of those 48 pictures — last `mediaTime`
+ *     1.958333 — before `ended` fired at currentTime 2.089796, in 8 of 8 runs,
+ *     both unthrottled and through this exact pause/`onFrame`/play loop.
+ *     Nothing outstanding was dropped. `sample-video.webm` behaves the same
+ *     (46 of 46, last `mediaTime` 1.886 against a duration of 1.886312 — the
+ *     hardest case for the race, since its last picture lands ON the end).
+ *   · So the moment /video-to-images discloses as missing — 2.000 s, planned
+ *     off `duration` — is a moment the file has no picture at. No walk can
+ *     deliver it.
+ *   · Seeking to 2.000 s after `ended` and awaiting one more frame callback
+ *     DOES get a callback. It carries `mediaTime` 1.958333 and a pixel-
+ *     identical picture to the frame already saved. "Recovering" it would file
+ *     a duplicate of the last frame under a timestamp the clip has no picture
+ *     at, and would silence a warning that is currently true.
+ *
+ * A bounded post-`ended` wait is not forbidden by anything here; an UNBOUNDED
+ * one is, and `video-utils.test.ts` pins that this promise still settles when
+ * the queued callback never arrives.
+ *
+ * The frame that IS measurably lost sits at the OTHER end. rVFC fires only for
+ * newly PRESENTED frames, and the frame at the start position has already been
+ * presented by the time `waitForReady` — or the seek below — resolves. So every
+ * caller's first delivery is the SECOND picture: first `mediaTime` 0.041667 on
+ * the MP4 and 0.041 on the WebM, in every run, never 0. Closing that means
+ * handing over the displayed frame before playback starts, which changes the
+ * frame count of four shipped tools and their fixture-count assertions; it is
+ * deliberately left alone here rather than folded into an unrelated fix.
  */
 export async function playAndExtractFrames(
   video: HTMLVideoElement,

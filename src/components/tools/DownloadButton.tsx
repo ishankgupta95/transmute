@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useRef } from "react";
 import { Download } from "lucide-react";
 import { triggerDownload } from "@/lib/utils/download";
 import { cn } from "@/lib/utils/cn";
@@ -8,11 +9,36 @@ interface DownloadButtonProps {
   blob: Blob;
   fileName: string;
   className?: string;
+  /**
+   * Take focus on mount. Default on: this button replaces the primary the user
+   * just pressed, so without it the focused element is torn out of the DOM and
+   * focus falls back to <body> — the keyboard user has to Tab past the whole
+   * navbar and sibling rail to get back to their result. WCAG 2.4.3.
+   */
+  focusOnMount?: boolean;
 }
 
-export function DownloadButton({ blob, fileName, className }: DownloadButtonProps) {
+export function DownloadButton({
+  blob,
+  fileName,
+  className,
+  focusOnMount = true,
+}: DownloadButtonProps) {
+  const ref = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    if (!focusOnMount) return;
+    // Only when focus was actually orphaned. A user who tabbed elsewhere while
+    // the job ran keeps their place — stealing it back would be its own bug.
+    if (document.activeElement === document.body || document.activeElement === null) {
+      ref.current?.focus();
+    }
+  }, [focusOnMount]);
+
   return (
     <button
+      ref={ref}
+      type="button"
       onClick={() => triggerDownload(blob, fileName)}
       aria-label={`Download ${fileName}`}
       className={cn(

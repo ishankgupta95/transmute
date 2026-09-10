@@ -2,10 +2,32 @@ import type { ProcessingContext } from "@/hooks/useFileProcessor";
 import type {
   PageNumberPosition,
   PageSize,
+  PdfCropRect,
+  PdfFormReport,
+  PdfFormValues,
+  PdfMetadataReport,
+  PdfPageSizeName,
+  PdfPageSizeOptions,
+  PdfStamp,
 } from "./pdf-engine-core";
 import type { PdfJob, PdfJobResult } from "@/lib/workers/pdf-protocol";
 
-export type { PageNumberPosition, PageSize };
+export type {
+  PageNumberPosition,
+  PageSize,
+  PdfCropRect,
+  PdfFormReport,
+  PdfFormValues,
+  PdfMetadataReport,
+  PdfPageSizeName,
+  PdfPageSizeOptions,
+  PdfStamp,
+};
+// Straight from the protocol module, NOT through pdf-engine-core: a value
+// re-export from the core turns this file's static-import graph into a 705 KB
+// eager pdf-lib chunk (measured — see PDF_PAGE_SIZES in pdf-protocol.ts).
+export { PDF_PAGE_SIZES } from "@/lib/workers/pdf-protocol";
+
 
 /**
  * PDF operations, split across two engines (Phase 3):
@@ -80,6 +102,14 @@ function dispatchInline(
       return core.mergePdfs(job.buffers);
     case "splitPdf":
       return core.splitPdf(job.data, job.pageIndices);
+    case "splitPdfToPages":
+      return core.splitPdfToPages(job.data, job.pageIndices);
+    case "deletePdfPages":
+      return core.deletePdfPages(job.data, job.pageIndices);
+    case "cropPdfPages":
+      return core.cropPdfPages(job.data, job.rect, job.pageIndices);
+    case "changePdfPageSize":
+      return core.changePdfPageSize(job.data, job.options);
     case "rotatePdfPages":
       return core.rotatePdfPages(job.data, job.pageIndices, job.angle);
     case "reorderPdfPages":
@@ -90,6 +120,18 @@ function dispatchInline(
       return core.compressPdf(job.data);
     case "imagesToPdf":
       return core.imagesToPdf(job.images, job.pageSize);
+    case "stampPdf":
+      return core.stampPdf(job.data, job.stamps);
+    case "readPdfForm":
+      return core.readPdfForm(job.data);
+    case "fillPdfForm":
+      return core.fillPdfForm(job.data, job.values, { flatten: job.flatten });
+    case "flattenPdfForm":
+      return core.flattenPdfForm(job.data);
+    case "readPdfMetadata":
+      return core.readPdfMetadata(job.data);
+    case "removePdfMetadata":
+      return core.removePdfMetadata(job.data);
   }
 }
 
@@ -111,6 +153,43 @@ export async function splitPdf(
   pageIndices: number[],
 ): Promise<Uint8Array> {
   return runPdfJob({ op: "splitPdf", data: toUint8Array(data), pageIndices });
+}
+
+/** One single-page PDF per selected page, in the order given. */
+export async function splitPdfToPages(
+  data: ArrayBuffer | Uint8Array,
+  pageIndices: number[],
+): Promise<Uint8Array[]> {
+  return runPdfJob({ op: "splitPdfToPages", data: toUint8Array(data), pageIndices });
+}
+
+/** Every page EXCEPT the given 0-based indices. */
+export async function deletePdfPages(
+  data: ArrayBuffer | Uint8Array,
+  pageIndices: number[],
+): Promise<Uint8Array> {
+  return runPdfJob({ op: "deletePdfPages", data: toUint8Array(data), pageIndices });
+}
+
+/**
+ * Crop pages to `rect`, given in VISUAL page space (origin at the visible
+ * page's lower-left, /Rotate already applied). Omit `pageIndices` for every
+ * page. Sets the page boxes; does not remove the content outside them.
+ */
+export async function cropPdfPages(
+  data: ArrayBuffer | Uint8Array,
+  rect: PdfCropRect,
+  pageIndices?: number[],
+): Promise<Uint8Array> {
+  return runPdfJob({ op: "cropPdfPages", data: toUint8Array(data), rect, pageIndices });
+}
+
+/** Resize every page to a target VISUAL page size. */
+export async function changePdfPageSize(
+  data: ArrayBuffer | Uint8Array,
+  options: PdfPageSizeOptions,
+): Promise<Uint8Array> {
+  return runPdfJob({ op: "changePdfPageSize", data: toUint8Array(data), options });
 }
 
 /** Rotate specified pages by the given angle (90, 180, 270). */
@@ -154,6 +233,45 @@ export async function imagesToPdf(
   return runPdfJob({ op: "imagesToPdf", images, pageSize });
 }
 
+/** Watermarks, signatures, placed images and annotation marks — one op, four tools. */
+export async function stampPdf(
+  data: ArrayBuffer | Uint8Array,
+  stamps: PdfStamp[],
+): Promise<Uint8Array> {
+  return runPdfJob({ op: "stampPdf", data: toUint8Array(data), stamps });
+}
+
+export async function readPdfForm(data: ArrayBuffer | Uint8Array): Promise<PdfFormReport> {
+  return runPdfJob({ op: "readPdfForm", data: toUint8Array(data) });
+}
+
+export async function fillPdfForm(
+  data: ArrayBuffer | Uint8Array,
+  values: PdfFormValues,
+  options: { flatten?: boolean } = {},
+): Promise<Uint8Array> {
+  return runPdfJob({
+    op: "fillPdfForm",
+    data: toUint8Array(data),
+    values,
+    flatten: options.flatten === true,
+  });
+}
+
+export async function flattenPdfForm(data: ArrayBuffer | Uint8Array): Promise<Uint8Array> {
+  return runPdfJob({ op: "flattenPdfForm", data: toUint8Array(data) });
+}
+
+export async function readPdfMetadata(
+  data: ArrayBuffer | Uint8Array,
+): Promise<PdfMetadataReport> {
+  return runPdfJob({ op: "readPdfMetadata", data: toUint8Array(data) });
+}
+
+export async function removePdfMetadata(data: ArrayBuffer | Uint8Array): Promise<Uint8Array> {
+  return runPdfJob({ op: "removePdfMetadata", data: toUint8Array(data) });
+}
+
 // ── PDF to Images (using pdfjs-dist) ────────────────────────────────
 
 let pdfjsLib: typeof import("pdfjs-dist") | null = null;
@@ -168,6 +286,51 @@ async function getPdfjs() {
   return pdfjsLib;
 }
 
+/*
+  The pdfjs side of the two house sentences. Copied verbatim from
+  pdf-engine-core.ts — see the note there; the same string must come back
+  whichever PDF tool the file was dropped on, and pdf-engine-core.ts is the
+  DOM-free pdf-lib core the pool worker bundles, so importing it here for one
+  string would drag 705 KB of pdf-lib into a pdfjs-only path. Three homes:
+  pdf-engine-core.ts, pdf-image-core.ts, here.
+*/
+const PASSWORD_MESSAGE =
+  "This PDF is password-protected. Run it through Unlock PDF (/unlock-pdf) first — that removes a password you know, or clears an owner-password restriction without one. It cannot crack a password you don't have.";
+
+const DAMAGED_MESSAGE =
+  "This PDF could not be read — the file is damaged or is not a PDF. If it really is a PDF, try Repair PDF (/repair-pdf), which rebuilds a broken cross-reference table. If that fails too, re-export it from the program that produced it.";
+
+/**
+ * The single pdfjs `getDocument` in this module, so the two load failures
+ * users actually hit are mapped in exactly one place.
+ *
+ * They were not, and the leak was visible: pdf-to-jpg / png / webp opened the
+ * document here with no catch at all, and the UIs render `err.message`
+ * verbatim, so a protected file put pdfjs's own English on screen — literally
+ * "No password given" (pdfjs-dist 5.6.205, pdf.worker.mjs) — as if it were our
+ * copy. The pdf-lib path had said the house sentence all along.
+ *
+ * Matching is on `name`, not `instanceof`: pdfjs's exception classes hang off
+ * a `BaseException` whose prototype is a real `new Error()`, so every one of
+ * them IS `instanceof Error` and a stock catch cannot tell them apart from
+ * ours. Garbage bytes come back as "InvalidPDFException" — verified against
+ * the installed build. Anything else is rethrown untouched: we do not know
+ * what it was, so we do not get to describe it.
+ */
+async function openPdfjsDocument(bytes: Uint8Array) {
+  const pdfjs = await getPdfjs();
+  try {
+    return await pdfjs.getDocument({ data: bytes }).promise;
+  } catch (err) {
+    const name = err instanceof Error ? err.name : "";
+    if (name === "PasswordException") throw new Error(PASSWORD_MESSAGE);
+    if (name === "InvalidPDFException" || name === "MissingPDFException") {
+      throw new Error(DAMAGED_MESSAGE);
+    }
+    throw err;
+  }
+}
+
 export async function pdfToImages(
   data: ArrayBuffer | Uint8Array,
   format: "jpeg" | "png" | "webp" = "jpeg",
@@ -175,8 +338,7 @@ export async function pdfToImages(
   scale: number = 2,
   ctx: ProcessingContext = {},
 ): Promise<{ blob: Blob; name: string }[]> {
-  const pdfjs = await getPdfjs();
-  const doc = await pdfjs.getDocument({ data: new Uint8Array(data).slice() }).promise;
+  const doc = await openPdfjsDocument(new Uint8Array(data).slice());
 
   const ext = format === "jpeg" ? "jpg" : format;
   const mimeType = `image/${format}`;
@@ -291,12 +453,12 @@ async function encodePageCanvas(
 
 /**
  * Load a pdfjs document once for rendering multiple pages.
- * Slices the buffer to avoid detaching the caller's copy.
+ * Slices the buffer to avoid detaching the caller's copy. Load failures come
+ * back as the house sentences, not pdfjs internals — see `openPdfjsDocument`.
  */
 export async function loadPdfjsDocument(data: ArrayBuffer | Uint8Array) {
-  const pdfjs = await getPdfjs();
   const bytes = data instanceof Uint8Array ? data.slice() : new Uint8Array(data).slice();
-  return pdfjs.getDocument({ data: bytes }).promise;
+  return openPdfjsDocument(bytes);
 }
 
 /** Render a single page from an already-loaded pdfjs document. */

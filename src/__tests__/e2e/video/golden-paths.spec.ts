@@ -19,6 +19,7 @@ const VIDEO_TOOLS = [
   { slug: "mp4-to-mp3", action: /Convert|Extract/i },
   { slug: "webm-to-mp4", action: /Convert/i },
   { slug: "compress-video", action: /Compress/i },
+  { slug: "compress-video-to-size", action: /Compress/i },
   { slug: "screen-recorder", action: /Start/i },
 ];
 

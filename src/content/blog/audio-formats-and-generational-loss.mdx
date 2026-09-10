@@ -1,0 +1,101 @@
+Every audio converter on the internet presents the job the same way: a box on the left, a box on the right, an arrow between them. The arrow is doing a lot of quiet work. Some of the conversions it stands for cost you nothing at all. Some cost you a little. And some cost you something every single time you do them, in a way that accumulates and cannot be undone.
+
+The difference is not obscure and it is not a matter of taste. It follows from what the formats are. Here is the whole thing, and where each of the tools on this site actually falls.
+
+## Lossy, lossless, and uncompressed
+
+Three categories, and almost every audio question resolves once you know which one you are holding.
+
+**Uncompressed** is WAV and AIFF. The file contains the sample values and nothing else: 44,100 numbers per second per channel, sixteen bits each, exactly as the analogue-to-digital converter produced them. Nothing is inferred, nothing is modelled, and the file is enormous — about 10 MB per minute of stereo.
+
+**Lossless compression** is FLAC, ALAC and WavPack. These compress the way a ZIP file does, by finding structure and storing the difference between a prediction and the real value. Decode one and you get back the identical sample values. Not "indistinguishable" — identical, bit for bit. The saving is real: typical music comes out at 40 to 60 percent of its WAV size.
+
+**Lossy compression** is MP3, AAC, Vorbis, Opus and WMA. These do something categorically different. They model human hearing, decide which parts of the signal you will not notice, and throw those parts away. What is left is stored compactly. The decoder does not reconstruct the missing parts — it cannot, they are gone — it simply plays what remains, and the result sounds close enough that at a decent bitrate most people cannot tell.
+
+That last sentence is where the trouble starts.
+
+## Generational loss
+
+A lossy encoder makes its decisions by looking at the audio it is given. Give it a clean recording and it discards the parts of that recording it judges inaudible. Give it audio that has *already* been through a lossy encoder and it does the same thing again — but now it is deciding what to discard from a signal that is already missing pieces, and its model is not the same model the first encoder used.
+
+MP3 and Vorbis and AAC disagree about what matters. Each one preserves things the others throw away and throws away things the others keep. Run audio through two of them in sequence and you do not get the better of the two, or even the average. You get the damage from both.
+
+This is generational loss, and it is the single most useful thing to understand about audio conversion. It means:
+
+- **OGG to MP3, AAC to MP3, Opus to MP3, WMA to MP3** are all second-generation conversions. The source was already lossy. You are stacking.
+- **FLAC to MP3, WAV to MP3** are first-generation. The source was complete, and the MP3 is one clean round of loss. This is as good as MP3 ever gets.
+- **MP3 to WAV, M4A to WAV** do not lose anything at this step — but they do not recover anything either. You get a large, lossless container holding already-damaged audio.
+- **WAV to FLAC, FLAC to WAV** cost nothing in either direction, ever.
+
+None of this means the second-generation conversions are wrong to do. Sometimes the file simply has to play on a device that only understands MP3, and a slightly worse file that plays beats a better one that does not. It means you should do it once, from the best source you have, rather than repeatedly.
+
+## What each conversion costs
+
+| From | To | What it costs |
+| --- | --- | --- |
+| WAV | FLAC | Nothing. Bit-identical on decode, 40–60% of the size |
+| FLAC | WAV | Nothing. The same samples, uncompressed |
+| FLAC | MP3 | One generation of loss, from a complete source |
+| WAV | MP3 | One generation of loss, from a complete source |
+| MP3 | WAV | Nothing further — but nothing recovered either, at ~10× the size |
+| M4A | WAV | Same: no new loss, no repair, much larger |
+| OGG · AAC · Opus · WMA | MP3 | A second generation stacked on the first |
+| MP3 | MP3 (lower bitrate) | A second generation, on the same codec |
+| Audio track | Audio track (stream copy) | Nothing. No decoder runs at all |
+
+That last row is the interesting one, and it is the only genuinely free conversion in the list that is not FLAC-related.
+
+## The one that costs nothing: stream copy
+
+When you pull the audio out of a video, there is no reason to decode it. The audio inside an MP4 is already a self-contained AAC stream sitting next to the picture; extracting it can be a matter of lifting those bytes out of one container and writing them into another. Nothing is decoded, nothing is re-encoded, and the operation finishes in milliseconds — 29 of them, measured on a real clip against the same FFmpeg build this site ships.
+
+That is what [Extract Audio](/extract-audio) does by default. You get the track in whatever codec the video was carrying, which is usually AAC from a phone or a camera and Opus from a WebM, and the file it hands you holds the same bytes the video did.
+
+The alternative arms on that page — MP3 and WAV — decode the track and encode it again, which puts you back in the table above. They are still the right choice sometimes: [MP4 to WAV](/mp4-to-wav) and [Video to WAV](/video-to-wav) exist because transcription engines, subtitle timers and digital audio workstations want uncompressed PCM and several of them will refuse anything else. But those are re-encodes, and a tool that offered them without saying so would be hiding the cost.
+
+## Choosing a bitrate, without superstition
+
+Bitrate advice is full of folklore. The mechanical version is short.
+
+A lossy encoder given more bits per second throws away less. That is the whole relationship. So:
+
+- **Match or exceed the source.** Converting a 128 kbps AAC at 320 kbps does not improve it — but it does stop the second encoder from making things noticeably worse, because it has room to spare.
+- **Going above the source never adds anything.** A 24 kbps Opus voice note encoded at 320 kbps is a much bigger file carrying exactly the same information. If size matters, match the original instead.
+- **Speech needs far less than music.** 128 kbps is generous for a voice note or a podcast. Dense music benefits from 256 or 320.
+- **From a lossless source, 320 kbps is worth it.** This is the one case where the extra bits genuinely buy transparency rather than merely limiting damage.
+
+A consequence people find surprising: converting a small file can make it bigger. Opus is dramatically more efficient than MP3 at speech bitrates, so a one-minute WhatsApp voice note that took 200 KB as Opus can land near 1 MB as a 128 kbps MP3. That is not a bug. It is the price of a format that plays on everything, and [Opus to MP3](/opus-to-mp3) says so on the page rather than letting you discover it in your downloads folder.
+
+## What a browser can actually decode
+
+Every conversion in that table except the stream copy starts with a decode, and browsers vary enormously in what they will decode.
+
+MP3 and WAV work everywhere. FLAC works in most current browsers. AAC usually works, but some Firefox builds ship no AAC decoder at all. Ogg Vorbis and Opus work in Chrome, Edge and Firefox and not in Safari. And WMA works in nothing — no browser has ever shipped a Windows Media decoder.
+
+So the tools fall back. When the browser's own decoder refuses a file, the conversion switches to FFmpeg compiled to WebAssembly, which decodes essentially anything. That engine is roughly 31 MB, and it is served from this site rather than a content delivery network, fetched once and then cached by your browser. It is a real cost and worth stating plainly rather than burying: the first conversion that needs it waits for a download.
+
+[WMA to MP3](/wma-to-mp3) is the page where this is unavoidable — there is no native path, so the engine loads every time that page runs a conversion. Against the shipped build, decoding a standard WMA took 4 milliseconds once the engine was in memory, which tells you the download is the entire cost. [WAV to FLAC](/wav-to-flac) is the other one, for a different reason: the MP3 encoder is a 254 KB library and the WAV writer is a few dozen lines, but there is no FLAC encoder in JavaScript here, so FLAC output goes through FFmpeg too.
+
+One visible side effect: the waveform drawn when you drop a file uses only the browser's own decoder, deliberately, because decoration is not worth a 31 MB download. On a file the browser cannot open — a WMA anywhere, an Opus file in Safari — the waveform gives up and the canvas says the preview is unavailable, while the conversion runs perfectly well underneath it.
+
+## The size question nobody answers
+
+Most in-browser converters tell you there is no file size limit. That is technically true and practically misleading, and it is worth understanding why.
+
+Decoding audio in a browser produces a Web Audio buffer, and those are 32-bit floating point. One minute of 44.1 kHz stereo occupies about 20 MB in that form — twice what the same audio takes as a 16-bit WAV on disk, and roughly twenty times what it takes as a 128 kbps MP3. The whole file is decoded before any encoding starts, so that buffer has to exist in one piece, in a browser tab.
+
+For a podcast episode on a desktop this is a non-issue. For a three-hour recording on a phone it is the entire story. That is why the audio pages on this site do not print "no size cap" the way most of the others do: nothing is enforced, no file is rejected for being large, but there is a real ceiling and the page names the mechanism instead of pretending there is none.
+
+The extraction tools are the exception, and for a specific reason: the video is mounted into the FFmpeg engine rather than read into the tab, so the source costs no memory at all — that path has been verified end to end at 2500 MB. What has to fit is the audio that comes out, which only really matters on the WAV setting at about 10 MB a minute.
+
+## Practical rules
+
+If you want the short version:
+
+1. **Keep a lossless master where you can.** FLAC costs nothing over WAV and halves the size — [WAV to FLAC](/wav-to-flac) is the cheapest good decision in this whole article.
+2. **Convert from the best source you have**, not from the last file you made. Going FLAC → MP3 twice is fine. Going FLAC → MP3 → OGG → MP3 is three generations of damage for no reason.
+3. **Convert once, for a destination.** [FLAC to MP3](/flac-to-mp3) for the car, [MP3 Converter](/mp3-converter) when you have something odd and need a file that plays everywhere. Do not convert as housekeeping.
+4. **When you need audio out of a video, copy rather than encode** unless something downstream demands otherwise.
+5. **Do not expect a conversion to repair anything.** [M4A to WAV](/m4a-to-wav) gives you a lossless working copy, which is genuinely useful before an edit, and gives you nothing back that the original encoder discarded.
+
+Everything described here runs in your browser. The audio is decoded, converted and written to a file on your own machine, and no part of it is uploaded to a server — which is also why the memory arithmetic above is yours to spend rather than somebody else's.

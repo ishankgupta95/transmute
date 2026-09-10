@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { ErrorMessage } from "@/components/tools/ErrorMessage";
 import { WarningMessage } from "@/components/tools/WarningMessage";
 import { DropZone } from "@/components/tools/DropZone";
@@ -19,7 +19,7 @@ import {
 import { CanvasHeader, DocCard, DocStrip, StatStrip } from "@/components/tools/ToolCanvas";
 import { ToolProgress } from "@/components/tools/ToolControls";
 import { formatFileSize } from "@/lib/utils/file-helpers";
-import { CANVAS_COLUMN } from "@/components/workspace/shared";
+import { chipClass, CANVAS_COLUMN } from "@/components/workspace/shared";
 
 interface ImageEntry {
   file: File;
@@ -59,6 +59,13 @@ export function ImagesToPdfUI({ acceptFormats }: ImagesToPdfUIProps) {
   const [result, setResult] = useState<Blob | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [dragIdx, setDragIdx] = useState<number | null>(null);
+  // Which card the Move left / Move right buttons act on — the touch path,
+  // where there is no drag-and-drop and no keyboard.
+  const [focusedIdx, setFocusedIdx] = useState<number | null>(null);
+  const [announcement, setAnnouncement] = useState("");
+  // One id for the sr-only instructions every card points at, so the keyboard
+  // path is discoverable from the card itself and not only from the header.
+  const hintId = useId();
   const addInputRef = useRef<HTMLInputElement>(null);
   // The doc pins a "Done in 1.4 s" card above the primary once a run
   // finishes. Timed for real; cleared the moment the inputs change.
@@ -140,7 +147,67 @@ export function ImagesToPdfUI({ acceptFormats }: ImagesToPdfUIProps) {
     setResult(null);
     setElapsed(null);
     setStatus("idle");
+    // The Move buttons would otherwise keep pointing at a slot that now holds
+    // a different image.
+    setFocusedIdx(null);
   }, []);
+
+  /*
+    One mover for all three input paths — drag, ← / →, and the Move buttons.
+    A multi-page entry moves as a unit; its pages stay contiguous. Reordering
+    also drops any built PDF: the footer swaps the primary action out for a
+    Download the moment `result` is set, so without this the button keeps
+    serving a document in the page order the user has just moved away from.
+  */
+  const move = useCallback(
+    (from: number, to: number) => {
+      // A keyboard can reach the cards mid-run, which drag never could; moving
+      // then would clear the progress readout and re-arm the primary.
+      if (status === "processing") return;
+      setEntries((prev) => {
+        if (to < 0 || to >= prev.length || from === to) return prev;
+        const updated = [...prev];
+        const [item] = updated.splice(from, 1);
+        updated.splice(to, 0, item);
+        return updated;
+      });
+      setResult(null);
+      setElapsed(null);
+      setStatus("idle");
+    },
+    [status],
+  );
+
+  /**
+   * Bring a card back under the caret after React has re-ordered the DOM.
+   *
+   * The slot attribute carries this instance's `useId` prefix, so the frame
+   * that lands after an unmount finds nothing rather than pulling focus into
+   * whatever tree replaced it.
+   */
+  const refocusCard = useCallback(
+    (position: number) => {
+      requestAnimationFrame(() => {
+        document
+          .querySelector<HTMLElement>(`[data-doc-slot="${hintId}${position}"]`)
+          ?.focus();
+      });
+    },
+    [hintId],
+  );
+
+  /** The keyboard / Move-button path. Drag goes through `handleDragOver`. */
+  const moveEntry = useCallback(
+    (from: number, to: number) => {
+      if (to < 0 || to >= entries.length || from === to) return;
+      const name = entries[from].file.name;
+      move(from, to);
+      setFocusedIdx(to);
+      setAnnouncement(`${name} moved to position ${to + 1} of ${entries.length}.`);
+      refocusCard(to);
+    },
+    [entries, move, refocusCard],
+  );
 
   const handleDragStart = useCallback((e: React.DragEvent, idx: number) => {
     // Firefox refuses to start a drag until the payload is seeded. Optional
@@ -153,20 +220,9 @@ export function ImagesToPdfUI({ acceptFormats }: ImagesToPdfUIProps) {
   const handleDragOver = useCallback((e: React.DragEvent, idx: number) => {
     e.preventDefault();
     if (dragIdx === null || dragIdx === idx) return;
-    setEntries((prev) => {
-      const updated = [...prev];
-      const [item] = updated.splice(dragIdx, 1);
-      updated.splice(idx, 0, item);
-      return updated;
-    });
+    move(dragIdx, idx);
     setDragIdx(idx);
-    // Add and remove already invalidate the built PDF; a reorder must too, or
-    // the download button keeps serving a document in the old page order.
-    // A multi-page entry moves as a unit — its pages stay contiguous.
-    setResult(null);
-    setElapsed(null);
-    setStatus("idle");
-  }, [dragIdx]);
+  }, [dragIdx, move]);
 
   const handleConvert = useCallback(async () => {
     if (entries.length === 0) return;
@@ -199,6 +255,8 @@ export function ImagesToPdfUI({ acceptFormats }: ImagesToPdfUIProps) {
     setElapsed(null);
     setStatus("idle");
     setError(null);
+    setFocusedIdx(null);
+    setAnnouncement("");
   }, [entries]);
 
   /*
@@ -244,6 +302,11 @@ export function ImagesToPdfUI({ acceptFormats }: ImagesToPdfUIProps) {
                 `${entries.length === 1 ? "IMAGE" : "IMAGES"} · ${totalPages} ` +
                 `${totalPages === 1 ? "PAGE" : "PAGES"}`
               }
+              // The keyboard path goes in the trailing slot, never into `meta`:
+              // five E2E assertions (conversion/pdf.spec.ts and
+              // conversion/images-to-pdf-children.spec.ts) address that string
+              // verbatim.
+              trailing="DRAG OR USE ← →"
             />
 
             <DocStrip>
@@ -256,11 +319,38 @@ export function ImagesToPdfUI({ acceptFormats }: ImagesToPdfUIProps) {
                   badge={entry.pages.length > 1 ? `${entry.pages.length} p` : undefined}
                   thumb={entry.url}
                   onRemove={() => removeEntry(idx)}
+                  /*
+                    Everything below the drag handlers is the non-mouse path.
+                    HTML5 drag never fires from a finger and never reaches a
+                    keyboard, so drag alone made the tool's one function —
+                    choosing the page order — unusable without a mouse. Ported
+                    from PdfPageReorderUI, which solved the same problem; the
+                    props ride in through `draggableProps` because `DocCard`
+                    spreads it straight onto the card element.
+                  */
                   draggableProps={{
                     draggable: true,
+                    "data-doc-slot": `${hintId}${idx}`,
+                    role: "group",
+                    tabIndex: 0,
+                    "aria-label": `${entry.file.name}, position ${idx + 1} of ${entries.length}`,
+                    "aria-describedby": hintId,
                     onDragStart: (e: React.DragEvent) => handleDragStart(e, idx),
                     onDragOver: (e: React.DragEvent) => handleDragOver(e, idx),
                     onDragEnd: () => setDragIdx(null),
+                    onFocus: () => setFocusedIdx(idx),
+                    // Tapping a card makes it the one the Move buttons act on —
+                    // a div does not take focus from a tap on its own. The card's
+                    // own Remove button must not also select the card it deletes.
+                    onClick: (e: React.MouseEvent<HTMLElement>) => {
+                      if ((e.target as HTMLElement).closest("button")) return;
+                      e.currentTarget.focus();
+                    },
+                    onKeyDown: (e: React.KeyboardEvent) => {
+                      if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+                      e.preventDefault();
+                      moveEntry(idx, idx + (e.key === "ArrowRight" ? 1 : -1));
+                    },
                   }}
                 />
               ))}
@@ -291,6 +381,15 @@ export function ImagesToPdfUI({ acceptFormats }: ImagesToPdfUIProps) {
                 }}
               />
             </DocStrip>
+
+            <span id={hintId} className="sr-only">
+              Press the left or right arrow key to move this image one place in
+              the page order, or use the Move left and Move right buttons in the
+              settings panel.
+            </span>
+            <span aria-live="polite" className="sr-only">
+              {announcement}
+            </span>
           </>
         )}
 
@@ -361,6 +460,43 @@ export function ImagesToPdfUI({ acceptFormats }: ImagesToPdfUIProps) {
           />
         </ToolAsideSection>
 
+        {entries.length > 1 && (
+          <ToolAsideSection label="ORDER">
+            {/* The touch fallback: HTML5 drag never fires from a finger, so on
+                a phone these buttons are the only way to reorder at all.
+                WCAG 2.5.7 — no function may require a dragging movement. */}
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => focusedIdx !== null && moveEntry(focusedIdx, focusedIdx - 1)}
+                disabled={focusedIdx === null || focusedIdx === 0}
+                className={chipClass(
+                  false,
+                  "flex-1 rounded-[6px] px-2 py-[7px] text-[11.5px] disabled:cursor-not-allowed disabled:opacity-45",
+                )}
+              >
+                Move left
+              </button>
+              <button
+                type="button"
+                onClick={() => focusedIdx !== null && moveEntry(focusedIdx, focusedIdx + 1)}
+                disabled={focusedIdx === null || focusedIdx >= entries.length - 1}
+                className={chipClass(
+                  false,
+                  "flex-1 rounded-[6px] px-2 py-[7px] text-[11.5px] disabled:cursor-not-allowed disabled:opacity-45",
+                )}
+              >
+                Move right
+              </button>
+            </div>
+            <span className="font-body text-[10.5px] leading-[1.5] text-text-muted">
+              {focusedIdx === null
+                ? "Tap or focus an image to move it, or drag it with a mouse."
+                : `Moving ${entries[focusedIdx].file.name} (position ${focusedIdx + 1} of ${entries.length}).`}
+            </span>
+          </ToolAsideSection>
+        )}
+
         <ToolAsideSection label="OUTPUT">
           <ToolOutput
             rows={[
@@ -371,7 +507,7 @@ export function ImagesToPdfUI({ acceptFormats }: ImagesToPdfUIProps) {
           <span className="font-body text-[10.5px] leading-[1.5] text-text-muted">
             {entries.length === 0
               ? "Add images to build a PDF."
-              : "Drag the thumbnails to set page order."}
+              : "Drag the thumbnails to set page order, or focus one and use ← / →."}
           </span>
         </ToolAsideSection>
       </ToolAside>

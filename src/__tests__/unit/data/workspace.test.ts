@@ -20,6 +20,7 @@ const ARCHETYPES: Archetype[] = [
   "batch",
   "pdfpages",
   "pdfdocs",
+  "pdfimages",
   "video",
   "gif",
   "extract",
@@ -31,6 +32,8 @@ const ARCHETYPES: Archetype[] = [
   "color",
   "data",
   "record",
+  "audiofilter",
+  "frames",
 ];
 
 const registrySlugs = new Set(tools.map((t) => t.slug));

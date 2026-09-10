@@ -1,4 +1,5 @@
 import type { ProcessedResult } from "@/hooks/useFileProcessor";
+import { writtenFormat } from "./image-convert";
 import {
   fillBackground,
   imageHasTransparency,
@@ -112,11 +113,17 @@ export async function compressImage(
   const img = await loadImage(file);
   const { mime, ext } = chooseOutput(file, img);
   const baseName = file.name.replace(/\.[^.]+$/, "");
-  const fileName = `${baseName}-compressed.${ext}`;
+  // The extension is settled per encode rather than up front: toBlob
+  // substitutes PNG for a type it cannot write, and this path picks WebP for
+  // a transparent source, so on a browser without WebP encoding the name has
+  // to follow the bytes. See `writtenFormat` for why compress follows the
+  // encoder where convert refuses.
+  const nameFor = (blob: Blob) =>
+    `${baseName}-compressed.${writtenFormat(blob, mime, ext).ext}`;
 
   if (options.mode === "quality") {
     const blob = await encodeImage(img, mime, options.quality);
-    return withWarnings(neverGrow(file, blob, fileName));
+    return withWarnings(neverGrow(file, blob, nameFor(blob)));
   }
 
   // Target-size mode: binary-search quality at the source dimensions first.
@@ -128,10 +135,10 @@ export async function compressImage(
   // requested quality instead — mirrored in workers/image.worker.ts.
   if (!Number.isFinite(targetBytes) || targetBytes <= 0) {
     const blob = await encodeImage(img, mime, options.quality);
-    return withWarnings(neverGrow(file, blob, fileName));
+    return withWarnings(neverGrow(file, blob, nameFor(blob)));
   }
   const first = await searchQuality((q) => encodeImage(img, mime, q), targetBytes);
-  if (first.under) return withWarnings(neverGrow(file, first.under, fileName));
+  if (first.under) return withWarnings(neverGrow(file, first.under, nameFor(first.under)));
 
   // Quality alone cannot reach the target at these dimensions: step the dims
   // down (shared policy in target-size.ts) and search again — the mirror of
@@ -148,7 +155,10 @@ export async function compressImage(
     const [w, h] = [width, height];
     const result = await searchQuality((q) => encodeImage(img, mime, q, w, h), targetBytes);
     if (result.under) {
-      return withWarnings(neverGrow(file, result.under, fileName), scaledToTargetWarning(w, h));
+      return withWarnings(
+        neverGrow(file, result.under, nameFor(result.under)),
+        scaledToTargetWarning(w, h),
+      );
     }
     if (result.smallest.size < smallest.size) {
       smallest = result.smallest;
@@ -159,7 +169,7 @@ export async function compressImage(
   // Unreachable even at the floor: the smallest achieved is the honest,
   // closest-possible answer — today's behaviour, now across dimensions too.
   return withWarnings(
-    neverGrow(file, smallest, fileName),
+    neverGrow(file, smallest, nameFor(smallest)),
     smallestDims.scaled
       ? scaledToTargetWarning(smallestDims.width, smallestDims.height)
       : null,

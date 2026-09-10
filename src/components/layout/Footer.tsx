@@ -16,6 +16,12 @@ const SITE_LINKS = [
   { href: "/about", label: "About" },
   { href: "/privacy", label: "Privacy" },
   { href: "/licenses", label: "Licenses" },
+  // The offline opt-in. It lives here rather than in a tool page's chrome
+  // because it is a decision about the whole site, and /privacy's "one named
+  // engine at a time, with its size shown before the download starts" is a
+  // promise about this page — a promise nobody can check if the page cannot
+  // be found.
+  { href: "/offline-access", label: "Offline" },
 ];
 
 const linkClass =

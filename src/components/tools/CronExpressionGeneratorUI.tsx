@@ -18,6 +18,16 @@ import { CANVAS_COLUMN } from "@/components/workspace/shared";
 import { useCopied } from "@/hooks/useCopied";
 
 /**
+ * Focus ring for the keyboard-focusable text panes below. It cannot live in
+ * `TEXT_PANE_BODY` today, and it needs `outline-solid` of its own:
+ * `TEXT_PANE_BODY` ends in `focus:outline-none`, which sets
+ * `--tw-outline-style: none`, and a bare `focus-visible:outline-2` resolves
+ * its style from that same variable — so the ring would compile to nothing.
+ */
+const PANE_FOCUS =
+  "focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-accent";
+
+/**
  * The doc's one field box, from the RANGE strip:
  * `height:30px;border-radius:7px;background:var(--color-surface);border:1px
  * solid var(--color-divider);font:400 12px/1 'IBM Plex Mono';padding:0 10px`.
@@ -295,7 +305,12 @@ export function CronExpressionGeneratorUI() {
 
           {nextRuns.length > 0 && (
             <TextPane tone="out" label="Next 5 Run Times" lines={nextRuns.length}>
-              <div className={cn(TEXT_PANE_BODY, "flex flex-col gap-1.5")}>
+              <div
+                tabIndex={0}
+                role="region"
+                aria-label="Next 5 run times"
+                className={cn(TEXT_PANE_BODY, "flex flex-col gap-1.5", PANE_FOCUS)}
+              >
                 {nextRuns.map((run, i) => (
                   <span key={i} className="text-neutral-300">
                     {run}

@@ -45,18 +45,17 @@ Most "PDF compressors" claim large compression ratios because they re-encode emb
 The technique:
 
 1. Iterate through every embedded image in the PDF
-2. Detect its actual rendered size on the page (not the stored resolution)
-3. Resample the image down to a target DPI appropriate for the use case (typically 150 DPI for screen viewing, 300 DPI for print)
-4. Re-encode the resampled image as JPG at quality 75–85
-5. Substitute the recompressed image back into the PDF
+2. Decode it, redraw it smaller, and re-encode it as JPG at a lower quality
+3. Substitute the recompressed image back into the PDF, fixing the dictionary that describes it
+4. Leave everything that is not an image — text, fonts, vector artwork — completely alone
 
-This is harder to automate cleanly in a browser-based tool because each PDF library handles image re-encoding differently. Transmute's [compress PDF](/compress-pdf) currently focuses on structural optimization rather than image re-encoding — for image-heavy compression, the alternative pattern below works:
+[Recompress PDF images](/recompress-pdf-images) does exactly that, in the browser. It is a separate tool from [compress PDF](/compress-pdf) on purpose, because the two do genuinely different things and only one of them is reversible: structural compression rewrites the file's plumbing and leaves every pixel byte-identical, while this re-encodes the photographs and cannot be undone. Pick it deliberately, not as a "level" of the other one.
 
-1. Use [PDF to JPG](/pdf-to-jpg) to render every page as a JPG at a sensible resolution (say, 150 DPI = ~1280×1700 for US Letter)
-2. Use the JPG quality slider to pick a balance — quality 80 is usually a good default
-3. Use [images to PDF](/images-to-pdf) to repackage the JPGs into a single PDF
+It handles JPEG images and reports, on screen, exactly how many it left alone and why — an image carrying a transparency mask, a non-JPEG image, or anything in a colour space a canvas would not round-trip faithfully is skipped rather than guessed at. A document whose images are all skipped is told so, instead of being handed a download that quietly missed the target.
 
-This effectively performs the image down-sampling externally. The tradeoff: you lose the original document's text layer (if it had one), so the resulting PDF won't be searchable. For pure scans, this doesn't matter — they were never searchable anyway. For mixed content (scanned signature page in a text-based contract), it does matter, and you should keep an unsearchable copy and the original.
+Two things worth knowing before you reach for it. It scales every image by the same factor rather than resampling to a target DPI, so think in terms of "half size", not "150 DPI". And if you ask for a target size it cannot reach, it reports the closest size it managed rather than overshooting silently.
+
+The older workaround — [PDF to JPG](/pdf-to-jpg) every page, then [images to PDF](/images-to-pdf) to repackage them — still exists, but you should now only reach for it deliberately, because it flattens the whole document to pictures and destroys the text layer. Recompressing the images keeps the text searchable.
 
 ## Method 3: Page splitting
 

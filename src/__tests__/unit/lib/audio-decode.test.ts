@@ -197,6 +197,53 @@ describe("sniffSampleRate", () => {
     expect(sniffSampleRate(fixture("sample-audio.m4a"))).toBe(44100);
   });
 
+  /*
+    Raw ADTS. `sample-audio.aac` is a `-c:a copy` of `sample-audio.m4a`'s AAC:
+    identical audio, no container. Before the ADTS sniffer existed this fell
+    through to sniffMp3, which false-synced on the AAC payload at byte 615
+    (`ff fc 45 9d` → MPEG1 layer II, rate index 1) and returned 48000 — and
+    `decodeAudioData` then RESAMPLED the file to it, so /m4a-to-wav wrote a
+    48 kHz WAV from the .aac and a 44.1 kHz WAV from the byte-identical .m4a.
+    `.aac` reaches this from aac-to-mp3, m4a-to-wav, m4a-to-mp3, audio-trimmer
+    and merge-audio.
+  */
+  it("reads the sampling_frequency_index of a raw ADTS .aac", () => {
+    expect(sniffSampleRate(fixture("sample-audio.aac"))).toBe(44100);
+  });
+
+  it("gives the same rate for the .aac and the .m4a holding the same AAC", () => {
+    expect(sniffSampleRate(fixture("sample-audio.aac"))).toBe(
+      sniffSampleRate(fixture("sample-audio.m4a")),
+    );
+  });
+
+  it("declines an ADTS header whose frame length points at nothing", () => {
+    // Valid syncword, layer 00, rate index 4 — but the length field is a lie,
+    // so there is no second frame where it says the first one ends. Guessing
+    // here is how the MP3 scanner got this file wrong in the first place.
+    const b = new Uint8Array(512).fill(0x11);
+    b.set([0xff, 0xf1, 0x50, 0x80, 0x20, 0x00, 0xfc], 0); // frame_length 256
+    expect(sniffSampleRate(b)).toBeNull();
+  });
+
+  it("does not trust a lone MPEG sync with no frame where it says the next one starts", () => {
+    // The exact four bytes sniffMp3 false-synced on inside the .aac payload,
+    // dropped into filler. Eleven sync bits are cheap to hit by chance; a
+    // matching header one frame_length on is not.
+    const b = new Uint8Array(4096).fill(0x11);
+    b.set([0xff, 0xfc, 0x45, 0x9d], 20);
+    expect(sniffSampleRate(b)).toBeNull();
+  });
+
+  it("still reports nothing for AAC payload bytes once the ADTS header is broken", () => {
+    // Same fixture with byte 0 cleared, so the ADTS sniffer declines and the
+    // MP3 scanner faces the real payload alone. It must come back unsure —
+    // null falls through to a device-rate decode, 48000 silently resamples.
+    const mangled = fixture("sample-audio.aac").slice();
+    mangled[0] = 0x00;
+    expect(sniffSampleRate(mangled)).toBeNull();
+  });
+
   it("reads an ID3v2-prefixed MP3", () => {
     const mp3 = fixture("sample-audio.mp3");
     // Wrap the real MP3 in a 128-byte ID3v2 tag (synchsafe size = 118).
@@ -378,6 +425,24 @@ describe("decodeAudioFile — FFmpeg fallback", () => {
     expect(ffmpegMock.runFFmpegTask).not.toHaveBeenCalled();
   });
 
+  it("routes a .wma through FFmpeg — for WMA that is the only path there is", async () => {
+    /*
+      Every other entry in the allowlist is a browser gap that some engine
+      fills. WMA is filled by none of them: measured 2026-09-04 on a real
+      35 744-byte wmav2-in-ASF file, `decodeAudioData` rejected it in Chromium
+      ("Unable to decode audio data"), WebKit ("Decoding failed") and Firefox
+      ("...unknown content type"). Drop `"wma"` from FFMPEG_FALLBACK_EXTS and
+      /wma-to-mp3 becomes a page that cannot open its own format.
+    */
+    ffmpegMock.runFFmpegTask.mockResolvedValue(tinyWav(44100));
+    const file = new File(["fake-asf-bytes"], "track.wma", { type: "audio/x-ms-wma" });
+
+    const result = await decodeAudioFile(file);
+
+    expect(ffmpegMock.runFFmpegTask).toHaveBeenCalledTimes(1);
+    expect(result).toBe(decodedBuffer);
+  });
+
   it("does NOT reach for FFmpeg on unknown extensions", async () => {
     const file = new File(["junk"], "noise.xyz", { type: "audio/unknown" });
 
@@ -391,5 +456,90 @@ describe("decodeAudioFile — FFmpeg fallback", () => {
 
     await expect(decodeAudioFile(file)).rejects.toThrow("Unable to decode audio data");
     expect(ffmpegMock.runFFmpegTask).toHaveBeenCalledTimes(1);
+  });
+});
+
+/*
+  MEMFS hygiene. The fallback copies the ENTIRE source in with `writeFile`
+  (it is the one call site in this cluster that copies rather than mounts), so
+  a decode that throws before the deletes pins a full copy of the user's file
+  on the worker heap for the life of the tab. On /wma-to-mp3 — FFmpeg-only, and
+  no browser decodes WMA — a DRM'd or truncated file fails EVERY time, and the
+  leaks accumulate one per attempt under their own `input.<ext>` name.
+
+  These drive the real task callback against a stand-in MEMFS, so what is
+  asserted is what is left behind rather than which lines were reached.
+*/
+describe("decodeAudioFile — the FFmpeg fallback's MEMFS cleanup", () => {
+  /** Names still present when the task returns are leaked. */
+  function fakeEngine(exitCode: number) {
+    const fs = new Set<string>();
+    const ffmpeg = {
+      writeFile: vi.fn(async (name: string) => {
+        fs.add(name);
+      }),
+      exec: vi.fn(async () => {
+        if (exitCode === 0) fs.add("decoded.wav");
+        return exitCode;
+      }),
+      readFile: vi.fn(async () => tinyWav(44100)),
+      deleteFile: vi.fn(async (name: string) => {
+        // MEMFS rejects an unlink of a file that was never written, which is
+        // exactly the state the output is in after a failed exec.
+        if (!fs.delete(name)) throw new Error(`FS error: no such file, '${name}'`);
+        return true;
+      }),
+    };
+    return { fs, ffmpeg };
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockDecodeAudioData.mockImplementation(async (ab: ArrayBuffer) => {
+      const head = new Uint8Array(ab.slice(0, 4));
+      if (String.fromCharCode(...head) === "RIFF") return createMockAudioBuffer([new Float32Array([0.25])]);
+      throw new Error("Unable to decode audio data");
+    });
+    mockClose.mockResolvedValue(undefined);
+  });
+
+  it("removes the source from MEMFS when the decode exits non-zero", async () => {
+    const engine = fakeEngine(1);
+    ffmpegMock.runFFmpegTask.mockImplementation(
+      async (task: (f: typeof engine.ffmpeg) => Promise<unknown>) => task(engine.ffmpeg),
+    );
+    const file = new File(["drm-protected-bytes"], "library.wma", { type: "audio/x-ms-wma" });
+
+    await expect(decodeAudioFile(file)).rejects.toThrow();
+
+    expect(engine.ffmpeg.writeFile).toHaveBeenCalledWith("input.wma", expect.anything());
+    expect([...engine.fs]).toEqual([]);
+  });
+
+  it("does not accumulate a leak per failed attempt", async () => {
+    const engine = fakeEngine(1);
+    ffmpegMock.runFFmpegTask.mockImplementation(
+      async (task: (f: typeof engine.ffmpeg) => Promise<unknown>) => task(engine.ffmpeg),
+    );
+
+    for (const name of ["library.wma", "second.m4a", "third.flac"]) {
+      await expect(decodeAudioFile(new File(["bad"], name))).rejects.toThrow();
+    }
+
+    expect([...engine.fs]).toEqual([]);
+  });
+
+  it("still removes both files on the success path", async () => {
+    const engine = fakeEngine(0);
+    ffmpegMock.runFFmpegTask.mockImplementation(
+      async (task: (f: typeof engine.ffmpeg) => Promise<unknown>) => task(engine.ffmpeg),
+    );
+    const file = new File(["fake-aac-bytes"], "song.m4a", { type: "audio/mp4" });
+
+    await expect(decodeAudioFile(file)).resolves.toBeTruthy();
+
+    expect(engine.ffmpeg.deleteFile).toHaveBeenCalledWith("input.m4a");
+    expect(engine.ffmpeg.deleteFile).toHaveBeenCalledWith("decoded.wav");
+    expect([...engine.fs]).toEqual([]);
   });
 });

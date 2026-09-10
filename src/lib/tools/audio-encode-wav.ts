@@ -23,21 +23,14 @@ export function encodeToWav(buffer: AudioBuffer): Blob {
  * Convert any browser-decodable audio file to WAV. Decoding stays on the
  * main thread (AudioContext doesn't exist in workers); the sample
  * interleave/quantise loop runs in the audio worker pool.
+ *
+ * The body lives in `audio-convert.ts` now — see the note on `convertToMp3`,
+ * whose body this was a one-word variation of.
  */
 export async function convertToWav(
   file: File,
   ctx: ProcessingContext = {},
 ): Promise<ProcessedResult> {
-  const { decodeAudioFile } = await import("./audio-decode");
-  const audioBuffer = await decodeAudioFile(file, ctx);
-  const { encodeWav } = await import("@/lib/workers/audio-client");
-  const blob = await encodeWav(audioBuffer, ctx);
-  const baseName = file.name.replace(/\.[^.]+$/, "");
-
-  return {
-    blob,
-    fileName: `${baseName}.wav`,
-    originalSize: file.size,
-    newSize: blob.size,
-  };
+  const { convertAudio } = await import("./audio-convert");
+  return convertAudio(file, { format: "wav" }, ctx);
 }

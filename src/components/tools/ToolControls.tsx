@@ -1,6 +1,6 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 import { ProgressBar } from "@/components/tools/ProgressBar";
 import { ToolAsideSection } from "@/components/tools/ToolAside";
 import { MONO_LABEL } from "@/components/workspace/shared";
@@ -63,12 +63,35 @@ export function ToolProgress({
   /** Accessible name for the bar; defaults to the phase. */
   label?: string;
 }) {
+  /*
+    WCAG 4.1.3 Status Messages.
+
+    A live region is registered by assistive tech when the node is inserted,
+    and announced when its contents CHANGE afterwards. A region that arrives
+    with its text already inside it is one DOM mutation, not two, and is
+    announced only sometimes — which is exactly the shape this had, because
+    all 58 call sites mount the whole component conditionally
+    (`{isProcessing && <ToolProgress …/>}`), so the region and its first phase
+    string landed in the same commit.
+
+    So the span renders EMPTY and the phase is written into it from a passive
+    effect, after the commit that inserted it: the region exists first, the
+    text lands second. Do not move `{phase}` back into the JSX — the rendered
+    result looks identical and the announcement quietly stops being reliable.
+
+    The percentage deliberately stays outside the region: it changes many
+    times a second and would talk over everything else.
+  */
+  const phaseRef = useRef<HTMLSpanElement>(null);
+  useEffect(() => {
+    const el = phaseRef.current;
+    if (el) el.textContent = phase;
+  }, [phase]);
+
   return (
     <div className="flex flex-col gap-2">
       <div className="flex items-center justify-between gap-3 font-mono text-[10.5px] leading-none text-text-muted">
-        <span aria-live="polite" aria-atomic="true">
-          {phase}
-        </span>
+        <span ref={phaseRef} aria-live="polite" aria-atomic="true" />
         <span className="text-accent-300">{percent === null ? "WORKING" : `${percent}%`}</span>
       </div>
       <ProgressBar progress={percent} label={label ?? phase} />

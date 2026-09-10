@@ -19,6 +19,16 @@ import { CANVAS_COLUMN } from "@/components/workspace/shared";
 import { useCopied } from "@/hooks/useCopied";
 import { formatFileSize } from "@/lib/utils/file-helpers";
 
+/**
+ * Focus ring for the keyboard-focusable text panes below. It cannot live in
+ * `TEXT_PANE_BODY` today, and it needs `outline-solid` of its own:
+ * `TEXT_PANE_BODY` ends in `focus:outline-none`, which sets
+ * `--tw-outline-style: none`, and a bare `focus-visible:outline-2` resolves
+ * its style from that same variable — so the ring would compile to nothing.
+ */
+const PANE_FOCUS =
+  "focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-accent";
+
 interface JwtParts {
   header: Record<string, unknown>;
   payload: Record<string, unknown>;
@@ -149,7 +159,14 @@ export function JwtDecoderUI() {
                   </button>
                 }
               >
-                <pre className={TEXT_PANE_BODY}>{JSON.stringify(result.header, null, 2)}</pre>
+                <pre
+                  tabIndex={0}
+                  role="region"
+                  aria-label="Decoded header"
+                  className={cn(TEXT_PANE_BODY, PANE_FOCUS)}
+                >
+                  {JSON.stringify(result.header, null, 2)}
+                </pre>
               </TextPane>
 
               <TextPane
@@ -168,13 +185,25 @@ export function JwtDecoderUI() {
                   </button>
                 }
               >
-                <pre className={TEXT_PANE_BODY}>{JSON.stringify(result.payload, null, 2)}</pre>
+                <pre
+                  tabIndex={0}
+                  role="region"
+                  aria-label="Decoded payload"
+                  className={cn(TEXT_PANE_BODY, PANE_FOCUS)}
+                >
+                  {JSON.stringify(result.payload, null, 2)}
+                </pre>
               </TextPane>
             </TextPanes>
 
             <TextPanes columns={1}>
               <TextPane label="Signature">
-                <code className={cn(TEXT_PANE_BODY, "block break-all text-text-muted")}>
+                <code
+                  tabIndex={0}
+                  role="region"
+                  aria-label="Signature"
+                  className={cn(TEXT_PANE_BODY, "block break-all text-text-muted", PANE_FOCUS)}
+                >
                   {result.signature}
                 </code>
               </TextPane>

@@ -5,21 +5,60 @@ import { Navbar } from "@/components/layout/Navbar";
 import { Footer } from "@/components/layout/Footer";
 import { CommandPalette } from "@/components/layout/CommandPalette";
 import { AnalyticsPageviews } from "@/components/layout/AnalyticsPageviews";
+import { ServiceWorkerRegistration } from "@/components/pwa/ServiceWorkerRegistration";
 import "./globals.css";
 
 const GA_ID = "G-TCWDH01ZSK";
 
+/*
+  Preloaded, and spelled out rather than left to the default, because this is
+  the font the LCP element is drawn in: the hero `h1` is `font-display`, and
+  `--font-display` resolves to `--font-inter` (globals.css:236). The family
+  below deliberately opts OUT of preloading, so the contrast between the two
+  declarations is the point — a reader should not have to know the default to
+  see which font this page treats as critical.
+*/
 const inter = Inter({
   variable: "--font-inter",
   subsets: ["latin"],
   display: "swap",
+  preload: true,
 });
 
+/*
+  NOT PRELOADED, and that is the whole point of the setting.
+
+  MEASURED on the built home page: four fonts were preloaded, totalling
+  78,664 bytes — Inter at 48,432 B and IBM Plex Mono at 10,052 / 10,060 /
+  10,120 B for weights 400, 500 and 600. The LCP element is the hero `h1`,
+  which is `font-display` -> `--font-inter` (globals.css:236). So THREE OF THE
+  FOUR PRELOADS, 30,232 bytes, were competing on the critical path with the one
+  font the largest paint actually needs, and none of them could ever draw it.
+
+  `next/font` preloads every declared family by default; `preload: false` stops
+  the <link rel=preload> without changing anything else. The face still loads
+  the moment the stylesheet references it, and `display: "swap"` is unchanged,
+  so mono text renders immediately in the fallback and swaps — which is already
+  the behaviour this file asked for. VERIFIED in the built output: the home
+  page now emits exactly ONE font preload, Inter's 48,432 B, down from four
+  totalling 78,664 B.
+
+  THE TRADE-OFF, stated because it is visible: mono IS used above the fold, in
+  the navbar's 10.5px muted status line (desktop only, `xl:flex`). On a slow
+  connection that line will show a fallback monospace briefly before swapping.
+  Muted secondary chrome swapping is the cost; the page's largest paint getting
+  the bandwidth is the benefit. One line to revert if that is the wrong call.
+
+  ⚠ THE LCP IMPROVEMENT ITSELF IS UNMEASURED. Lighthouse ran against the LIVE
+  site, and the live site is many tools behind this tree — re-measuring needs a
+  deploy. What is measured here is the byte change, nothing more.
+*/
 const plexMono = IBM_Plex_Mono({
   variable: "--font-plex-mono",
   weight: ["400", "500", "600"],
   subsets: ["latin"],
   display: "swap",
+  preload: false,
 });
 
 const BASE_URL = "https://transmute.tools";
@@ -135,6 +174,11 @@ export default function RootLayout({
         {/* GA pageviews for client-side navigations — the head snippet only
             counts the initial document. */}
         <AnalyticsPageviews />
+        {/* Registers public/sw.js in production builds only, after `load`, and
+            renders nothing until a NEW version is waiting behind the running
+            one — at which point it asks, because a tab may be mid-conversion.
+            Folded away entirely in dev: `process.env.NODE_ENV` is inlined. */}
+        <ServiceWorkerRegistration />
       </body>
     </html>
   );

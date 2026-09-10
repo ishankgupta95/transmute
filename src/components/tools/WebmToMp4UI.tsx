@@ -30,9 +30,13 @@ import {
 import { extractFilmstrip } from "@/lib/tools/media-preview";
 import { CANVAS_COLUMN, STAGE_GROW, STAGE_MEDIA } from "@/components/workspace/shared";
 import { cn } from "@/lib/utils/cn";
+import { getToolBySlug } from "@/data/tools";
 
 /** Frame count the doc's strip draws. */
 const FILMSTRIP_FRAMES = 16;
+
+/* Same registry read as CompressVideoUI — see the note there. */
+const PRACTICAL_LIMIT_NOTE = getToolBySlug("webm-to-mp4")?.practicalLimitNote;
 
 export function WebmToMp4UI() {
   // Read only after mount so the static export can't bake the build
@@ -106,7 +110,11 @@ export function WebmToMp4UI() {
         {/* Warn before the click, not after a wasted upload; the zone stays
             so the page keeps its shape on an unsupported browser. */}
         {unsupported && <ErrorMessage message={WEBCODECS_UNSUPPORTED_MESSAGE} />}
-        <DropZone accept=".webm" onFiles={handleFiles} />
+        <DropZone
+          accept=".webm"
+          practicalLimitNote={PRACTICAL_LIMIT_NOTE}
+          onFiles={handleFiles}
+        />
       </>
     );
   }

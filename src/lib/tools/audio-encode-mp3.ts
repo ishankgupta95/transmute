@@ -56,22 +56,23 @@ export function extractChannels(buffer: AudioBuffer): Float32Array[] {
  * Convert any browser-decodable audio file to MP3. Decoding stays on the
  * main thread (AudioContext doesn't exist in workers); the lamejs encode
  * runs in the audio worker pool.
+ *
+ * The body moved to `audio-convert.ts` when FLAC arrived: this was one of two
+ * functions whose eight lines differed by a single word, and a third copy for
+ * an output the worker pool cannot even encode was not worth having. The name
+ * stays because the MP3 tools import it, and because "convert this file to
+ * MP3" is a real thing to want.
+ *
+ * The import is dynamic on purpose. `audio-convert.ts` reaches back here for
+ * `resampleForMp3` (which `audio-trim.ts` and `audio-merge.ts` also import, so
+ * it cannot move), and a static edge in both directions is a cycle. Deferring
+ * this half breaks it without changing anything a caller can see.
  */
 export async function convertToMp3(
   file: File,
   options: Mp3EncodeOptions,
   ctx: ProcessingContext = {},
 ): Promise<ProcessedResult> {
-  const { decodeAudioFile } = await import("./audio-decode");
-  const audioBuffer = await resampleForMp3(await decodeAudioFile(file, ctx));
-  const { encodeMp3 } = await import("@/lib/workers/audio-client");
-  const blob = await encodeMp3(audioBuffer, options.bitrate, ctx);
-  const baseName = file.name.replace(/\.[^.]+$/, "");
-
-  return {
-    blob,
-    fileName: `${baseName}.mp3`,
-    originalSize: file.size,
-    newSize: blob.size,
-  };
+  const { convertAudio } = await import("./audio-convert");
+  return convertAudio(file, { format: "mp3", bitrate: options.bitrate }, ctx);
 }

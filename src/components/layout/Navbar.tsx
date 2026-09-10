@@ -56,8 +56,20 @@ export function Navbar() {
                 className={cn(
                   "rounded-[7px] px-[11px] py-[7px] font-body text-[13px] leading-none whitespace-nowrap transition-colors duration-200",
                   "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent",
+                  /*
+                    WCAG 1.4.1 Use of Color. `bg-accent/13` measures 1.19:1
+                    against the bar, so the tint is effectively invisible and
+                    the ONLY cue that this pill is the current page was the
+                    text turning from neutral-400 to accent-200 — a hue
+                    change, which is precisely what 1.4.1 forbids as a sole
+                    indicator. The ring adds a non-colour cue (an outline is
+                    present here and on no other pill) and, at 5.54:1 against
+                    the bar and 4.63:1 against the pill's own tint, it is
+                    actually visible. `aria-current` above already covered
+                    assistive tech; this covers everyone else.
+                  */
                   active
-                    ? "bg-accent/13 text-accent-200"
+                    ? "bg-accent/13 text-accent-200 ring-1 ring-accent"
                     : "text-neutral-400 hover:bg-text-primary/5 hover:text-text-primary",
                 )}
               >

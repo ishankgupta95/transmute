@@ -19,6 +19,17 @@ import {
 import { CANVAS_COLUMN } from "@/components/workspace/shared";
 import { useCopied } from "@/hooks/useCopied";
 import { formatFileSize } from "@/lib/utils/file-helpers";
+import { cn } from "@/lib/utils/cn";
+
+/**
+ * Focus ring for the keyboard-focusable text panes below. It cannot live in
+ * `TEXT_PANE_BODY` today, and it needs `outline-solid` of its own:
+ * `TEXT_PANE_BODY` ends in `focus:outline-none`, which sets
+ * `--tw-outline-style: none`, and a bare `focus-visible:outline-2` resolves
+ * its style from that same variable — so the ring would compile to nothing.
+ */
+const PANE_FOCUS =
+  "focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-accent";
 
 /** Flatten nested objects into dot-notation keys (address.city, etc.). */
 function flatten(
@@ -141,7 +152,14 @@ export function JsonToCsvUI() {
                 </>
               }
             >
-              <pre className={TEXT_PANE_BODY} aria-label="CSV output">{output}</pre>
+              <pre
+                tabIndex={0}
+                role="region"
+                className={cn(TEXT_PANE_BODY, PANE_FOCUS)}
+                aria-label="CSV output"
+              >
+                {output}
+              </pre>
             </TextPane>
           )}
         </TextPanes>

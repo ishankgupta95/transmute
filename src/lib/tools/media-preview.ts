@@ -8,6 +8,11 @@
  * cosmetic and callers should degrade to no decoration rather than erroring.
  */
 
+// The header sniffer only, never `decodeAudioFile` — see the long note on
+// `computeWaveform`. `sniffSampleRate` is a pure byte-walk over bytes this
+// module has already read, so it costs nothing and pulls no engine.
+import { sniffSampleRate } from "@/lib/tools/audio-decode";
+
 /** Resolve on `event`, reject on `error`, and never hang forever. */
 function once(el: HTMLMediaElement, event: string, timeoutMs = 10_000): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -35,14 +40,22 @@ export interface Waveform {
   peaks: number[];
   duration: number;
   /**
-   * Decoded stream facts, for the canvas header's technical readout
-   * ("48 kHz · STEREO · 11:30 · 126 MB" in the Tool Redesign doc). They come
-   * free with the decode this function already performs — nothing else in the
-   * app can read them without decoding a second time.
+   * Stream facts for the canvas header's technical readout
+   * ("48 kHz · STEREO · 11:30 · 126 MB" in the Tool Redesign doc).
    *
-   * Note these describe the DECODED buffer: `AudioContext` resamples to its
-   * own rate on some browsers, so this is the rate the encoders will see, not
-   * necessarily the rate stored in the container.
+   * `sampleRate` is the rate stored in the FILE's own container header, read
+   * by `sniffSampleRate`. It deliberately is not `buffer.sampleRate`: this
+   * function decodes through a plain `AudioContext`, which resamples to the
+   * DEVICE's output rate, so that number described the machine rather than the
+   * file — a 96 kHz master read "48 kHz" while every conversion arm on the
+   * page went on to write 96 kHz, because `decodeAudioFile` sniffs the source
+   * rate and decodes through an `OfflineAudioContext` at it (and the FLAC arm
+   * never decodes in the tab at all).
+   *
+   * The one residual is a container `sniffSampleRate` cannot read: there is no
+   * second source for the number, so the decoded buffer's rate stands in.
+   * `channels` and `duration` survive resampling, so they are read off the
+   * buffer either way.
    */
   sampleRate: number;
   channels: number;
@@ -90,9 +103,14 @@ export async function computeWaveform(file: File, bars: number): Promise<Wavefor
     (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
   if (!Ctor) throw new Error("Web Audio is unavailable");
 
+  const arrayBuffer = await file.arrayBuffer();
+  // Read the container's own rate BEFORE the decode: decodeAudioData detaches
+  // its input, and the rate it hands back is the device's, not the file's.
+  const containerRate = sniffSampleRate(new Uint8Array(arrayBuffer));
+
   const ctx = new Ctor();
   try {
-    const buffer = await ctx.decodeAudioData(await file.arrayBuffer());
+    const buffer = await ctx.decodeAudioData(arrayBuffer);
     const data = buffer.getChannelData(0);
     const block = Math.max(1, Math.floor(data.length / bars));
     const peaks: number[] = [];
@@ -114,7 +132,7 @@ export async function computeWaveform(file: File, bars: number): Promise<Wavefor
     return {
       peaks: peaks.map((p) => p / ceiling),
       duration: buffer.duration,
-      sampleRate: buffer.sampleRate,
+      sampleRate: containerRate ?? buffer.sampleRate,
       channels: buffer.numberOfChannels,
     };
   } finally {

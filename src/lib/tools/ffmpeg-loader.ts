@@ -112,35 +112,120 @@ export function validateFFmpegInput(file: File, shape: FFmpegJobShape): void {
 
 /**
  * Signatures of a genuine out-of-memory, in the wording each layer uses:
- * V8 refusing a MEMFS array, the wasm heap hitting its declared maximum, and
- * emscripten's own aborts.
+ * V8 refusing a MEMFS array, and the wasm heap hitting its declared maximum.
+ *
+ * `"memory access out of bounds"` USED to be in this list and is deliberately
+ * not any more — see `WASM_TRAP_SIGNATURES`. Everything here is a `RangeError`
+ * raised while *allocating*; a trap is a `RuntimeError` raised while *running*,
+ * and the two need opposite advice.
+ *
+ * Every entry is a multi-word phrase, which is what makes a plain substring
+ * test safe: none of them occurs inside an ordinary word. The bare token `oom`
+ * does NOT live here — see `OOM_TOKEN` below for why it cannot.
  */
 const OOM_SIGNATURES = [
   "array buffer allocation failed",
   "allocation failed",
   "out of memory",
   "maximum memory size exceeded",
-  "memory access out of bounds",
-  "oom",
 ];
+
+/**
+ * emscripten's own abbreviation for the same failure — it aborts with
+ * `Aborted(OOM)`, and a host OOM killer is named in prose as `oom-killer`.
+ *
+ * It has to be matched on a WORD BOUNDARY, not as a substring. `"oom"` sat in
+ * `OOM_SIGNATURES` as a bare substring until 2026-09-05, and it is inside
+ * "zoom", "room" and "bloom" — and FFmpeg echoes the INPUT FILENAME into its
+ * error text, so `zoom-call.mp4: Invalid data found when processing input`
+ * matched, and a user with an unreadable 3 MB screen recording was told they
+ * had exhausted a 1795 MB budget and should pick a shorter selection. Same
+ * shape as the wasm-trap-reported-as-OOM bug above: a fabricated diagnosis
+ * that also hid the real one.
+ *
+ * `\b` on the lowercased text is exactly the boundary wanted, because `(`, `)`
+ * and `-` are all non-word characters: it matches `aborted(oom)`, `oom killer`
+ * and `oom-killer`, and does not match `zoom-call.mp4`, `bloom filter` or
+ * `mushroom.mov`. Do not "simplify" this back into the list above.
+ */
+const OOM_TOKEN = /\boom\b/;
+
+/**
+ * Signatures of a wasm TRAP — the module hit an illegal operation and the
+ * instance is now permanently unusable.
+ *
+ * Measured 2026-09-03 against the shipped `public/ffmpeg-core.wasm`, driving
+ * the real core in headless Chromium:
+ *
+ *   1. healthy remux                EXIT=0         jsErr=null
+ *   2. `-c:a libopus` stereo        EXIT=undefined jsErr=RuntimeError: memory access out of bounds
+ *   3. the SAME remux again         EXIT=undefined jsErr=RuntimeError: memory access out of bounds
+ *   4. a trivial `-version`         EXIT=undefined jsErr=RuntimeError: memory access out of bounds
+ *   5. readFile of an existing file EXIT=undefined jsErr=RuntimeError: memory access out of bounds
+ *   --- after terminate() + reload ---
+ *   6. the same remux              EXIT=0         jsErr=null
+ *
+ * So a trap is not a failure of one job: it kills every FFmpeg tool in the tab
+ * until the instance is thrown away. `executeFFmpegTask` terminates on one.
+ *
+ * Two things this must NOT catch, because both are recoverable and terminating
+ * on them would throw away a healthy core for nothing:
+ *   - a non-zero exit code, which never rejects at all (FFmpeg returns it), and
+ *   - a real out-of-memory, which arrives as a `RangeError` (see above).
+ */
+const WASM_TRAP_SIGNATURES = [
+  "memory access out of bounds",
+  "unreachable executed",
+  "null function or function signature mismatch",
+  "table index is out of bounds",
+  "indirect call to null",
+];
+
+/**
+ * True when `err` is a wasm trap rather than an ordinary failure.
+ *
+ * The worker posts `e.toString()`, so the Error subclass is gone by the time we
+ * see it — but the stringification keeps the class name, and V8 renders every
+ * wasm trap as `RuntimeError: <reason>`. That prefix is the reliable half; the
+ * signature list above catches the reasons whose wording is stable across
+ * engines even when the prefix is missing.
+ */
+function isWasmTrap(err: unknown): boolean {
+  const lower = failureText(err).toLowerCase();
+  if (WASM_TRAP_SIGNATURES.some((sig) => lower.includes(sig))) return true;
+  return /\bruntimeerror\b/.test(lower);
+}
+
+function failureText(err: unknown): string {
+  return typeof err === "string" ? err : err instanceof Error ? err.message : String(err);
+}
 
 /**
  * Turn whatever the FFmpeg worker rejected with into an Error a user can act
  * on.
  *
- * Two reasons this has to exist. First, `@ffmpeg/ffmpeg`'s worker posts
+ * Three reasons this has to exist. First, `@ffmpeg/ffmpeg`'s worker posts
  * `e.toString()` — a STRING, not an Error — so `useFileProcessor`'s
  * `err instanceof Error ? err.message : "Processing failed"` collapsed every
  * core-level failure into "Processing failed". A real out-of-memory (measured
  * above: a 2500 MiB trim) reached the user as exactly that. Second, an
  * out-of-memory deserves its own copy: it is the one failure the user can fix
- * by choosing a shorter selection.
+ * by choosing a shorter selection. Third — and this is the one that was WRONG
+ * until 2026-09-03 — a wasm trap is not an out-of-memory, and telling someone
+ * their 350 KB file exhausted a 1795 MB budget is a lie that also hides the
+ * real advice, which is "try again, the engine has been restarted".
  */
 export function describeFFmpegFailure(err: unknown): Error {
-  const text =
-    typeof err === "string" ? err : err instanceof Error ? err.message : String(err);
+  const text = failureText(err);
   const lower = text.toLowerCase();
-  if (OOM_SIGNATURES.some((sig) => lower.includes(sig))) {
+  // Checked BEFORE the OOM list: "memory access out of bounds" reads like an
+  // out-of-memory and is not one.
+  if (isWasmTrap(err)) {
+    return new Error(
+      "The video engine crashed on this file, so it has been restarted. Try again — if it crashes on the same file every time, this build cannot handle that file and no setting will change that.",
+    );
+  }
+  if (OOM_SIGNATURES.some((sig) => lower.includes(sig)) || OOM_TOKEN.test(lower)) {
     return new Error(
       `Ran out of memory. A browser tab can hold about ${mib(MEMFS_MAX_FILE_BYTES)} MB in one file, and this job needed more. Try a shorter selection, or a smaller source file.`,
     );
@@ -172,6 +257,36 @@ const CORE_BASE_URL = "";
 let ffmpeg: FFmpeg | null = null;
 let loadPromise: Promise<void> | null = null;
 let currentOnProgress: ((progress: number) => void) | null = null;
+
+/**
+ * Scoped exactly like `currentOnProgress`: one registration for the instance's
+ * lifetime, routed to whichever task currently holds the queue.
+ *
+ * It exists because FFmpeg has facts it will only ever SAY. `loudnorm`'s
+ * two-pass analysis prints its measurements as a JSON object on stderr and
+ * nowhere else — there is no output file to read it out of, and `-f null -`
+ * writes nothing at all. Before this, the only way to reach that text was for a
+ * caller to register its own `on("log")` on the shared singleton inside its
+ * task body, which leaks across jobs unless it is paired with an `off` in a
+ * `finally` (the upstream `on` is a bare push onto an array with no dedupe) —
+ * and a leaked log handler is a CORRECTNESS bug, not just a memory one, because
+ * it then sees a later job's lines. Routing through one module slot the queue
+ * already serialises makes that impossible to get wrong.
+ */
+let currentOnLog: ((line: string) => void) | null = null;
+
+/**
+ * What a task can ask for on top of progress and cancellation.
+ *
+ * `onLog` is opt-in and additive: every existing caller passes a plain
+ * `ProcessingContext` and is unaffected, and a task that does not ask for logs
+ * costs exactly what it did before (the slot stays null and the handler below
+ * short-circuits).
+ */
+export interface FFmpegRunContext extends ProcessingContext {
+  /** Receives every FFmpeg stderr line for the duration of this task only. */
+  onLog?: (line: string) => void;
+}
 
 /**
  * Bumped by `terminateFFmpeg`. A load that was in flight when the user
@@ -217,9 +332,12 @@ export async function getFFmpeg(): Promise<FFmpeg> {
 
     // FFmpeg narrates every muxing decision — hundreds of lines per job. That
     // is useful while developing and pure noise in a shipped tab, so the
-    // handler stays but the write is gated to development builds.
+    // console write stays gated to development builds. The scoped sink beside
+    // it is NOT gated: a task that asked for the lines needs them in production
+    // too, and only a task that asked has a callback in the slot.
     instance.on("log", ({ message }) => {
       if (process.env.NODE_ENV !== "production") console.log("[ffmpeg]", message);
+      currentOnLog?.(message);
     });
 
     // One progress listener for the lifetime of the instance; routes to
@@ -274,6 +392,7 @@ export function terminateFFmpeg(): void {
   ffmpeg = null;
   loadPromise = null;
   currentOnProgress = null;
+  currentOnLog = null;
   instance?.terminate();
 }
 
@@ -286,7 +405,7 @@ export function terminateFFmpeg(): void {
  */
 export function runFFmpegTask<T>(
   task: (ffmpeg: FFmpeg) => Promise<T>,
-  ctx: ProcessingContext = {},
+  ctx: FFmpegRunContext = {},
 ): Promise<T> {
   const result = queue.then(() => executeFFmpegTask(task, ctx));
   // The chain must survive a failing task, or every later task inherits its
@@ -300,7 +419,7 @@ export function runFFmpegTask<T>(
 
 async function executeFFmpegTask<T>(
   task: (ffmpeg: FFmpeg) => Promise<T>,
-  { onProgress, signal }: ProcessingContext,
+  { onProgress, onLog, signal }: FFmpegRunContext,
 ): Promise<T> {
   // Cancelled while queued behind another task — never start.
   throwIfAborted(signal);
@@ -309,22 +428,47 @@ async function executeFFmpegTask<T>(
   signal?.addEventListener("abort", onAbort, { once: true });
 
   const handler = onProgress ?? null;
+  const logHandler = onLog ?? null;
 
   try {
     const instance = await getFFmpeg();
     throwIfAborted(signal);
     currentOnProgress = handler;
+    currentOnLog = logHandler;
     return await task(instance);
   } catch (err) {
     // terminate() rejects in-flight calls with its own error; report the
-    // cancellation the caller actually asked for.
+    // cancellation the caller actually asked for. Nothing to tear down here —
+    // the abort listener above already did it.
     if (signal?.aborted) throw abortError();
+    // A wasm trap poisons the module: every later call on this instance throws
+    // the same trap, including a bare `-version` (measured — see
+    // WASM_TRAP_SIGNATURES). Before this line, ONE bad job killed every FFmpeg
+    // tool in the tab until the page was reloaded. Throwing the instance away
+    // costs a core reload on the next job and nothing else, because the core is
+    // served from our own origin.
+    //
+    // Deliberately NOT done for the two failures that leave a healthy core:
+    // a non-zero exit code (which never rejects — FFmpeg returns it, and the
+    // caller turns it into an Error), and a genuine out-of-memory.
+    //
+    // Safe against the queue: `runFFmpegTask` chains the next job off a
+    // swallowed copy of this promise, so it dequeues normally and calls
+    // `getFFmpeg()`, which now sees a null `loadPromise` and loads a fresh
+    // instance. Safe against the generation guard: nothing of ours is loading,
+    // and any load that WERE in flight is orphaned by the bump, which is the
+    // behaviour that guard exists for.
+    if (isWasmTrap(err)) terminateFFmpeg();
     // Everything else arrives from the worker as a bare string; hand the
-    // caller a real Error, and name an out-of-memory as one.
+    // caller a real Error, and name the failure class correctly.
     throw describeFFmpegFailure(err);
   } finally {
     signal?.removeEventListener("abort", onAbort);
+    // Identity guard on both, and for the same reason: `terminateFFmpeg` may
+    // already have nulled the slot and a later task may already own it, so only
+    // the task that put its own handler there is allowed to take it away.
     if (currentOnProgress === handler) currentOnProgress = null;
+    if (currentOnLog === logHandler) currentOnLog = null;
   }
 }
 

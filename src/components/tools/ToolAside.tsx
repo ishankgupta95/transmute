@@ -430,7 +430,12 @@ export function ToolAdvanced({ rows }: { rows: readonly (readonly [string, strin
         )}
       >
         <span className={cn(MONO_LABEL, "text-text-muted")}>ADVANCED</span>
-        <span className="font-mono text-[10px] leading-none text-text-muted opacity-60">
+        {/*
+          No `opacity-60` here: text-muted is 6.14:1 on the rail, and dimming it
+          to 60% dropped this count to 3.03:1 — under the 4.5:1 WCAG 1.4.3 asks
+          of body text. The size already makes it secondary to ADVANCED.
+        */}
+        <span className="font-mono text-[10px] leading-none text-text-muted">
           {rows.length} SETTINGS
         </span>
         <span
@@ -472,7 +477,20 @@ export function ToolDone({
   savedToRecent?: boolean;
 }) {
   return (
-    <div className="flex animate-tm-rise items-center gap-[9px] rounded-md border border-success/30 bg-success/7 px-3 py-2.5 motion-reduce:animate-none">
+    <div
+      /*
+        The one moment this whole rail exists to report. Without a live role a
+        screen-reader user gets silence at completion — failure is announced
+        (`ErrorMessage` is a `role="alert"`) and success was not. The Download
+        button that appears beside this carries no announcement either.
+        WCAG 4.1.3 Status Messages. `role="status"` already implies polite +
+        atomic; both are spelled out because older AT does not infer them.
+      */
+      role="status"
+      aria-live="polite"
+      aria-atomic="true"
+      className="flex animate-tm-rise items-center gap-[9px] rounded-md border border-success/30 bg-success/7 px-3 py-2.5 motion-reduce:animate-none"
+    >
       <Check size={15} strokeWidth={2} aria-hidden="true" className="flex-none text-success" />
       <span className="font-body text-xs leading-[1.35] text-success">
         Done in {elapsed}

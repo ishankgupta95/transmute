@@ -18,11 +18,18 @@ vi.mock("@/lib/tools/ffmpeg-loader", () => ({
   validateFFmpegInput: vi.fn(),
 }));
 
-const mockDecodeAudioFile = vi.fn();
-vi.mock("@/lib/tools/audio-decode", () => ({
+/*
+  Only `decodeAudioFile` is stubbed. `sniffSampleRate` stays REAL: it is the
+  header sniffer the canvas header's rate now comes from, and a stub would turn
+  the test below into a test of the stub. It is a pure byte-walk with no engine
+  behind it, so importing it costs the preview nothing.
+*/
+// Hoisted: media-preview now imports this module at load time, so the factory
+// runs before a plain top-level const would exist.
+const mockDecodeAudioFile = vi.hoisted(() => vi.fn());
+vi.mock("@/lib/tools/audio-decode", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/tools/audio-decode")>()),
   decodeAudioFile: mockDecodeAudioFile,
-  sniffSampleRate: vi.fn(),
-  getInt16Samples: vi.fn(),
 }));
 
 const mockDecodeAudioData = vi.fn();
@@ -31,15 +38,25 @@ const MockAudioContext = vi.fn(function () {
   return { decodeAudioData: mockDecodeAudioData, close: mockClose };
 });
 
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+
 import { computeWaveform, toPageRange, parsePageRange } from "@/lib/tools/media-preview";
 
-/** An AudioBuffer stub carrying one channel of the given samples. */
-function bufferOf(samples: number[], duration = 3.5): AudioBuffer {
+const fixture = (name: string): Uint8Array<ArrayBuffer> =>
+  new Uint8Array(readFileSync(resolve(process.cwd(), "src/__tests__/fixtures/samples", name)));
+
+/**
+ * An AudioBuffer stub carrying one channel of the given samples. `rate` is the
+ * DEVICE rate a plain `AudioContext` resamples to — the number the header used
+ * to print as if it were the file's.
+ */
+function bufferOf(samples: number[], duration = 3.5, rate = 44100): AudioBuffer {
   const data = new Float32Array(samples);
   return {
     numberOfChannels: 1,
     length: data.length,
-    sampleRate: 44100,
+    sampleRate: rate,
     duration,
     getChannelData: () => data,
   } as unknown as AudioBuffer;
@@ -93,6 +110,55 @@ describe("computeWaveform", () => {
     const file = new File(["audio"], "vbr.mp3", { type: "audio/mpeg" });
 
     await expect(computeWaveform(file, 2)).resolves.toMatchObject({ duration: 12.75 });
+  });
+
+  /*
+    The canvas header reads `48 kHz · STEREO · 11:30 · 126 MB` next to the file
+    name, and users read every one of those as a fact about the file they
+    dropped. `AudioContext` resamples to the DEVICE's output rate, so
+    `buffer.sampleRate` was a fact about the machine: a 96 kHz master read
+    "48 kHz" on headless Chromium (and "44.1 kHz" on a 44.1 kHz device) while
+    every conversion arm on the page went on to write 96 kHz.
+  */
+  it("reports the file's own rate, not the device rate the decode came back at", async () => {
+    mockDecodeAudioData.mockResolvedValue(bufferOf([0, 1], 2, 48000));
+    const file = new File([fixture("sample-audio-96k-mono.wav")], "master96.wav", {
+      type: "audio/wav",
+    });
+
+    await expect(computeWaveform(file, 2)).resolves.toMatchObject({ sampleRate: 96000 });
+  });
+
+  it("reads the rate through a container the browser would have resampled away", async () => {
+    // Same shape for the compressed containers the audio pages accept: the
+    // rate comes off the header, so it cannot drift with the device.
+    mockDecodeAudioData.mockResolvedValue(bufferOf([0, 1], 2, 48000));
+    const file = new File([fixture("sample-audio.mp3")], "clip.mp3", { type: "audio/mpeg" });
+
+    await expect(computeWaveform(file, 2)).resolves.toMatchObject({ sampleRate: 44100 });
+  });
+
+  it("falls back to the decoded rate only when the container cannot be read", async () => {
+    // The documented residual: no header to read, so there is no second source
+    // for the number. Everything the sniffer knows must not reach this branch.
+    mockDecodeAudioData.mockResolvedValue(bufferOf([0, 1], 2, 48000));
+    const file = new File(["not-a-container"], "mystery.bin", { type: "audio/unknown" });
+
+    await expect(computeWaveform(file, 2)).resolves.toMatchObject({ sampleRate: 48000 });
+  });
+
+  it("still reads channels and duration off the decoded buffer", async () => {
+    // Resampling changes neither, so these stay buffer facts — the fix must
+    // not quietly turn them into header guesses.
+    mockDecodeAudioData.mockResolvedValue(bufferOf([0, 1], 12.75, 48000));
+    const file = new File([fixture("sample-audio-96k-mono.wav")], "master96.wav", {
+      type: "audio/wav",
+    });
+
+    await expect(computeWaveform(file, 2)).resolves.toMatchObject({
+      duration: 12.75,
+      channels: 1,
+    });
   });
 
   it("closes the AudioContext on success", async () => {

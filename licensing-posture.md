@@ -34,6 +34,26 @@ bottom. Verified against the built `out/`, not asserted:
 **Still open (owner):** the LGPL FFmpeg-core rebuild spike, and whether to adopt qpdf for
 protect/unlock/repair. Neither blocks compliance for what ships today.
 
+> **2026-09-02 — both moved on.** qpdf: DECIDED, compiled ourselves, artifact verified; see the
+> qpdf section below. FFmpeg: the spike's *premise* was verified rather than assumed, and the
+> build was deferred with a runnable recipe checked in at `scripts/build-ffmpeg-core-lgpl.sh`.
+>
+> **⚠ THE FFmpeg HALF IS SUPERSEDED — see "FFmpeg — re-derived 2026-09-05" below.** A table stood
+> here listing three FFmpeg command lines and concluding that dropping the GPL flags would cost the
+> product nothing. Both halves of that have gone stale, and `video-remux.ts` now encodes with
+> `libx264`. The table is DELETED rather than annotated, because a stale table is what a reader
+> greps. What replaced it is not another table of the same kind: the inventory is now an executable
+> gate — `src/__tests__/unit/lib/ffmpeg-argv-inventory.test.ts` — which re-derives it from the
+> source tree on every `npm test`.
+>
+> **Why the build itself is deferred rather than done:** ffmpeg.wasm's build is Docker-only, its
+> pinned base image `emscripten/emsdk:3.1.40` is published for linux/amd64 ONLY, and this is an
+> arm64 Mac — so it compiles 18 dependency libraries plus FFmpeg under emulation, after a ~622 MB
+> image pull, with the Docker daemon currently not even running. Hours. As of 2026-09-05 that cost
+> is no longer the only reason to wait: the build now has a product question in front of it, below.
+> The recipe script carries the exit criteria and does the `strings`-based verification
+> automatically.
+
 ---
 
 ## OWNER DECISION — 2026-08-31
@@ -50,7 +70,7 @@ executes (plan.md "Wave 2 — REVISED").
 | Component | Shipped as | License | Compliant today? | Cure (closed posture) |
 |---|---|---|---|---|
 | MuPDF (`mupdf` 1.27.0) | `public/mupdf-wasm.wasm` (10 MB) + AGPL JS glue bundled into `public/workers/mupdf-*.js` | **AGPL-3.0-or-later** | **No** | **REMOVE.** Its 7 ops port to pdf-lib (MIT); compress-pdf is the one real regression — qpdf-wasm (Apache-2.0) is the replacement spike. No commercial Artifex license planned. |
-| FFmpeg core (`@ffmpeg/core` 0.12.10) | `public/ffmpeg-core.{js,wasm}` | **GPL-2.0-or-later** (verified `--enable-gpl --enable-libx264 --enable-libx265 …` in the binary; FFmpeg 5.1 line) | **No** (no notice/source offer) | Keep under the **separate-program posture** + full source offer on /licenses (details below). Belt-and-braces follow-up: spike a custom LGPL core build (nothing shipped today uses x264/x265 — H.264 encode is WebCodecs). |
+| FFmpeg core (`@ffmpeg/core` 0.12.10) | `public/ffmpeg-core.{js,wasm}` | **GPL-2.0-or-later** (verified `--enable-gpl --enable-libx264 --enable-libx265 …` in the binary; FFmpeg 5.1 line) | **No** (no notice/source offer) | Keep under the **separate-program posture** + full source offer on /licenses (details below). Belt-and-braces follow-up: spike a custom LGPL core build — **but as of 2026-09-05 that is no longer free**: x265 is unused and safe to drop, x264 is NOT (`video-remux.ts`'s transcode arm selects it). See the 2026-09-05 section. |
 | lamejs (`@breezystack/lamejs` 1.2.7) | Minified into `public/workers/audio-encode.worker.js` **and two Next client chunks** | LGPL-3.0 | **No** (bundled, not replaceable, no notice) | Vendor `dist/lamejs.js` to `public/vendor/`, load via runtime `import()` of the stable URL (LGPL §4(d)(1) replaceability); notice + texts on /licenses. One change cures all three ship vectors. |
 | **heic2any 0.0.4 — found 2026-08-31** | Isolated 1.35 MB client chunk (the homepage's "1.3 MB" row) | MIT wrapper **embedding an Emscripten libheif build (LGPL-3.0-or-later), almost certainly with libde265 (LGPL) for HEVC decode** | **No** (same §4 problem, live today — the earlier draft wrongly called libheif "prospective, Wave 4") | Same vendoring cure: serve `heic2any.js` from `/vendor/` at a stable URL via runtime `import()`; libheif + libde265 notices + LGPL text. |
 | exifreader 4.37.0 | client chunk | MPL-2.0 | Needs notice | /licenses entry linking the MPL source + license text. |
@@ -90,8 +110,8 @@ which `importScripts` the core and exposes a CLI-shaped `exec(args)`; all traffi
 postMessage across the worker boundary. That is the strongest available version of the
 "separate program at arm's length" argument, and it is the standard posture of closed
 ffmpeg.wasm users. Residual risk: an FSF-conservative reading could still call it a
-combined work — flagged for counsel; mitigation queued (LGPL core spike, feasible because
-every shipped encode path is WebCodecs/lame, none is x264/x265).
+combined work — flagged for counsel; mitigation queued (LGPL core spike, whose cost is no
+longer nil — `video-remux.ts` reaches libx264; see the 2026-09-05 section).
 
 Source offer the /licenses page must carry (GPLv2 §3 / v3 §6(d)):
 core version **0.12.10**; link the ffmpegwasm/ffmpeg.wasm release tag for it (Dockerfile +
@@ -103,6 +123,174 @@ hardening: mirror the exact-tag source archive under owner control so the offer 
 Also FFmpeg's required credit line: "This software uses code of FFmpeg licensed under the
 GPLv2 or later." Patent note (H.264/HEVC pools) stands — counsel question if the site ever
 commercializes.
+
+## FFmpeg — re-derived 2026-09-05. The filters are a non-event; `libx264` reverses the conclusion.
+
+**Why it had to be re-derived.** The 2026-09-02 evidence lived in a comment at the top of
+`scripts/build-ffmpeg-core-lgpl.sh` and in the table this file used to carry. Nothing executed it:
+that script's only `grep` runs over the *cloned ffmpeg.wasm tree* looking for `--enable-gpl`, and not
+one line of it read this repo's own sources (it does now — see the pre-flight added below the header
+today). So the claim could not fail — and it did not fail.
+It rotted, quietly, for three days, while the work that falsified it shipped. Same disease as
+`strings BIG | grep -q PATTERN` under `pipefail` (`feedback_verification_gates_must_fail`,
+`scripts/build-qpdf-wasm.sh`'s LICENSING GATE block), in a new costume: a claim with no gate behind
+it at all.
+
+**The cure is a gate, not a better-worded claim.**
+`src/__tests__/unit/lib/ffmpeg-argv-inventory.test.ts` runs on every `npm test`. It strips comments
+with a hand-written scanner first — this tree's comments discuss the very names the scan looks for,
+`video-remux.ts` names `libx264`/`libx265` four times and exactly one of those is argv — and then
+pins, from the source tree itself:
+
+1. which files may construct an FFmpeg argv, each carrying the licence review that admitted it;
+2. where `libx264`/`libx265` may appear as a string literal, and how many times;
+3. that every video-codec selection is an explicit, vetted literal — `-c` is only ever `copy`, and
+   a `["-c:v", someVariable]` is a *finding*, because nobody can licence-audit it from the source;
+4. which files may build a filtergraph, with which filter names, backed by a denylist of
+   libavfilter's GPL-only filters;
+5. where `-map` may appear.
+
+It also asserts that this document and `scripts/build-ffmpeg-core-lgpl.sh` both name the file the
+scan finds to be GPL-reachable, that the script still calls the gate, and that neither file restates
+one of three retired phrasings. The script runs it as a **pre-flight, before the Docker check**, so
+a premise that no longer holds costs seconds instead of hours of emulated compiling.
+**Do not restate the gate's output here in prose — prose repeating a greppable fact is what rotted.**
+
+### The inventory as it stands (derived 2026-09-05, comments stripped)
+
+**Line numbers below are a snapshot and will drift. The live list is the gate's allowlist, which
+carries a licence review per entry; this table exists to show the SHAPE of what runs, and because
+the retired one has to be replaced by something rather than deleted into a hole.**
+
+Before this wave, six files under `src/lib/tools/` constructed an FFmpeg argv, between them
+**eleven** distinct constructions — ten `ffmpeg.exec`, one `ffmpeg.ffprobe`:
+
+| # | Site | argv | Encoder reached |
+|---|---|---|---|
+| 1 | `video-trim.ts:49-54` | `-ss T -i IN -t D -c copy -avoid_negative_ts make_zero OUT` | none — stream copy pre-empts every muxer default |
+| 2 | `audio-decode.ts:347` | `-i IN -acodec pcm_s16le -f wav decoded.wav` | native PCM, explicit |
+| 3 | `extract-audio.ts:236-240` | `-i IN -map 0:a:0 -vn -c:a copy OUT` | none — copy |
+| 4 | `extract-audio.ts:266` | `-i IN -map 0:a:0 -vn -c:a pcm_s16le OUT` | native PCM, explicit |
+| 5 | `extract-audio.ts:267` | `-i IN -map 0:a:0 -vn -b:a {128,192,256,320}k OUT.mp3` | libmp3lame (LGPL) — no libshine in this binary |
+| 6 | `audio-convert.ts:134-138` | `-i IN -map 0:a:0 -vn -c:a <spec.codec ?? format> OUT` | FLAC only; `AUDIO_FORMAT_SPECS` routes mp3/wav to Web Audio, so the sole value this branch can take is `flac` (native). Guarded by `assertSafeFFmpegAudioArgs`. |
+| 7 | `video-remux.ts:320` (`copyArgs`) | `-i IN -c copy OUT` | none — copy |
+| 8 | **`video-remux.ts:346-354` (`transcodeArgs`)** | `-i IN -c:v libx264 -preset veryfast -crf 23 -pix_fmt yuv420p [-c:a copy \| -c:a aac -b:a 192k] OUT` | **libx264 — GPL-2.0-or-later** |
+| 9 | `video-remux.ts:470` (mute-video) | `-i IN -an -c copy OUT` | none — copy |
+| 10 | `video-remux.ts:591-594` (rotate-video) | `-i IN -c copy -metadata:s:v:0 rotate=N OUT` | none — copy, metadata only |
+| 11 | `video-probe.ts:171-178` (`ffprobe`) | `-v error -print_format json -show_streams -show_format IN -o probe.json` | none — encodes nothing |
+
+Two corrections to the retired table while they are in view: `mp4-to-mp3.ts` no longer builds an
+argv at all (28 lines, it delegates to `extract-audio.ts`), and the audio-decode fallback moved from
+`:228` to `:347`. Both of those citations had been dead for days, which is the smaller symptom of
+the same illness.
+
+**Wave 3B adds three more files, all reviewed into the gate's allowlist as they landed** — line
+numbers deliberately omitted, because they were still being written the day this was recorded:
+
+| Site | argv | Encoder reached |
+|---|---|---|
+| `audio-effects.ts` `loudnormPass1Args` | `-i IN -map 0:a:0 -vn -af loudnorm=…:print_format=json -f null -` | none — analysis pass, output discarded |
+| `audio-effects.ts` `loudnormPass2Args` | `-i IN -map 0:a:0 -vn -af loudnorm=… -ar <rate> <codec args> OUT` | libmp3lame / native PCM / native FLAC, from `codecArgsFor` |
+| `audio-effects.ts` `removeSilence` | `-i IN -map 0:a:0 -vn -af silenceremove=…[,areverse,…] <codec args> OUT` | same three |
+| `video-split.ts` `segmentArgs` (one run per segment) | `-ss S -i IN -t D -c copy -avoid_negative_ts make_zero OUT` | none — copy |
+| `video-merge.ts` `concatArgs` | `-f concat -safe 0 -i list.txt -c copy OUT` | none — copy |
+
+`changeAudioVolume` and `reverseAudio` are in the same module and use **no FFmpeg at all** (Web
+Audio on the already-decoded buffer), which is why they are absent here.
+
+### Thread 1 — the two audio filters this wave adds. **LGPL conclusion: UNAFFECTED.**
+
+Wave 3B's `normalize-audio` and `remove-silence` put the first `-af` in this repo's history:
+`loudnorm`, `silenceremove`, and `areverse` — the last of these being how `silenceremove` reaches
+the *trailing* end of a file at all, since its start detector only ever looks forwards, so the
+"ends" mode chains `strip, areverse, strip, areverse`. All three are libavfilter's own C sources —
+`af_loudnorm.c`, `af_silenceremove.c`, `f_reverse.c` — covered by FFmpeg's own
+LGPL-2.1-or-later core licence. None is an external library, and none is in the `--enable-gpl` set.
+**Adding them does not make the GPL core load-bearing, and does not weaken the LGPL case by any
+amount.**
+
+Verified against the artifact we actually ship rather than asserted: `strings` over
+`public/ffmpeg-core.wasm`, read into a variable and matched with `case` (never `| grep -q`, which
+returns 141 under `pipefail` and reports clean on a binary that matches), finds both filter names
+**and their full AVOption tables** — `measured_I` / `measured_LRA` / `measured_thresh` for
+`loudnorm`, and `start_periods` / `stop_periods` / `start_threshold` / `stop_threshold` /
+`stop_duration` for `silenceremove`. The configure line reproduced from the same binary carries no
+`--disable-avfilter`. Presence of a symbol is not a runtime measurement, and this repo has a record
+of present-but-broken components (libx265 deadlocks, libvpx-vp9 traps, stereo libopus traps), so
+both filters were also *run* against this same core in headless Chromium this session: exit 0 on
+real files, with the resulting durations checked by ffprobe.
+
+This is worth stating plainly because the two findings arrived in the same week and are easy to
+merge by accident: **the sentence about filtergraphs went false without the conclusion moving.**
+
+The caveat that belongs to filters, and not to these two: roughly half of libavfilter's video
+filters (`delogo`, `cropdetect`, `hqdn3d`, `eq`, `pp`, `smartblur`, `vidstab*`, …) are in this
+binary only because it is built `--enable-gpl` — and they really are in it: the same `strings` run
+finds `delogo` and `hqdn3d`, so this is a live hazard rather than a hypothetical one. Lifting one
+out of a tutorial would make the GPL core load-bearing for a reason nobody intended, and it would
+not look like a licensing change while you did it. That is what the gate's denylist exists for.
+
+### Thread 2 — `libx264` at `video-remux.ts:347`. **LGPL conclusion: REVERSED.**
+
+`transcodeArgs()` passes `-c:v libx264`, and it is not dead code: `video-remux.ts:369` takes
+`{ allowTranscode: boolean }`, `:380` throws only when it is false, and
+`src/components/tools/VideoRemuxUI.tsx:481` renders the "Re-encode to H.264" toggle that sets it.
+`ToolClient.tsx:199-206` routes **six** container pages through that one component —
+`video-to-mp4`, `mov-to-mp4`, `mp4-to-mov`, `mkv-to-mp4`, `mp4-to-mkv`, `avi-to-mp4`. The arm is
+what those pages offer when a stream copy would hand the user a file that does not actually play:
+the iPhone HEVC case, spelled out in `transcodeReason()` at `video-remux.ts:297-302`. This build
+cannot answer that with H.265 instead — libx265 is compiled in and **deadlocks**, libvpx-vp9 traps —
+so within FFmpeg, libx264 is the only encoder available to it.
+
+Precisely what that costs:
+
+* `--enable-libx265` can still go for nothing. Nothing selects it, and it does not work.
+* `--enable-libx264` **cannot**. Removing it deletes the transcode arm at runtime — a shipped,
+  user-facing feature — so the LGPL core is now blocked on a **product decision**, not on Docker.
+* Only three ways forward, and they are set out neutrally in the header of
+  `scripts/build-ffmpeg-core-lgpl.sh`: **(i)** keep the GPL core under the separate-program posture
+  and the source offer, which is what `/licenses` already documents and is accurate for what ships;
+  **(ii)** ship the LGPL core and drop the transcode arm, honestly, at a capability cost on six
+  pages; **(iii)** move that transcode to WebCodecs, as `compress-video` and `webm-to-mp4` already
+  do, and then take the LGPL core with no capability loss.
+
+**This is an OWNER DECISION and it is not taken here.** The 2026-09-02 entry recorded the opposite
+conclusion; this reverses it, and the reversal is the point of the entry.
+
+### Which claim each thread touches
+
+| Claim | Thread 1 (`-af` filters) | Thread 2 (`libx264`) |
+|---|---|---|
+| "no filtergraph is built" | **falsified** — three LGPL filters now ship | untouched |
+| "nothing reaches a GPL component" | untouched — all three filters are LGPL core sources | **falsified** |
+| "dropping the three flags costs the product nothing" | untouched | **falsified** — it costs the H.264 transcode arm |
+| `/licenses` accuracy (GPL notice + source offer) | untouched | untouched — that page describes the **GPL core we ship**, and it is correct today |
+| The separate-program posture | untouched | untouched |
+
+**What does NOT change, and should not be over-read:** nothing here is a compliance regression.
+`/licenses` carries FFmpeg's credit line, the configure line reproduced from `strings` on the
+shipped binary, the pinned version and the static-lib inventory, and the source offer. Under option
+(i) that page needs no edit at all. What changed is the *cost* of the optional hardening, not the
+standing of what ships.
+
+## oxipng — ADOPTED 2026-09-06 with the image cluster. Permissive throughout; nothing to cure.
+
+`compress-png` ships `@jsquash/oxipng` 2.3.0. It is the cleanest engine adoption this repo has
+made — no copyleft anywhere in it, so none of the vendoring-for-replaceability machinery that
+lamejs, heic2any and the FFmpeg core need applies here.
+
+| Fact | Evidence |
+|---|---|
+| Wrapper `@jsquash/oxipng` 2.3.0 | **Apache-2.0**, declared in its own `package.json`, with the licence file at the package root |
+| Bundled codec | **oxipng 9.1.1, MIT** — `codec/LICENSE.codec.md`. The codec README's `v3.0.0` is STALE; the real version was read out of the wasm's embedded Rust panic paths |
+| Static-link set | `oxipng 9.1.1`, `libdeflater 1.20.0`, `bitvec 1.0.1`, `wyz 0.5.1`, `hashbrown 0.14.5`, `indexmap 2.2.6` — names and versions extracted from the binary, not recalled. No copyleft crate appears |
+| Copyleft scan | 16 negative controls (`GPL`, `LGPL`, `AGPL`, `GNU`, `Affero`, `copyleft`, …) over both wasm artifacts and the glue: **zero hits**, with **8 positive controls** (`rustc`, `wasm-bindgen`, `oxipng`, `deflate`, `IHDR`, …) proving the scan was reading real bytes. Read into a buffer and matched with `indexOf` — never `strings … | grep -q`, which returns 141 under `pipefail` and reports clean on a binary that matches |
+| Served, not bundled | `public/squoosh_oxipng_bg.wasm`, **164,172 bytes**, staged by `copy:wasm` and fetched from the ORIGIN ROOT. It gets an `ENGINES` row on the homepage by the rule that table's own comment states; the 6.3 KB of glue rides inside the worker bundle and gets no separate figure |
+| §4(d) NOTICE | The generator (`scripts/generate-license-notices.mjs:90`) reads each package's ROOT only, so it picks up the Apache-2.0 `LICENSE` automatically but **NOT `codec/LICENSE.codec.md` one directory down**. The codec's MIT attribution is therefore named BY HAND on `/licenses`, the way `@ffmpeg/ffmpeg` and `@ffmpeg/util` already are |
+| The parallel build is unshippable, and now unimportable | `codec/pkg-parallel/*` imports its memory as `shared: true` and needs SharedArrayBuffer, which is undefined on an origin that is not cross-origin-isolated — GitHub Pages cannot send COOP/COEP, so this one never will be. An ESLint `no-restricted-imports` rule bans both it and the package entry (whose resolution drags it into the graph). The built `out/` is verified free of `pkg-parallel` and of `SharedArrayBuffer` in any worker |
+
+**Nothing here changes the FFmpeg or qpdf posture, and nothing here is a new obligation** beyond
+the two attribution lines on `/licenses`.
 
 ## /licenses page — placement and consistency (audited)
 
@@ -130,7 +318,69 @@ commercializes.
 
 ---
 
-## OPEN OWNER QUESTION — qpdf, researched 2026-08-31 (NOT adopted; nothing depends on it)
+## qpdf — DECIDED 2026-09-02, and BUILT OURSELVES. Artifact verified, tools not yet written.
+
+> **The 2026-08-31 research below stands, but the recommendation in it has been executed and its
+> one caveat closed: we do NOT depend on `pdfstudio`. qpdf 12.4.1 was compiled from the official
+> release tarball on this machine and every claim below is re-verified against OUR artifact.**
+>
+> Toolchain (installed 2026-09-02, previously absent): emsdk 6.0.9 at `~/emsdk`, cmake + ninja
+> from Homebrew, and a Python 3.12 from `uv` — emsdk refuses to run on the system's Xcode Python
+> 3.9. Build recipe checked in at `scripts/build-qpdf-wasm.sh`, pinned to qpdf 12.4.1.
+>
+> **Configure line actually used** — `-DBUILD_SHARED_LIBS=OFF -DUSE_IMPLICIT_CRYPTO=OFF
+> -DREQUIRE_CRYPTO_NATIVE=ON`, with zlib and libjpeg from Emscripten's own ports
+> (`-sUSE_ZLIB=1 -sUSE_LIBJPEG=1`) so no host library can be picked up.
+>
+> **Licensing, verified against the artifact we would ship, not against theirs:** zero
+> occurrences of `gnutls`, `GnuTLS`, `openssl`, `OpenSSL`, `libgcrypt` or `nettle` in
+> `strings` over `qpdf.wasm`; the only crypto provider string present is `native`, i.e. qpdf's
+> own Apache-2.0 implementation. The Apache-2.0 identification string is embedded in the binary.
+> So the "no GPL/LGPL/AGPL in the static-link set" claim is now first-party evidence.
+>
+> **Size:** 2,340,730 bytes wasm + 63,089 bytes glue — against the ~2.14 MB reference. The delta
+> is the exception support described next, and it is not optional.
+>
+> **The one real finding of the build, worth more than the size number.** Emscripten disables C++
+> exceptions by default. qpdf signals *every* error condition by throwing `QPDFExc` — wrong
+> password, damaged xref, malformed object. A default build therefore turns each of those into a
+> bare `abort()` with no message: measured here, opening an AES-256 file with the wrong password
+> killed the module instead of reporting a failure, and a damaged-xref repair produced nothing at
+> all. For a tool whose whole job is password handling that is a silent-failure bug of exactly the
+> class Wave 0 spent a week purging. The build now passes `-fwasm-exceptions` at compile AND link;
+> the comment in the build script says why, so nobody "optimises" it away for the 307 KB.
+>
+> **Functional verification, on the artifact, all four operations the security cluster needs:**
+>
+> | Operation | qpdf argv | Result |
+> |---|---|---|
+> | `protect-pdf` | `--encrypt --user-password=… --owner-password=… --bits=256 -- in out` | exit 0, `/Encrypt` present in output |
+> | `unlock-pdf` | `--password=… --decrypt in out` | exit 0, `/Encrypt` absent from output |
+> | wrong password | same, bad password | **exit 2** — a clean, reportable failure (was an abort before `-fwasm-exceptions`) |
+> | `pdf-permissions` | `--encrypt --owner-password=… --bits=256 --print=none --modify=none -- in out` | exit 0 |
+> | `repair-pdf` | `in out` on a file with a corrupted `startxref` | **exit 3** (qpdf's "completed with warnings"), and the recovered PDF re-parses |
+>
+> Exit 3 is not a failure and the UI must not treat it as one — it is qpdf telling us it repaired
+> something. Exit 2 is the genuine error. Any wrapper that collapses "non-zero means failed" will
+> break `repair-pdf` on the first file it is meant to fix.
+>
+> **2026-09-03 — ALL OF THE ABOVE IS DONE; the four tools ship.**
+>
+> | Obligation | State |
+> |---|---|
+> | The four tool pages | **Done.** `protect-pdf`, `unlock-pdf`, `pdf-permissions`, `repair-pdf` (90 → 94 tools). |
+> | Artifact self-hosted, never a CDN | **Done.** `vendor/qpdf/{qpdf.js,qpdf.wasm}` is checked in — qpdf is not an npm package, so `copy:wasm` had no `node_modules` source — and staged to the origin root beside `ffmpeg-core.*` by `copy:wasm`. The two copies are gitignored. `eslint.config.mjs` ignores `vendor/**` so the glue stays byte-identical to its pinned SHA-256. |
+> | `/licenses` Apache-2.0 entry | **Done.** One `ENGINES` row modelled on the FFmpeg entry: version, served URLs and exact byte sizes, why we compiled it ourselves, the configure/link invocation reproduced from `scripts/build-qpdf-wasm.sh`, and the static-link set (qpdf native crypto Apache-2.0, zlib Zlib, libjpeg IJG). `static-pages.spec.ts` now asserts the heading and fetches the linked texts for real. |
+> | Apache-2.0 §4(d) NOTICE travels | **Done.** qpdf's own `NOTICE.md` (2,729 bytes) copied verbatim to `public/licenses/qpdf-notice.txt`, sha256 `b207f65a9e5491195ded63b2941199b19a4d30148871f2742c88eae7bfc513a6` — identical to the source. The existing `apache-2.0.txt` is reused rather than duplicated. |
+> | `forbidCdnCore`-equivalent guard | **Done, and made able to FAIL in both directions.** `watchQpdfRequests(page).assertSelfHostedAndUsed()` records requests and asserts synchronously in the test body — it reddens on a foreign origin AND on the engine never being fetched at all ("this test proved nothing"). Both halves were proven red in Chromium and WebKit. It deliberately does not copy `forbidCdnCore`'s shape: that one throws inside an async `page.on("request")` handler and can pass vacuously. |
+> | `generate-license-notices.mjs` regeneration | **Done — output byte-unchanged.** qpdf never enters the walk (not an npm package), which is correct: as for the FFmpeg core, the `/licenses` page is the compliance surface for a self-hosted binary. |
+> | First-party licensing gate | **NEW, and it can fail.** `src/__tests__/unit/data/qpdf-artifact.test.ts` reads `vendor/qpdf/qpdf.wasm` as a buffer on every unit run and asserts the pinned length and SHA-256, the absence of `gnutls`/`openssl`/`libgcrypt`/`nettle`, and — the positive half — the presence of qpdf's own native crypto provider. It searches the raw buffer rather than a `strings | grep -q` pipeline, because that idiom returns 141 under `pipefail` and reports "clean" on a binary that matches. Proven red by splicing `OpenSSL` into a scratch copy, and again by overwriting the `native` string. |
+>
+> The two carried gotchas stand unchanged:
+> `addPageNumbers` cannot move to qpdf (no text drawing) and qpdf's `--empty --pages` merge drops
+> the trailer `/Info`. **qpdf is additive — encrypt/decrypt/permissions/repair only.**
+
+### The 2026-08-31 research this replaced
 
 The spike was run in full. Verdict, for the record, so nobody re-researches it:
 

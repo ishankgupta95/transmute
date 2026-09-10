@@ -3,13 +3,20 @@ import { uploadFile, downloadButton, waitForDownload, downloadBytes } from "../h
 import { tinyPdf, tinyPng, tinyJpg } from "../fixtures";
 
 /**
- * PDF tools rely on MuPDF / pdf-lib / pdfjs running in the browser. Tests
- * upload programmatically generated tiny PDFs (via pdf-lib in Node) so we
- * never depend on a checked-in PDF blob.
+ * PDF tools rely on pdf-lib (documents and pages) and pdfjs (rendering)
+ * running in the browser. Tests upload programmatically generated tiny PDFs
+ * (via pdf-lib in Node) so we never depend on a checked-in PDF blob.
  *
- * Tools that thumbnail every page (split, rotate, reorder) take measurably
- * longer than the others because they paint a JPEG canvas per page; for a
- * 3-page sample the wait is well under our default timeout.
+ * These are shape checks — the right button, the right filename, a file that
+ * starts `%PDF-`. The assertions on the BYTES that come back (page counts,
+ * page boxes, extracted text, archive members) live in the opt-in conversion
+ * suite: `conversion/pdf.spec.ts` and `conversion/pdf-pages.spec.ts`.
+ *
+ * Tools that thumbnail every page (split, extract, delete, rotate, reorder)
+ * take measurably longer than the others because they paint a JPEG canvas per
+ * page; crop and the page-size tools render page 1 at a readable scale before
+ * their primary becomes usable. For a 2- or 3-page sample every one of those
+ * waits is well under our default timeout.
  */
 
 test.describe("PDF golden paths", () => {
@@ -99,9 +106,10 @@ test.describe("PDF golden paths", () => {
     page,
   }) => {
     await page.goto("/compress-pdf");
-    // pdf-lib output is already minimal — MuPDF's re-encode of it is actually
-    // LARGER — so this also pins that a "compressor" never hands back more
-    // bytes than it was given.
+    // pdf-lib's own output is already minimal, so the structural rewrite has
+    // nothing to win here and can come back LARGER. This pins that a
+    // "compressor" never hands back more bytes than it was given: the UI ships
+    // the smaller of the rewrite and the original.
     const pdf = await tinyPdf(2);
     await uploadFile(page, pdf);
 
@@ -179,6 +187,132 @@ test.describe("PDF golden paths", () => {
     expect(suggestedFilename).toMatch(/-reordered\.pdf$/);
     const bytes = await downloadBytes(download);
     expect(bytes.subarray(0, 5).toString("ascii")).toBe("%PDF-");
+  });
+
+  test("extract-pdf-pages: page 2 of a 3-page PDF → one document", async ({ page }) => {
+    await page.goto("/extract-pdf-pages");
+    await uploadFile(page, await tinyPdf(3));
+
+    // Nothing is preselected here — unlike split-pdf, this tool opens empty.
+    await expect(page.getByText("0 PAGES SELECTED")).toBeVisible({ timeout: 15_000 });
+    await page.getByLabel("Page range").fill("2");
+    await page.getByLabel("Page range").press("Enter");
+
+    await page.getByRole("button", { name: /Extract 1 page/ }).click();
+    const { suggestedFilename, download } = await waitForDownload(page, downloadButton(page));
+    expect(suggestedFilename).toBe("extracted-pages.pdf");
+    const bytes = await downloadBytes(download);
+    expect(bytes.subarray(0, 5).toString("ascii")).toBe("%PDF-");
+  });
+
+  test("extract-pdf-pages: a one-page per-page run saves the page, not an archive", async ({
+    page,
+  }) => {
+    /*
+      `downloadFilesAsZip` hands a single file over bare rather than zipping
+      one member, so the readout and the download have to agree that a
+      one-page selection in per-page mode saves `page-2.pdf`. Promising an
+      archive here and then saving a PDF is the kind of mismatch this suite
+      exists to catch.
+    */
+    await page.goto("/extract-pdf-pages");
+    await uploadFile(page, await tinyPdf(3));
+    await expect(page.getByText("0 PAGES SELECTED")).toBeVisible({ timeout: 15_000 });
+
+    await page.getByRole("button", { name: "One per page", exact: true }).click();
+    await page.getByRole("button", { name: /^Page 2(,|$)/ }).first().click();
+    await expect(
+      page.locator("[data-tool-surface]").getByText(/downloads on its own rather than in a ZIP/),
+    ).toBeVisible();
+
+    await page.getByRole("button", { name: /Extract 1 page/ }).click();
+    const { suggestedFilename, download } = await waitForDownload(page, downloadButton(page));
+    expect(suggestedFilename).toBe("page-2.pdf");
+    const bytes = await downloadBytes(download);
+    expect(bytes.subarray(0, 5).toString("ascii")).toBe("%PDF-");
+  });
+
+  test("delete-pdf-pages: removes page 2 of a 3-page PDF", async ({ page }) => {
+    await page.goto("/delete-pdf-pages");
+    await uploadFile(page, await tinyPdf(3));
+
+    await expect(page.getByText("0 PAGES WILL BE REMOVED")).toBeVisible({ timeout: 15_000 });
+    await page.getByLabel("Page range").fill("2");
+    await page.getByLabel("Page range").press("Enter");
+    await expect(page.getByText("1 PAGES WILL BE REMOVED")).toBeVisible();
+
+    await page.getByRole("button", { name: /^Delete 1 page$/ }).click();
+    const { suggestedFilename, download } = await waitForDownload(page, downloadButton(page));
+    expect(suggestedFilename).toBe("pages-removed.pdf");
+    const bytes = await downloadBytes(download);
+    expect(bytes.subarray(0, 5).toString("ascii")).toBe("%PDF-");
+  });
+
+  test("crop-pdf: renders page 1, then crops every page", async ({ page }) => {
+    await page.goto("/crop-pdf");
+    await uploadFile(page, await tinyPdf(2));
+
+    // The primary stays disabled until page 1 has rendered — there is no crop
+    // box to read before that, so an enabled button would silently do nothing.
+    const crop = page.getByRole("button", { name: /^Crop 2 pages$/ });
+    await expect(crop).toBeEnabled({ timeout: 30_000 });
+    await crop.click();
+
+    const { suggestedFilename, download } = await waitForDownload(page, downloadButton(page));
+    expect(suggestedFilename).toBe("sample-cropped.pdf");
+    const bytes = await downloadBytes(download);
+    expect(bytes.subarray(0, 5).toString("ascii")).toBe("%PDF-");
+  });
+
+  test("change-pdf-page-size: reshapes every page to the chosen sheet", async ({ page }) => {
+    await page.goto("/change-pdf-page-size");
+    await uploadFile(page, await tinyPdf(2));
+
+    const resize = page.getByRole("button", { name: /^Resize to A4$/ });
+    await expect(resize).toBeEnabled({ timeout: 30_000 });
+    await resize.click();
+
+    const { suggestedFilename, download } = await waitForDownload(page, downloadButton(page));
+    expect(suggestedFilename).toBe("sample-a4.pdf");
+    const bytes = await downloadBytes(download);
+    expect(bytes.subarray(0, 5).toString("ascii")).toBe("%PDF-");
+  });
+
+  test("pdf-resizer: the file-size half shrinks without a second upload", async ({ page }) => {
+    await page.goto("/pdf-resizer");
+    const pdf = await tinyPdf(2);
+    await uploadFile(page, pdf);
+
+    // Opens on the page-dimension half; the switch is the tool's whole point.
+    await expect(page.getByRole("button", { name: /^Resize to A4$/ })).toBeEnabled({
+      timeout: 30_000,
+    });
+    await page.getByRole("button", { name: "File size", exact: true }).click();
+
+    await page.getByRole("button", { name: /^Shrink file$/ }).click();
+    const { suggestedFilename, download } = await waitForDownload(page, downloadButton(page), 30_000);
+    expect(suggestedFilename).toBe("sample-compressed.pdf");
+    const bytes = await downloadBytes(download);
+    expect(bytes.subarray(0, 5).toString("ascii")).toBe("%PDF-");
+    // The smaller of the rewrite and the original ships, so this can never
+    // hand back more bytes than it was given.
+    expect(bytes.length).toBeLessThanOrEqual(pdf.buffer.length);
+  });
+
+  test("pdf-to-text: extraction starts on drop and saves a .txt", async ({ page }) => {
+    await page.goto("/pdf-to-text");
+    await uploadFile(page, await tinyPdf(2));
+
+    // No convert button — `handleFiles` extracts as soon as the file lands.
+    const pane = page.locator('pre[aria-label="Extracted text"]');
+    await expect(pane).toBeVisible({ timeout: 30_000 });
+    await expect(pane).toContainText("Page 1");
+    await expect(pane).toContainText("--- Page 2 ---");
+
+    const { suggestedFilename, download } = await waitForDownload(page, downloadButton(page));
+    expect(suggestedFilename).toBe("sample.txt");
+    const bytes = await downloadBytes(download);
+    expect(bytes.toString("utf8")).toContain("Page 2");
   });
 });
 
@@ -289,6 +423,95 @@ test.describe("PDF stale-result invalidation", () => {
     await expect(
       page.getByText("FORMAT", { exact: true }).first().locator(".."),
     ).toContainText("JPG");
+  });
+
+  test("extract-pdf-pages: changing the output mode drops the stale file", async ({ page }) => {
+    await page.goto("/extract-pdf-pages");
+    await uploadFile(page, await tinyPdf(3));
+    await expect(page.getByText("0 PAGES SELECTED")).toBeVisible({ timeout: 15_000 });
+
+    await page.getByRole("button", { name: "Select all", exact: true }).click();
+    await page.getByRole("button", { name: /Extract 3 pages/ }).click();
+    await expect(downloadButton(page)).toBeVisible({ timeout: 30_000 });
+
+    // The mode decides how many files come out, so it invalidates a finished
+    // run exactly as hard as the selection does — otherwise the footer offers
+    // the previous mode's download under the new mode's readout.
+    await page.getByRole("button", { name: "One per page", exact: true }).click();
+    await downloadGone(page);
+    await expect(page.getByRole("button", { name: /Download all \(ZIP\)/ })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: /Extract 3 pages/ })).toBeVisible();
+  });
+
+  test("delete-pdf-pages: changing the selection drops the stale file", async ({ page }) => {
+    await page.goto("/delete-pdf-pages");
+    await uploadFile(page, await tinyPdf(3));
+    await expect(page.getByText("0 PAGES WILL BE REMOVED")).toBeVisible({ timeout: 15_000 });
+
+    await page.getByRole("button", { name: "Page 1, will be kept" }).click();
+    await page.getByRole("button", { name: /^Delete 1 page$/ }).click();
+    await expect(downloadButton(page)).toBeVisible({ timeout: 30_000 });
+
+    await page.getByRole("button", { name: "Page 3, will be kept" }).click();
+    await downloadGone(page);
+    await expect(page.getByRole("button", { name: /^Delete 2 pages$/ })).toBeVisible();
+  });
+
+  test("crop-pdf: changing the crop frame drops the stale file", async ({ page }) => {
+    await page.goto("/crop-pdf");
+    await uploadFile(page, await tinyPdf(2));
+
+    const crop = page.getByRole("button", { name: /^Crop 2 pages$/ });
+    await expect(crop).toBeEnabled({ timeout: 30_000 });
+    await crop.click();
+    await expect(downloadButton(page)).toBeVisible({ timeout: 30_000 });
+
+    // Locking the aspect ratio resizes the frame, which fires cropperjs's own
+    // `crop` event — the one place this tool learns the box changed.
+    await page.getByRole("button", { name: "1:1", exact: true }).click();
+    await downloadGone(page);
+    await expect(crop).toBeVisible();
+  });
+
+  test("change-pdf-page-size: changing the sheet drops the stale file", async ({ page }) => {
+    await page.goto("/change-pdf-page-size");
+    await uploadFile(page, await tinyPdf(2));
+
+    const resize = page.getByRole("button", { name: /^Resize to A4$/ });
+    await expect(resize).toBeEnabled({ timeout: 30_000 });
+    await resize.click();
+    await expect(downloadButton(page)).toBeVisible({ timeout: 30_000 });
+
+    await page.getByRole("button", { name: "Legal", exact: true }).click();
+    await downloadGone(page);
+    await expect(page.getByRole("button", { name: /^Resize to Legal$/ })).toBeVisible();
+
+    // The content control changes the bytes just as much as the sheet does.
+    await page.getByRole("button", { name: /^Resize to Legal$/ }).click();
+    await expect(downloadButton(page)).toBeVisible({ timeout: 30_000 });
+    await page.getByRole("button", { name: "Box only", exact: true }).click();
+    await downloadGone(page);
+  });
+
+  test("pdf-resizer: switching halves drops the stale file but keeps the PDF", async ({
+    page,
+  }) => {
+    await page.goto("/pdf-resizer");
+    await uploadFile(page, await tinyPdf(2));
+
+    await page.getByRole("button", { name: "File size", exact: true }).click();
+    await page.getByRole("button", { name: /^Shrink file$/ }).click();
+    await expect(downloadButton(page)).toBeVisible({ timeout: 30_000 });
+
+    // A compressed file is not an answer to "make the pages A4", so flipping
+    // halves has to drop it — while the dropped PDF itself survives, which is
+    // the entire reason the two live on one page.
+    await page.getByRole("button", { name: "Page size", exact: true }).click();
+    await downloadGone(page);
+    await expect(page.getByRole("button", { name: /^Resize to A4$/ })).toBeEnabled({
+      timeout: 30_000,
+    });
+    await expect(page.locator("[data-tool-surface]").getByText("sample.pdf").first()).toBeVisible();
   });
 });
 

@@ -9,6 +9,7 @@ import { getWorkspaceTool, pipelineByArchetype } from "@/data/workspace";
 import { ToolSchema } from "@/components/seo/ToolSchema";
 import { BreadcrumbSchema } from "@/components/seo/BreadcrumbSchema";
 import { ToolUsedTracker } from "@/components/tools/ToolUsedTracker";
+import { RequestReadout } from "@/components/tools/RequestReadout";
 import { CapabilityReadout } from "@/components/tools/CapabilityReadout";
 import { RecentOutputs } from "@/components/tools/RecentOutputs";
 import { cn } from "@/lib/utils/cn";
@@ -174,7 +175,10 @@ export function ToolPageLayout({
 
             {/* Repeated verbatim in the status bar, so it is dropped on small screens. */}
             <div className="ml-auto hidden flex-none items-center gap-[7px] lg:flex">
-              <span className="size-1.5 animate-tm-blink rounded-full bg-success" />
+              {/* 2.2.2: a 3.2s infinite blink on all 171 tool pages needs a way
+                  out. The navbar's identical dot already carries this
+                  (Navbar.tsx), so its absence here was an oversight. */}
+              <span className="size-1.5 animate-tm-blink rounded-full bg-success motion-reduce:animate-none" />
               <span className="font-mono text-[10.5px] leading-none tracking-[0.04em] whitespace-nowrap text-text-muted">
                 LOCAL · NO UPLOAD
               </span>
@@ -282,7 +286,9 @@ export function ToolPageLayout({
             <div className="relative flex min-h-0 flex-1 flex-col bg-nocturne-canvas px-4 py-6 md:px-[26px] lg:py-[22px]">
               <div className="pointer-events-none absolute inset-0 overflow-hidden">
                 <div className="absolute inset-0 bg-[radial-gradient(circle_at_1px_1px,rgba(233,233,237,.055)_1px,transparent_0)] bg-[length:22px_22px] opacity-50" />
-                <div className="absolute -top-[90px] left-[38%] h-[300px] w-[420px] animate-tm-glow rounded-full bg-[radial-gradient(circle,color-mix(in_srgb,var(--color-accent)_34%,transparent)_0%,transparent_70%)] blur-[110px]" />
+                {/* 2.2.2: 9s infinite. Decorative, so reduced motion simply
+                    freezes it rather than removing the glow. */}
+                <div className="absolute -top-[90px] left-[38%] h-[300px] w-[420px] animate-tm-glow rounded-full bg-[radial-gradient(circle,color-mix(in_srgb,var(--color-accent)_34%,transparent)_0%,transparent_70%)] blur-[110px] motion-reduce:animate-none" />
               </div>
               {/*
                 Two columns — canvas + control rail — but only for tools that
@@ -290,7 +296,7 @@ export function ToolPageLayout({
                 width for the ones still holding their controls inline, so the
                 migration can land tool by tool.
               */}
-              <div
+              <section
                 /*
                  * Marks the tool's OWN interactive surface, as distinct from the
                  * navbar, the FAQ accordion and the related-tools list — all of
@@ -299,6 +305,21 @@ export function ToolPageLayout({
                  * never stand in for "the tool actually mounted".
                  */
                 data-tool-surface=""
+                /*
+                 * WCAG 1.3.1 / 2.4.6. Everything above the fold used to be
+                 * heading-less — the rail's title is a <div>, CanvasHeader is a
+                 * <span> — so a screen-reader user navigating by heading passed
+                 * every control on the page before hearing anything, and the
+                 * first heading they hit was the marketing <h1> below the tool.
+                 * ExifViewerUI's group headings were left orphaned at h3 with no
+                 * h1 or h2 above them for the same reason.
+                 *
+                 * The name is visually hidden because the design deliberately
+                 * has no title over the canvas. `sr-only` is
+                 * `position:absolute`, so this is NOT a grid item and cannot
+                 * disturb the two-column `TOOL_SURFACE` layout.
+                 */
+                aria-labelledby="tool-surface-heading"
                 style={
                   {
                     "--surface-min-sm": `${surface.sm}px`,
@@ -310,8 +331,11 @@ export function ToolPageLayout({
                   "min-h-[var(--surface-min-sm)] md:min-h-[var(--surface-min-md)]",
                 )}
               >
+                <h2 id="tool-surface-heading" className="sr-only">
+                  {tool.name}
+                </h2>
                 {children}
-              </div>
+              </section>
             </div>
           </div>
         </div>
@@ -323,9 +347,34 @@ export function ToolPageLayout({
               "min-h-[30px] flex-wrap items-center gap-y-1 px-4 py-1.5 font-mono text-[10px] leading-none tracking-[0.04em] text-text-muted md:px-11 lg:h-[30px] lg:py-0",
             )}
           >
+            {/*
+              The engine's NAME. It used to be its name plus READY.
+
+              The value is a registry string — workspace.ts: "`engine` names the
+              library the tool's lib/ module actually imports" — and nothing on
+              this page checks whether that library is anywhere near the device.
+              Every engine with a download is fetched on first use, so this cell
+              read "WEB AUDIO·LAMEJS·FFMPEG READY" on /wma-to-mp3 while the 32 MB
+              core had not been requested at all, and read exactly the same in an
+              offline tab with no copy of it stored anywhere.
+
+              The precedent is two cells to the right: CapabilityReadout replaced
+              the design doc's seeded "SIMD ✓ · THREADS 8" with this machine's own
+              values, because "a capability claim we can't verify is a claim we
+              don't make". The name is a fact this file can stand behind and is
+              what the PIPELINE strip labels ENGINE 40px above; the readiness was
+              the half nothing measured, so the word is gone rather than moved.
+
+              STILL UNDONE: the bar cannot yet say whether the engine is present
+              on THIS device. Earning a readiness word needs a Cache API probe and
+              a per-tool engine→artifact map, and the map is the hard half — the
+              PDF tools' "PDF-LIB" is a ~445 KB bundle under /workers/, not page
+              JS, so a "nothing to download" badge derived from this string would
+              be a new false claim in place of the old one.
+            */}
             <span className="flex items-center gap-1.5">
               <span className="size-[5px] rounded-full bg-accent" />
-              {ws?.engine} READY
+              {ws?.engine}
             </span>
             <span aria-hidden="true" className="px-3 opacity-30">
               │
@@ -337,7 +386,16 @@ export function ToolPageLayout({
               <CapabilityReadout />
             </span>
             <span className="ml-auto flex items-center gap-3.5">
-              <span>0 BYTES SENT</span>
+              {/*
+                Was the literal string `0 BYTES SENT`. True, and unfalsifiable —
+                the same objection that took READY off the ENGINE cell two
+                stanzas up. `RequestReadout` counts this document's own resource
+                timeline instead, and deliberately says REQUESTS rather than
+                bytes, because the API exposes bytes RECEIVED and nothing at all
+                about a request body. The narrower sentence is the one the
+                measurement can carry.
+              */}
+              <RequestReadout />
               <span aria-hidden="true" className="hidden opacity-30 sm:inline">
                 │
               </span>
@@ -360,25 +418,45 @@ export function ToolPageLayout({
             </p>
           </div>
 
-          <div className="flex w-full flex-col gap-px overflow-hidden rounded-[9px] border border-border bg-border md:w-[250px] md:flex-none">
-            <div className={SPEC_ROW}>
-              <span className={SPEC_KEY}>ENGINE</span>
-              <span className={SPEC_VALUE}>{ws?.engine}</span>
+          <div className="flex w-full flex-col gap-2.5 md:w-[250px] md:flex-none">
+            <div className="flex flex-col gap-px overflow-hidden rounded-[9px] border border-border bg-border">
+              <div className={SPEC_ROW}>
+                <span className={SPEC_KEY}>ENGINE</span>
+                <span className={SPEC_VALUE}>{ws?.engine}</span>
+              </div>
+              <div className={SPEC_ROW}>
+                <span className={SPEC_KEY}>ACCEPTS</span>
+                <span className={SPEC_VALUE}>{ws?.accept}</span>
+              </div>
+              <div className={SPEC_ROW}>
+                <span className={SPEC_KEY}>MAX SIZE</span>
+                {/*
+                  Three states, matching DropZone's. "NONE" is an absolute
+                  claim and is only printed for tools that can carry it — the
+                  ones that never hold the whole input in the tab. A tool with
+                  `practicalLimitNote` has a ceiling it does not enforce, so it
+                  gets the word and the sentence under the panel; `SPEC_VALUE`
+                  is `truncate` inside 250px, so the sentence cannot live in
+                  the row itself.
+                */}
+                <span className={SPEC_VALUE}>
+                  {tool.maxSizeMB
+                    ? `${tool.maxSizeMB} MB`
+                    : tool.practicalLimitNote
+                      ? "MEMORY-BOUND"
+                      : "NONE"}
+                </span>
+              </div>
+              <div className={SPEC_ROW}>
+                <span className={SPEC_KEY}>UPLOAD</span>
+                <span className={cn(SPEC_VALUE, "text-success")}>NEVER</span>
+              </div>
             </div>
-            <div className={SPEC_ROW}>
-              <span className={SPEC_KEY}>ACCEPTS</span>
-              <span className={SPEC_VALUE}>{ws?.accept}</span>
-            </div>
-            <div className={SPEC_ROW}>
-              <span className={SPEC_KEY}>MAX SIZE</span>
-              <span className={SPEC_VALUE}>
-                {tool.maxSizeMB ? `${tool.maxSizeMB} MB` : "NONE"}
-              </span>
-            </div>
-            <div className={SPEC_ROW}>
-              <span className={SPEC_KEY}>UPLOAD</span>
-              <span className={cn(SPEC_VALUE, "text-success")}>NEVER</span>
-            </div>
+            {!tool.maxSizeMB && tool.practicalLimitNote && (
+              <p className="m-0 font-body text-[11.5px] leading-[1.5] text-text-muted">
+                {tool.practicalLimitNote}
+              </p>
+            )}
           </div>
         </div>
 

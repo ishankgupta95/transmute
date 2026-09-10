@@ -122,11 +122,54 @@ test.describe("image utilities", () => {
       downloadButton(page),
       20_000,
     );
-    // Cropped output is re-encoded as PNG by image-crop.ts.
+    // PNG is what image-crop.ts writes when nothing is picked — this tool was
+    // PNG-only before the shared format picker landed and the default did not
+    // move with it.
     expect(suggestedFilename).toMatch(/\.png$/i);
     const bytes = await downloadBytes(download);
     expect(bytes.subarray(0, 8).toString("hex")).toBe("89504e470d0a1a0a");
   });
+
+  /*
+    The other two arms the picker added. Each runs on its own navigation
+    because picking a format is only possible before a crop: the controls give
+    way to the download once a result exists.
+
+    This project is Chromium-only (playwright.config.ts), so both encoders are
+    genuinely available here and the assertion can be a plain magic-byte check.
+    The WebKit-safe version of the WebP arm lives in the conversion suite,
+    which is the one that runs in Safari.
+  */
+  for (const arm of [
+    { chip: "JPG", ext: /\.jpe?g$/i, magic: "ffd8ff" },
+    { chip: "WEBP", ext: /\.webp$/i, magic: "52494646" /* "RIFF" */ },
+  ]) {
+    test(`crop-image: picking ${arm.chip} writes ${arm.chip} bytes under a matching name`, async ({
+      page,
+    }) => {
+      await page.goto("/crop-image");
+      await uploadFile(page, tinyRectPng(120, 80));
+
+      const chip = page.getByRole("button", { name: arm.chip, exact: true });
+      await expect(chip).toBeVisible({ timeout: 10_000 });
+      await chip.click();
+
+      await page.getByRole("button", { name: "Crop", exact: true }).click();
+      const { suggestedFilename, download } = await waitForDownload(
+        page,
+        downloadButton(page),
+        20_000,
+      );
+      expect(suggestedFilename).toMatch(arm.ext);
+
+      // The name and the bytes are checked separately on purpose: canvas
+      // encoders substitute PNG for a type they cannot produce, so a matching
+      // extension alone proves nothing about what was actually saved.
+      const bytes = await downloadBytes(download);
+      expect(bytes.subarray(0, arm.magic.length / 2).toString("hex")).toBe(arm.magic);
+      if (arm.chip === "WEBP") expect(bytes.subarray(8, 12).toString("ascii")).toBe("WEBP");
+    });
+  }
 
   test("exif-viewer: reports 'no metadata' for a synthetic PNG with no tags", async ({
     page,

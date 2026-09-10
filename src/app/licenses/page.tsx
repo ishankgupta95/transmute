@@ -20,11 +20,11 @@ export const metadata: Metadata = {
   // The root layout's template appends " | Transmute".
   title: "Licenses",
   description:
-    "Third-party licenses and notices for every engine transmute.tools ships — FFmpeg, lamejs, libheif, ExifReader, and the permissive libraries behind the tools.",
+    "Third-party licenses and notices for every engine transmute.tools ships — FFmpeg, qpdf, zxing-cpp, libarchive, oxipng, lamejs, libheif, ExifReader, and the permissive libraries behind the tools.",
   alternates: { canonical: "/licenses" },
 };
 
-const LAST_UPDATED = "31 AUG 2026";
+const LAST_UPDATED = "05 SEP 2026";
 
 /**
  * The site currently deploys at an apex domain with no basePath, so this
@@ -142,6 +142,70 @@ const ENGINES: readonly Engine[] = [
       { href: licenseText("mpl-2.0.txt"), label: "MPL-2.0 TEXT" },
     ],
   },
+  {
+    id: "qpdf",
+    name: "qpdf",
+    spdx: "APACHE-2.0",
+    ships: "qpdf 12.4.1 — served from this origin as /qpdf.js and /qpdf.wasm (2,340,730 bytes of WebAssembly plus 63,089 bytes of loader), fetched the first time you use a PDF security tool.",
+    paras: [
+      "Compiled here rather than taken prebuilt. Every other engine on this page arrives as somebody else's published build. This one does not: it was compiled from the official qpdf 12.4.1 release tarball, on this machine, by a script checked into the repository at scripts/build-qpdf-wasm.sh. The reason is narrow. qpdf is the code that handles your password — it is the only thing here standing between a document and whoever should not be able to open it — and depending on a third-party binary would have meant taking someone's word for what is inside it. Building it means the static-link set is a decision that was made rather than one that was inherited, and it can be checked against the bytes actually served.",
+      "What is linked in, and what cannot be. qpdf can be built against GnuTLS or OpenSSL for its encryption. This build is not: implicit crypto discovery is off and the native provider is required (-DUSE_IMPLICIT_CRYPTO=OFF -DREQUIRE_CRYPTO_NATIVE=ON), so no host library can be picked up during the build even if one is installed. zlib and libjpeg come from Emscripten's own ports rather than from the system. That is the intent; the artifact was then checked against it. In the .wasm this site serves there is not one occurrence of gnutls, openssl, libgcrypt or nettle, and the only crypto provider compiled in is qpdf's own. A unit test re-reads those bytes on every run and fails if that ever stops being true, so the claim cannot rot quietly.",
+    ],
+    preCaption:
+      "Configured and linked exactly like this — the checked-in script is the authority, and this is what it runs. -fwasm-exceptions is not a tuning flag: qpdf reports every error condition by throwing, and Emscripten disables C++ exceptions by default, so without it a wrong password aborts the module with no message instead of saying the password was wrong.",
+    pre: "PORT_FLAGS=\"-sUSE_ZLIB=1 -sUSE_LIBJPEG=1 -fwasm-exceptions\"\nSYSROOT=\"$(em-config CACHE)/sysroot\"\n\nemcmake cmake -S qpdf-12.4.1 -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF -DBUILD_STATIC_LIBS=ON -DUSE_IMPLICIT_CRYPTO=OFF -DREQUIRE_CRYPTO_NATIVE=ON -DBUILD_DOC=OFF -DBUILD_DOC_PDF=OFF -DBUILD_DOC_HTML=OFF -DQTEST_SKIP_TESTS=ON -DCMAKE_C_FLAGS=\"$PORT_FLAGS\" -DCMAKE_CXX_FLAGS=\"$PORT_FLAGS\" -DCMAKE_EXE_LINKER_FLAGS=\"$PORT_FLAGS\" -DZLIB_LIBRARY=\"$SYSROOT/lib/wasm32-emscripten/libz.a\" -DZLIB_INCLUDE_DIR=\"$SYSROOT/include\"\n\nem++ -O3 build/qpdf/CMakeFiles/qpdf.dir/*.o build/libqpdf/libqpdf.a $PORT_FLAGS -o qpdf.js -sMODULARIZE=1 -sEXPORT_ES6=1 -sEXPORT_NAME=createQpdfModule -sENVIRONMENT=web,worker -sINVOKE_RUN=0 -sEXIT_RUNTIME=1 -sALLOW_MEMORY_GROWTH=1 -sFORCE_FILESYSTEM=1 -sEXPORTED_RUNTIME_METHODS=callMain,FS -sSTACK_SIZE=1048576",
+    libsCaption:
+      "Statically linked into that binary, and nothing else is. All three are permissive, and each carries its own terms:",
+    libs: [
+      { name: "qpdf native crypto provider", license: "Apache-2.0" },
+      { name: "zlib (Emscripten port)", license: "Zlib" },
+      { name: "libjpeg (Emscripten port)", license: "IJG" },
+    ],
+    refs: [
+      { href: "https://github.com/qpdf/qpdf/tree/v12.4.1", label: "QPDF SOURCE (v12.4.1)" },
+      { href: licenseText("apache-2.0.txt"), label: "APACHE-2.0 TEXT" },
+      { href: licenseText("qpdf-notice.txt"), label: "QPDF NOTICE" },
+    ],
+  },
+  {
+    id: "zxing-cpp",
+    name: "zxing-cpp",
+    spdx: "APACHE-2.0",
+    ships: "zxing-wasm 3.1.3, reader build — served from this origin as /zxing_reader.wasm (1,093,289 bytes), fetched the first time you scan a code.",
+    paras: [
+      "What is actually inside it. zxing-wasm is an MIT wrapper; the decoding is zxing-cpp, which is Apache-2.0, pinned by the wrapper as a submodule at commit a17fd9dc65d6aa0dd2f660fdfca7a6a6613d938f. That is not taken on trust — the package exports the hash as ZXING_CPP_COMMIT, and it is the same hash quoted here. Only the reader half reaches you. The package publishes a writer build as well, which links zint; this site does not serve it, and the file it does serve contains no zint symbols at all. The barcode generator draws its own symbols in JavaScript through bwip-js, so no WebAssembly reaches that page at all. That is a claim about WebAssembly and not about cost: the BWIPP encoder set is bundled into the barcode tool’s own code-split chunk rather than served as a file of its own, and in the build this site ships that chunk is 947,409 bytes — about 925 KB — fetched from this origin the first time you generate a symbol. It is the largest bundled download on the site, and the homepage names it under the engine table for that reason.",
+      "Why it is served from here rather than from a CDN. The published loader resolves its WebAssembly to a jsDelivr URL unless it is told not to. Left alone, that would have sent every visitor's IP address to a third party on the one page whose whole premise is that the image never leaves the tab. So the .wasm is copied into this origin at build time and the loader is pointed at that local path; the CDN address is never contacted and never even constructed.",
+      "On the NOTICE clause. Apache-2.0 asks that a NOTICE file be reproduced wherever the licensed work provides one — the reason qpdf's own notice is carried above. The zxing-wasm distribution this build consumes ships no NOTICE: its published package contains a single MIT LICENSE covering the wrapper, and that text is reproduced verbatim in the generated notices linked at the foot of this page. There is therefore no notice of zxing-cpp's to reproduce here, and the licence itself is linked below.",
+    ],
+    refs: [
+      {
+        href: "https://github.com/zxing-cpp/zxing-cpp/tree/a17fd9dc65d6aa0dd2f660fdfca7a6a6613d938f",
+        label: "ZXING-CPP SOURCE (PINNED COMMIT)",
+      },
+      { href: "https://github.com/Sec-ant/zxing-wasm", label: "WRAPPER SOURCE" },
+      { href: licenseText("apache-2.0.txt"), label: "APACHE-2.0 TEXT" },
+      { href: licenseText("third-party-notices.txt"), label: "WRAPPER MIT NOTICE" },
+    ],
+  },
+  {
+    id: "libarchive",
+    name: "libarchive 3.7.7",
+    spdx: "BSD-2-CLAUSE",
+    ships: "libarchive-wasm 1.2.0 — served from this origin as /libarchive.wasm (613,235 bytes), fetched the first time you open an archive.",
+    paras: [
+      "Read-only because the binary is, not because a policy says so. The archive extractor never offers to create an archive, and the reason is structural: this build exports sixteen archive_read_support_format_* entry points — 7zip, ar, cab, cpio, empty, iso9660, lha, mtree, rar, rar5, tar, warc, xar, zip, the seekable zip reader, and the format_all dispatcher that tries them in turn — and not one archive_write_set_format_* entry point. There is no code in the file that could write a container. That is checkable in the bytes this site serves, which is a stronger guarantee than a promise on a page.",
+      "The compression libraries linked alongside it are bzip2 1.0.8 and liblzma (the XZ decoder) 5.6.4, both of which stamp their versions into the binary, plus zlib for deflate. Zstandard and LZ4 are not linked: libarchive's fallback for those is to shell out to a zstd or lz4 executable, and there is no shell inside a WebAssembly module, so an archive using either is reported as unsupported rather than silently mishandled.",
+      "About the wrapper and the notice. libarchive-wasm 1.2.0 declares MIT in its manifest and in its README, but it publishes no licence file, so — like the two @ffmpeg helper packages further down — there is no notice of its own to reproduce and it is named here by hand instead. libarchive itself is BSD-2-Clause, whose second clause asks that its copyright notice travel with a binary redistribution; the upstream COPYING at the exact version compiled in is linked below, and quoting some other project's BSD-2-Clause text in its place would misattribute the copyright line that clause exists to carry.",
+    ],
+    refs: [
+      { href: "https://github.com/libarchive/libarchive/tree/v3.7.7", label: "LIBARCHIVE SOURCE (v3.7.7)" },
+      {
+        href: "https://github.com/libarchive/libarchive/blob/v3.7.7/COPYING",
+        label: "LIBARCHIVE COPYING (v3.7.7)",
+      },
+      { href: "https://github.com/ofk/libarchive-wasm", label: "WRAPPER SOURCE" },
+    ],
+  },
 ];
 
 /**
@@ -196,6 +260,45 @@ const PERMISSIVE: readonly {
     license: "MIT",
     note: "Muxes the frames WebCodecs encodes.",
     text: "third-party-notices.txt",
+  },
+  {
+    name: "bwip-js 4.11.4",
+    license: "MIT",
+    note: "Draws every barcode symbology on the barcode generator, at about 925 KB fetched on the first symbol. It carries the BWIPP PostScript source inside it, which its author released under the same terms.",
+    text: "third-party-notices.txt",
+  },
+  {
+    name: "svgo 4.1.0",
+    license: "MIT",
+    note: "Optimises SVGs, at about 566 KB fetched on the first optimisation. It brings the only BlueOak-1.0.0 component on the site — sax 1.6.1, its XML parser — a permissive licence in the MIT family whose full text is reproduced with the others in the generated notices.",
+    text: "third-party-notices.txt",
+  },
+  {
+    name: "mammoth 1.12.2",
+    license: "BSD-2-Clause",
+    note: "Converts .docx to HTML for the Markdown converter, at about 478 KB — jszip and pako included — fetched on the first document. Nothing about a document leaves the tab; it is a parser, not a service.",
+    text: "third-party-notices.txt",
+  },
+  {
+    name: "@jsquash/oxipng 2.3.0",
+    license: "Apache-2.0",
+    note: "The wrapper the PNG compressor loads. Its WebAssembly is served from this origin as /squoosh_oxipng_bg.wasm — 164,172 bytes, fetched on the first PNG you compress — and its own notice is reproduced in the generated file below. The optimiser compiled inside that WebAssembly is a separate work under different terms; it is the entry immediately after this one.",
+    text: "third-party-notices.txt",
+  },
+  {
+    name: "oxipng 9.1.1",
+    license: "MIT",
+    note: "The optimiser itself, compiled into the WebAssembly above — the version is read out of the binary rather than taken from a changelog. It is named here by hand for a reason worth stating, because it is not the reason the packages below are: this one does publish its notice, and the generator cannot see it. That script reads each package's root directory, and this notice sits one level down beside the codec, so it would have gone unshipped while every other check on this page stayed green.",
+  },
+  {
+    name: "boolbase 1.0.0",
+    license: "ISC",
+    note: "A two-function helper reaching the browser under svgo, through css-select and nth-check. Named here by hand because it ships no license file — its terms are ISC, as declared in its package manifest and its repository, and quoting another project's ISC text in its place would misattribute it.",
+  },
+  {
+    name: "dingbat-to-unicode 1.0.1",
+    license: "BSD-2-Clause",
+    note: "Maps Wingdings and Symbol characters to real Unicode when mammoth reads a .docx. The second package here that publishes no license file; BSD-2-Clause on the terms its manifest and repository declare.",
   },
   {
     name: "@ffmpeg/ffmpeg 0.12.15",
@@ -456,8 +559,13 @@ export default function LicensesPage() {
             handful of packages publish no license file of their own for the generator
             to read — @ffmpeg/ffmpeg, @ffmpeg/util and @ffmpeg/types, @next/env and
             client-only (all MIT), and railroad-diagrams (CC0-1.0) — so they are named
-            here instead, and nothing is left silently uncovered. Typefaces are listed
-            separately, each with its own copyright line.
+            here instead, and nothing is left silently uncovered. One package fails the
+            generator in the other direction and is worth naming for it: @jsquash/oxipng
+            ships two notices, Apache-2.0 for the wrapper in its root and MIT for the
+            oxipng codec a directory below, and the script reads only the root — so the
+            file above carries the first and the second is credited by hand under
+            permissive libraries. Typefaces are listed separately, each with its own
+            copyright line.
           </p>
           <div className="flex flex-wrap gap-x-4 gap-y-2">
             <a

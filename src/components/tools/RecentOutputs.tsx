@@ -11,6 +11,7 @@ import {
 import { getWorkspaceTool } from "@/data/workspace";
 import { formatFileSize } from "@/lib/utils/file-helpers";
 import { MONO_LABEL } from "@/components/workspace/shared";
+import { cn } from "@/lib/utils/cn";
 
 /**
  * The docs' "RECENT OUTPUT" rail section — real entries from
@@ -66,22 +67,33 @@ function RecentEntry({
       </span>
     </>
   );
-  const className =
-    "flex w-full cursor-pointer flex-col items-start gap-[3px] rounded-[7px] p-2 text-left transition-colors duration-150 hover:bg-nocturne-text/5 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-nocturne-accent";
+  /*
+    Split in two on purpose. The interactive half — the pointer cursor, the
+    hover tint, the focus ring — is a promise that the row can be activated,
+    and the "unknown tool" branch below is a plain <span> with no handler and
+    no tab stop. Wearing those styles there told a sighted user the row was
+    clickable and left a focus ring that could never appear. WCAG 1.3.1.
+  */
+  const base =
+    "flex w-full flex-col items-start gap-[3px] rounded-[7px] p-2 text-left";
+  const interactive = cn(
+    base,
+    "cursor-pointer transition-colors duration-150 hover:bg-nocturne-text/5 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-nocturne-accent",
+  );
 
   // Entries from tools this build no longer knows are shown, not linked.
   if (!known) {
-    return <span className={className}>{body}</span>;
+    return <span className={base}>{body}</span>;
   }
   if (onPickTool) {
     return (
-      <button type="button" onClick={() => onPickTool(output.slug)} className={className}>
+      <button type="button" onClick={() => onPickTool(output.slug)} className={interactive}>
         {body}
       </button>
     );
   }
   return (
-    <Link href={`/${output.slug}`} className={className}>
+    <Link href={`/${output.slug}`} className={interactive}>
       {body}
     </Link>
   );

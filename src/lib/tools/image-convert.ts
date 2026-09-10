@@ -69,6 +69,15 @@ export async function convertImage(
   ctx.drawImage(img, 0, 0, outWidth, outHeight);
 
   const blob = await canvasToBlob(canvas, mimeType, quality);
+  // The trap this file's own header records, applied to this file's own
+  // encode: `toBlob` silently serialises PNG for a type the browser cannot
+  // write, and the Blob's type is the encoder saying which it produced. WebKit
+  // is the live case for WebP, so svg-to-webp handed back 42 KB of PNG named
+  // `.webp` — the same lie the `.bmp` target was removed for. The message is
+  // the one image-edit.ts:112 and image.worker.ts's edit op already ship.
+  if (blob.type && blob.type !== mimeType) {
+    throw new Error(`This browser cannot write ${targetFormat.toUpperCase()} images.`);
+  }
   const ext = targetFormat === "jpeg" ? "jpg" : targetFormat;
   const baseName = file.name.replace(/\.[^.]+$/, "");
 
@@ -301,3 +310,34 @@ async function decodeTiff(file: File): Promise<DecodableSource> {
   return { blob: await canvasToBlob(canvas, "image/png", 1), warnings: warning ? [warning] : [] };
 }
 
+/**
+ * Name an output from the format the encoder ACTUALLY wrote.
+ *
+ * `canvas.toBlob` substitutes PNG for a type it cannot encode rather than
+ * failing (the trap recorded at the top of this file), and WebKit is the live
+ * case for WebP. `convertImage` above turns that mismatch into a refusal,
+ * because there the format is the user's explicit choice. The compressor and
+ * the resizer are the other half of the same split: they CHOOSE the format
+ * themselves as an alpha-safe default, so the honest response is to follow the
+ * encoder and name the file for what is really in it, not to refuse a request
+ * the user never made.
+ *
+ * The worker holds its own copy of this (`image.worker.ts`), for the same
+ * reason it holds its own copy of every other canvas helper: it cannot import
+ * this module, which reaches the DOM through `canvas-utils.ts`. The two are
+ * the documented dual-pipeline duplication, not an oversight.
+ *
+ * An empty `blob.type` — no opinion from the encoder — leaves the request
+ * standing.
+ */
+export function writtenFormat(
+  blob: Blob,
+  requestedMime: string,
+  requestedExt: string,
+): { mime: string; ext: string } {
+  if (!blob.type || blob.type === requestedMime) {
+    return { mime: requestedMime, ext: requestedExt };
+  }
+  const ext = blob.type === "image/jpeg" ? "jpg" : blob.type.replace("image/", "");
+  return { mime: blob.type, ext };
+}

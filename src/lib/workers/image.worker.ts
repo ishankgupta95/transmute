@@ -1,9 +1,25 @@
 /// <reference lib="webworker" />
 import Pica from "pica";
-// LEAF imports — image-frames.ts and target-size.ts have zero runtime
-// imports, so they cannot drag a module that names this worker's URL into the
-// bundle (which hangs next build).
+// LEAF imports — image-frames.ts, target-size.ts and image-edit-core.ts have
+// zero runtime imports, so they cannot drag a module that names this worker's
+// URL into the bundle (which hangs next build). png-optimise.ts imports only
+// the oxipng glue from node_modules, which names no worker either.
 import { firstFrameWarning } from "@/lib/tools/image-frames";
+import {
+  canvasCeilingWarning,
+  drawEdit,
+  editOutputPlan,
+  isMultiOutputEdit,
+  needsOpaqueFill,
+} from "@/lib/tools/image-edit-core";
+import {
+  alreadyOptimalNote,
+  deinterlacedNote,
+  describePngColour,
+  NOT_A_PNG_MESSAGE,
+  optimisePngBytes,
+  readPngHeader,
+} from "@/lib/tools/png-optimise";
 import {
   MAX_DIMENSION_STEPS,
   nextScale,
@@ -11,7 +27,12 @@ import {
   stepDimensions,
 } from "@/lib/tools/target-size";
 import type { PoolWorkerRequest, PoolWorkerResponse } from "./pool";
-import type { ImageJob, ImageJobResult } from "./image-protocol";
+import type {
+  ImageEditJobOptions,
+  ImageJob,
+  ImageJobResult,
+  PngOptimiseOptions,
+} from "./image-protocol";
 import type { ImageCompressOptions } from "@/lib/tools/image-compress";
 import type { ImageConvertOptions } from "@/lib/tools/image-convert";
 import type { ImageResizeOptions } from "@/lib/tools/image-resize";
@@ -27,6 +48,14 @@ import type { ImageResizeOptions } from "@/lib/tools/image-resize";
  * on main and arrive here as an ImageBitmap). Behavioural changes must land
  * in BOTH places — the conversion e2e suite runs against whichever path the
  * browser takes.
+ *
+ * Two later ops do NOT have that problem, on purpose:
+ *  - `edit` (the eight verbs) keeps every pixel decision in the shared leaf
+ *    lib/tools/image-edit-core.ts, so its mirror in lib/tools/image-edit.ts is
+ *    a canvas wrapper with no arithmetic of its own to drift.
+ *  - `optimise-png` has no mirror at all. There is no main-thread PNG
+ *    compressor to fall back to — a canvas re-encode is precisely the no-op
+ *    that tool exists to replace — so image-client.ts refuses the job instead.
  */
 
 declare const self: DedicatedWorkerGlobalScope;
@@ -39,7 +68,18 @@ self.onmessage = async (event: MessageEvent<PoolWorkerRequest>) => {
 
   try {
     const result = await runJob(job, progress);
-    const transfer = result.kind === "blob" ? [result.bytes] : [];
+    // Every output buffer must be named here. A multi-output edit that omits
+    // its items would be silently CLONED rather than moved — N copies of N
+    // tiles — which is the same branch pdf.worker.ts:60-81 spells out for
+    // splitPdfToPages. Each convertToBlob → arrayBuffer() allocates its own
+    // buffer, so the list can never name the same ArrayBuffer twice (which
+    // postMessage rejects).
+    const transfer: ArrayBuffer[] =
+      result.kind === "blob" || result.kind === "png"
+        ? [result.bytes]
+        : result.kind === "blobs"
+          ? result.items.map((item) => item.bytes)
+          : [];
     self.postMessage(
       { id, type: "done", result } satisfies PoolWorkerResponse,
       transfer,
@@ -57,6 +97,12 @@ async function runJob(
   job: ImageJob,
   progress: (value: number) => void,
 ): Promise<ImageJobResult> {
+  // optimise-png never decodes. oxipng works on the ENCODED PNG, so turning
+  // the file into pixels first would add a full RGBA raster to a job whose
+  // whole constraint is wasm memory — and would throw away the very bytes the
+  // codec is meant to rewrite.
+  if (job.op === "optimise-png") return optimisePng(job, job.options, progress);
+
   // Sniff the encoded bytes BEFORE decoding: createImageBitmap silently keeps
   // only frame 0 of an animated GIF/WebP, so the honest "first frame was kept"
   // notice can only come from the container. (Pre-decoded TIFF/HEIC arrive as
@@ -76,13 +122,17 @@ async function runJob(
       case "resize":
         result = await resize(bitmap, job, job.options, progress);
         break;
+      case "edit":
+        result = await edit(bitmap, job.options, progress);
+        break;
     }
     // Merge, don't overwrite — the op itself may have added its own notices
     // (target-size compress appends "Scaled to …" when it downscaled). Loss
     // warnings attach only to re-encoded outputs: never-grow's kind:"original"
     // hands back the untouched file with every frame still in it, so "only
-    // its first frame was kept" would be false there.
-    return warning && result.kind === "blob"
+    // its first frame was kept" would be false there. A multi-output edit is
+    // re-encoded too, so "blobs" belongs in the same branch as "blob".
+    return warning && (result.kind === "blob" || result.kind === "blobs")
       ? { ...result, warnings: [warning, ...(result.warnings ?? [])] }
       : result;
   } finally {
@@ -136,6 +186,41 @@ function toArrayBuffer(blob: Blob): Promise<ArrayBuffer> {
   return blob.arrayBuffer();
 }
 
+/** The file extension each encodable type is saved under. */
+const EXT_BY_MIME: Record<string, string> = {
+  "image/png": "png",
+  "image/jpeg": "jpg",
+  "image/webp": "webp",
+};
+
+/**
+ * What the encoder ACTUALLY wrote, which is not always what it was asked for.
+ *
+ * Per the HTML spec a canvas asked for a type it cannot encode falls back to
+ * PNG rather than failing (the trap image-convert.ts:5-9 records), and the
+ * Blob it hands back reports the type it really produced. WebKit is the live
+ * case for WebP: `convertToBlob({type:"image/webp"})` there returns
+ * `image/png`, so a result labelled from the REQUEST would put PNG bytes under
+ * a `.webp` name — which is exactly what shipped before this existed.
+ *
+ * So every op names its output from this. The two callers then differ, on
+ * purpose: convert's format is the user's choice and image-client.ts turns a
+ * mismatch into a refusal, while compress and resize CHOSE the format
+ * themselves (alpha-safe defaults) and simply follow the encoder — the same
+ * split video-frames.ts:381-397 already makes for frame export.
+ *
+ * An empty `blob.type` (no encoder opinion) leaves the request standing.
+ */
+function writtenFormat(blob: Blob, requested: string): { mime: string; ext: string } {
+  if (!blob.type || blob.type === requested) {
+    return { mime: requested, ext: EXT_BY_MIME[requested] ?? requested.replace("image/", "") };
+  }
+  return {
+    mime: blob.type,
+    ext: EXT_BY_MIME[blob.type] ?? blob.type.replace("image/", ""),
+  };
+}
+
 /** Port of imageHasTransparency: probe a ≤256px raster for any alpha < 255. */
 function bitmapHasTransparency(bitmap: ImageBitmap): boolean {
   const { width: w, height: h } = bitmap;
@@ -173,11 +258,16 @@ async function convert(
 
   const canvas = draw(bitmap, outWidth, outHeight, !mimeSupportsAlpha(mime));
   const blob = await canvas.convertToBlob({ type: mime, quality: options.quality });
+  // Reported, not assumed: the encoder may have substituted PNG. convertImage
+  // in image-client.ts compares this against what was asked for and refuses,
+  // because on this op the format is the user's choice — encodeBitmap's caller
+  // (pdf-engine.ts) sniffs the bytes itself and needs the blob, not a throw.
+  const written = writtenFormat(blob, mime);
   return {
     kind: "blob",
     bytes: await toArrayBuffer(blob),
-    mime,
-    ext: options.targetFormat === "jpeg" ? "jpg" : options.targetFormat,
+    mime: written.mime,
+    ext: written.ext,
     width: outWidth,
     height: outHeight,
   };
@@ -238,7 +328,9 @@ async function compress(
   options: ImageCompressOptions,
   progress: (value: number) => void,
 ): Promise<ImageJobResult> {
-  const { mime, ext } = chooseOutput(job, bitmap);
+  // Only the mime is taken from the choice: the extension comes from what the
+  // encoder wrote, in `finish` below.
+  const { mime } = chooseOutput(job, bitmap);
   // The pixels never change between encode passes — draw once, encode many.
   const canvas = draw(bitmap, bitmap.width, bitmap.height, !mimeSupportsAlpha(mime));
   const encode = (quality: number) => canvas.convertToBlob({ type: mime, quality });
@@ -253,11 +345,15 @@ async function compress(
     // file. The client still holds the original — just say "use it". The
     // untouched original was never scaled, so no scaled note either.
     if (blob.size >= job.fileSize) return { kind: "original" };
+    // chooseOutput picked this format, not the user, so a browser that cannot
+    // write it is followed rather than refused — but the name has to be what
+    // the encoder produced, never a `.webp` over PNG bytes.
+    const written = writtenFormat(blob, mime);
     return {
       kind: "blob",
       bytes: await toArrayBuffer(blob),
-      mime,
-      ext,
+      mime: written.mime,
+      ext: written.ext,
       width,
       height,
       // A downscale changes the picture, not just its bytes — say so, in the
@@ -389,14 +485,165 @@ async function resize(
   if (!destCtx) throw new Error("Canvas 2D context not available");
   destCtx.putImageData(new ImageData(new Uint8ClampedArray(resized), outW, outH), 0, 0);
 
-  const { mime, ext } = resizeOutputFormat(job.fileName);
+  const { mime } = resizeOutputFormat(job.fileName);
   const blob = await destCanvas.convertToBlob({ type: mime, quality: options.quality });
+  // Derived from the source extension rather than asked for, so — as in
+  // compress — the encoder's substitution is followed and named honestly.
+  const written = writtenFormat(blob, mime);
   return {
     kind: "blob",
     bytes: await toArrayBuffer(blob),
-    mime,
-    ext,
+    mime: written.mime,
+    ext: written.ext,
     width: outW,
     height: outH,
   };
+}
+
+// ── edit verbs (geometry in lib/tools/image-edit-core.ts) ────────
+
+/**
+ * Rotate, flip, watermark, pixelate, circle-crop, border, split, presets.
+ *
+ * The verb geometry is NOT here — it is in image-edit-core.ts, which the
+ * main-thread mirror (lib/tools/image-edit.ts) calls too. This function owns
+ * only what a canvas pipeline owns: allocating the surface, the opaque fill an
+ * alpha-less format needs, the encode, and the transfer-friendly shape of the
+ * result. Single-output verbs come back as kind:"blob" so every existing
+ * consumer keeps working; split and presets come back as kind:"blobs".
+ */
+async function edit(
+  bitmap: ImageBitmap,
+  options: ImageEditJobOptions,
+  progress: (value: number) => void,
+): Promise<ImageJobResult> {
+  const { edit: verb, format, quality } = options;
+  const mime = `image/${format}`;
+  const ext = format === "jpeg" ? "jpg" : format;
+
+  // A circular crop is cut with globalCompositeOperation "destination-in",
+  // which erases the opaque background an alpha-less format needs — the result
+  // would be a black square with a picture in the middle of it. Refuse rather
+  // than ship that; the tool's own format picker omits JPEG for this reason.
+  if (verb.kind === "crop-circle" && needsOpaqueFill(format)) {
+    throw new Error(
+      "A circular crop needs a format that can carry transparency. Choose PNG or WebP.",
+    );
+  }
+
+  const plan = editOutputPlan(bitmap.width, bitmap.height, verb);
+  if (plan.length === 0) throw new Error("Nothing to produce — no output sizes were selected");
+
+  const items: Extract<ImageJobResult, { kind: "blobs" }>["items"] = [];
+  for (let index = 0; index < plan.length; index++) {
+    const { width, height, label } = plan[index];
+    const canvas = new OffscreenCanvas(width, height);
+    const ctx = canvas.getContext("2d");
+    if (!ctx) throw new Error("Canvas 2D context not available");
+    if (needsOpaqueFill(format)) {
+      // Alpha-less formats flatten transparency to black without this.
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, width, height);
+    }
+    drawEdit(ctx, bitmap, verb, index);
+
+    const blob = await canvas.convertToBlob({ type: mime, quality });
+    // A canvas encoder that cannot write the requested type does NOT fail — it
+    // silently serialises PNG instead (the trap image-convert.ts:5-9 records
+    // for toBlob). The Blob's own type is the encoder telling us which format
+    // it actually produced, so a mislabelled file never leaves this function.
+    if (blob.type && blob.type !== mime) {
+      throw new Error(`This browser cannot write ${format.toUpperCase()} images.`);
+    }
+    items.push({ bytes: await toArrayBuffer(blob), mime, ext, width, height, label });
+    // One tick per output — the pass count is known up front here, unlike the
+    // compressor's search, so this is a real fraction and not a guess.
+    progress(Math.min(95, 10 + Math.round(((index + 1) / plan.length) * 85)));
+  }
+
+  // Derived, not asserted: the plan says whether the canvas ceiling forced any
+  // output smaller than the geometry asked for. Reported once, naming the size
+  // actually produced — a silently smaller picture is still a change nobody
+  // asked for, and the alternative this replaced was a silently SQUASHED one.
+  const shrunk = plan.find((entry) => entry.scaled);
+  const warnings = shrunk ? [canvasCeilingWarning(shrunk.width, shrunk.height)] : undefined;
+
+  if (isMultiOutputEdit(verb)) return { kind: "blobs", items, ...(warnings ? { warnings } : {}) };
+  const only = items[0];
+  return {
+    kind: "blob",
+    bytes: only.bytes,
+    mime: only.mime,
+    ext: only.ext,
+    width: only.width,
+    height: only.height,
+    ...(warnings ? { warnings } : {}),
+  };
+}
+
+// ── compress-png (oxipng; loader in lib/tools/png-optimise.ts) ───
+
+/**
+ * Lossless PNG re-compression.
+ *
+ * Progress is deliberately coarse: oxipng is ONE synchronous call with no
+ * progress callback in its API, so the only honest ticks are "checked the
+ * file", "engine ready" and "done". Interpolating a bar across the burn would
+ * be inventing information — and the burn is real, roughly 570 ms per
+ * megapixel, which is why the UI has to say so instead of animating.
+ */
+async function optimisePng(
+  job: Extract<ImageJob, { op: "optimise-png" }>,
+  options: PngOptimiseOptions,
+  progress: (value: number) => void,
+): Promise<ImageJobResult> {
+  if (!job.bytes) {
+    // Reachable only if a caller pre-decoded the source. optimise-png is the
+    // one op that cannot work from pixels.
+    throw new Error(NOT_A_PNG_MESSAGE);
+  }
+  const input = new Uint8Array(job.bytes);
+  const before = readPngHeader(input);
+  if (!before) throw new Error(NOT_A_PNG_MESSAGE);
+  progress(5);
+
+  const level = Math.min(4, Math.max(1, Math.round(options.level))) as PngOptimiseOptions["level"];
+  const output = await optimisePngBytes(input, { ...options, level });
+  progress(95);
+
+  // Byte-identical output is oxipng's documented "nothing left to win" answer,
+  // not a failure — measured on two already-optimised repo icons. Compare the
+  // bytes rather than trusting a size match: two different PNGs can be the
+  // same length.
+  const identical = sameBytes(input, output);
+  const after = readPngHeader(output) ?? before;
+  // Two notices, both derived from the run rather than from the settings. The
+  // de-interlace is invisible to every other report on the page: colourBefore
+  // and colourAfter come from colour type and bit depth, which Adam7 does not
+  // touch, so without this the file silently stops loading progressively.
+  const warnings = [
+    ...(identical ? [alreadyOptimalNote(level)] : []),
+    ...(before.interlace === 1 && after.interlace !== 1 ? [deinterlacedNote()] : []),
+  ];
+  return {
+    kind: "png",
+    // A fresh buffer either way: `input` is the transferred job payload and
+    // oxipng's return is a view onto wasm memory, which the next call reuses.
+    bytes: output.slice().buffer,
+    width: after.width,
+    height: after.height,
+    identical,
+    level,
+    colourBefore: describePngColour(before),
+    colourAfter: describePngColour(after),
+    ...(warnings.length > 0 ? { warnings } : {}),
+  };
+}
+
+function sameBytes(a: Uint8Array, b: Uint8Array): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (a[i] !== b[i]) return false;
+  }
+  return true;
 }

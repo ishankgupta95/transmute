@@ -1,4 +1,5 @@
 import Pica from "pica";
+import { writtenFormat } from "./image-convert";
 import type { ProcessedResult } from "@/hooks/useFileProcessor";
 import { loadImage } from "./canvas-utils";
 import { fileFirstFrameWarning } from "./image-frames";
@@ -78,8 +79,14 @@ export async function resizeImage(
   // silently turned into a JPEG. (Forcing JPEG turned transparent PNG/WebP
   // logos into black boxes.) JPEG output is only used for already-opaque
   // JPEG inputs, so no background fill is needed.
-  const { mime, ext } = outputFormat(file);
-  const blob = await pica.toBlob(destCanvas, mime, options.quality);
+  const requested = outputFormat(file);
+  const blob = await pica.toBlob(destCanvas, requested.mime, options.quality);
+  // Name the file for what the encoder really wrote. toBlob substitutes PNG
+  // for a type it cannot encode, so a WebP-target resize on WebKit would
+  // otherwise save PNG bytes as `.webp`. The format here is OUR alpha-safe
+  // default rather than the user's request, so following the encoder is the
+  // honest answer — see `writtenFormat`'s docblock for the other half.
+  const { ext } = writtenFormat(blob, requested.mime, requested.ext);
   const baseName = file.name.replace(/\.[^.]+$/, "");
 
   return {

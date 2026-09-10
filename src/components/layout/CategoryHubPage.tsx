@@ -91,9 +91,40 @@ export function CategoryHubPage({
                   {category?.engine ?? "NATIVE JS"}
                 </span>
               </div>
+              {/*
+                This said "0 KB" on every hub, in the same green the UPLOAD /
+                NEVER row uses — a flat claim that opening any tool here costs
+                you no bytes. It was false on four of the five: /video-tools
+                and /audio-tools can pull the ~31 MB FFmpeg core, /pdf-tools
+                pulls 2.3 MB of qpdf, /image-tools 1.3 MB of heic2any. The
+                figure now comes from the category (see `data/categories.ts`,
+                which quotes the homepage ENGINES table), and the success
+                colour is spent only where the claim is still "0 KB".
+
+                As of 2026-09-05 that is nowhere. /developer-tools was the last
+                hub costing nothing, and /qr-code-reader and /extract-archive
+                put a WebAssembly engine behind it, so it quotes a range like
+                the other four. The branch below is deliberately kept rather
+                than deleted: it is the reserve that lights the stat up again if
+                a category ever returns to fetching nothing, and deleting it
+                would leave the test that asserts "no hub is green" passing for
+                the wrong reason. `category-hub-claims.test.tsx` reads this file
+                to check the branch is still here.
+              */}
               <div className={STAT}>
                 <span className={STAT_KEY}>DOWNLOAD</span>
-                <span className={cn(STAT_VALUE, "text-success")}>0 KB</span>
+                <span
+                  className={cn(
+                    STAT_VALUE,
+                    // A range is one figure; "0–31 / MB" over two lines on a
+                    // phone reads as two. ENGINE beside it still wraps, which
+                    // is what keeps the strip inside a 360 px viewport.
+                    "whitespace-nowrap",
+                    category?.download === "0 KB" ? "text-success" : "text-neutral-300",
+                  )}
+                >
+                  {category?.download ?? "—"}
+                </span>
               </div>
             </div>
           </div>

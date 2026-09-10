@@ -1,7 +1,7 @@
 "use client";
 
-import type { ReactNode } from "react";
-import { useEffect, useRef, useState } from "react";
+import type { ReactElement, ReactNode } from "react";
+import { Children, cloneElement, isValidElement, useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils/cn";
 import { MONO_LABEL, SCROLL_CLASS, STAGE_GROW } from "@/components/workspace/shared";
 import { TOOL_RANGE_CLASS } from "@/components/tools/ToolAside";
@@ -35,7 +35,13 @@ export function TrimOverlay({
   trimB: number;
   surface?: "video" | "audio";
 }) {
-  const mask = surface === "video" ? "bg-[rgba(15,17,28,.72)]" : "bg-[rgba(15,17,28,.55)]";
+  // The audio mask lifted from .55 to .45 for WCAG 1.4.11. The mask covers the
+  // BARS, not just the plate (over #161826 it is only a 1.04:1 plate change),
+  // so it is the mask — not the bar token — that decides whether an
+  // out-of-selection bar is visible at all. Measured against the masked plate:
+  // neutral-800 under .55 = 1.23:1; neutral-400 under .55 = 2.73:1; the shipped
+  // pair, neutral-400 under .45, = 3.48:1. See `Waveform` below.
+  const mask = surface === "video" ? "bg-[rgba(15,17,28,.72)]" : "bg-[rgba(15,17,28,.45)]";
   const handle =
     surface === "video"
       ? "w-0.5 bg-nocturne-accent shadow-[0_0_12px_color-mix(in_srgb,var(--color-nocturne-accent)_70%,transparent)]"
@@ -153,7 +159,15 @@ export function Waveform({
             key={i}
             className={cn(
               "flex-1 rounded-[1px] transition-colors duration-200",
-              inSelection ? "bg-accent" : "bg-neutral-800",
+              // The waveform IS the audio — 1.4.11's "graphical object", not
+              // decoration — so an unselected bar needs 3:1 too. AudioTrimmerUI
+              // is the only caller that ever renders this branch (the other
+              // five pass 0/100, so every bar is `inSelection`), and there the
+              // bar is always under TrimOverlay's audio mask. Measured against
+              // the masked plate: neutral-800 1.23:1, neutral-700 1.46:1,
+              // neutral-600 1.77:1, neutral-400 3.48:1. Nothing below
+              // neutral-400 clears 3:1 at any mask alpha the design allows.
+              inSelection ? "bg-accent" : "bg-neutral-400",
             )}
             // A silent stretch still needs a visible hairline.
             style={{ height: `${Math.max(2, h * 100)}%` }}
@@ -311,6 +325,7 @@ export function PageTile({
   selected,
   onClick,
   interactive,
+  active,
   dimUnselected = true,
   label,
   badge,
@@ -327,6 +342,14 @@ export function PageTile({
    * Makes it a focusable listbox option so keyboards reach it too.
    */
   interactive?: boolean;
+  /**
+   * Roving tabindex. An ARIA listbox is ONE tab stop with the arrow keys
+   * moving between its options, so exactly one option may carry `tabIndex=0`
+   * — `PageDeck` sets this on the option that currently holds the tab stop.
+   * Left undefined (an `interactive` tile rendered outside a listbox deck) the
+   * tile stays reachable rather than dropping out of the tab order entirely.
+   */
+  active?: boolean;
   /**
    * Unselected tiles are dimmed so the selection reads at a glance. A deck
    * where nothing is selected *yet* passes false — otherwise the whole deck
@@ -347,7 +370,11 @@ export function PageTile({
       {...(onClick
         ? { type: "button" as const, onClick, "aria-pressed": selected }
         : interactive
-          ? { role: "option" as const, "aria-selected": selected, tabIndex: 0 }
+          ? {
+              role: "option" as const,
+              "aria-selected": selected,
+              tabIndex: active === false ? -1 : 0,
+            }
           : {})}
       {...draggableProps}
       {...rest}
@@ -361,7 +388,9 @@ export function PageTile({
         selected
           ? "border-accent shadow-[0_0_0_3px_color-mix(in_srgb,var(--color-accent)_22%,transparent)]"
           : dimUnselected
-            ? "border-transparent opacity-55 hover:opacity-80"
+            // opacity-55 put the page number at 4.49:1 — a rounding error under
+            // the 4.5:1 WCAG 1.4.3 needs. opacity-70 lands it at ~5.6:1.
+            ? "border-transparent opacity-70 hover:opacity-90"
             : "border-transparent hover:opacity-80",
         className,
       )}
@@ -391,6 +420,23 @@ export function PageTile({
   );
 }
 
+/** A `PageTile` child, narrowed so the deck can hand it the roving tab stop. */
+function isPageTile(child: ReactNode): child is ReactElement<{ active?: boolean }> {
+  return isValidElement(child) && child.type === PageTile;
+}
+
+/**
+ * The options inside `container`, in DOM order, plus where `target` sits among
+ * them. Read off the DOM rather than the child array so a tile nested inside a
+ * caller's own wrapper is still found.
+ */
+function deckOptions(container: HTMLElement, target: EventTarget | null) {
+  const options = Array.from(container.querySelectorAll<HTMLElement>('[role="option"]'));
+  const option =
+    target instanceof Element ? target.closest<HTMLElement>('[role="option"]') : null;
+  return { options, index: option ? options.indexOf(option) : -1 };
+}
+
 /**
  * The doc's page deck: a scrolling grid of page tiles on a dark plate.
  *
@@ -404,6 +450,25 @@ export function PageTile({
  * be listboxes.
  */
 export function PageDeck({ children, label }: { children: ReactNode; label?: string }) {
+  // Roving tabindex (WCAG 4.1.2, ARIA APG listbox). Every option used to
+  // render `tabIndex: 0`, so a 60-page deck was 60 tab stops between the file
+  // and the primary action. The deck owns the index instead of the caller so
+  // no consumer has to be rewritten to get the pattern right.
+  const [activeIdx, setActiveIdx] = useState(0);
+
+  let deckChildren = children;
+  if (label) {
+    const flat = Children.toArray(children);
+    const optionCount = flat.filter(isPageTile).length;
+    // Clamped, not trusted: pages get removed under a stale index, and a
+    // listbox with NO tab stop is worse than one with too many.
+    const active = optionCount > 0 ? Math.min(activeIdx, optionCount - 1) : 0;
+    let seen = 0;
+    deckChildren = flat.map((child) =>
+      isPageTile(child) ? cloneElement(child, { active: seen++ === active }) : child,
+    );
+  }
+
   return (
     // `STAGE_GROW` so a short deck fills the canvas it was given; the vh cap so
     // a 60-page deck scrolls inside the plate instead of growing the page to
@@ -411,10 +476,44 @@ export function PageDeck({ children, label }: { children: ReactNode; label?: str
     <CanvasStage className={cn(STAGE_GROW, "flex flex-col p-4")}>
       <div
         className={cn("min-h-0 flex-1 overflow-y-auto max-h-[min(62vh,720px)]", SCROLL_CLASS)}
-        {...(label ? { role: "listbox", "aria-label": label, "aria-orientation": "horizontal" as const } : {})}
+        {...(label
+          ? {
+              role: "listbox",
+              "aria-label": label,
+              "aria-orientation": "horizontal" as const,
+              // Whatever the user focused becomes the tab stop, so tabbing
+              // back into the deck returns to where they were.
+              onFocus: (e: React.FocusEvent<HTMLDivElement>) => {
+                const { index } = deckOptions(e.currentTarget, e.target);
+                if (index >= 0) setActiveIdx(index);
+              },
+              onKeyDown: (e: React.KeyboardEvent<HTMLDivElement>) => {
+                // The option gets first refusal: /pdf-page-reorder binds the
+                // arrows to MOVE the focused page and calls preventDefault.
+                if (e.defaultPrevented) return;
+                const { options, index } = deckOptions(e.currentTarget, e.target);
+                if (index < 0) return;
+                const last = options.length - 1;
+                const next =
+                  e.key === "Home"
+                    ? 0
+                    : e.key === "End"
+                      ? last
+                      : e.key === "ArrowRight" || e.key === "ArrowDown"
+                        ? Math.min(index + 1, last)
+                        : e.key === "ArrowLeft" || e.key === "ArrowUp"
+                          ? Math.max(index - 1, 0)
+                          : -1;
+                if (next < 0) return;
+                e.preventDefault();
+                setActiveIdx(next);
+                options[next]?.focus();
+              },
+            }
+          : {})}
       >
         <div className="grid grid-cols-[repeat(auto-fill,minmax(100px,1fr))] gap-3">
-          {children}
+          {deckChildren}
         </div>
       </div>
     </CanvasStage>
@@ -444,21 +543,29 @@ export function RecordStage({
   const headroom = Math.round(METER_SEGMENTS * 0.82);
 
   return (
-    <div className="relative flex animate-tm-rise items-center justify-center p-10">
+    <div className="relative flex animate-tm-rise items-center justify-center p-10 motion-reduce:animate-none">
       <div className="flex w-full max-w-[560px] flex-col items-center gap-[26px]">
         <div className="relative flex size-[104px] items-center justify-center">
           <span
             className={cn(
               "absolute inset-0 rounded-full border border-accent/35",
-              !paused && "animate-tm-pulse",
+              // 2.4s, infinite, and it starts on its own — WCAG 2.2.2 wants a
+              // way out, and `prefers-reduced-motion` is it. Pausing the
+              // recorder already stops it; a reduced-motion user should not
+              // have to.
+              !paused && "animate-tm-pulse motion-reduce:animate-none",
             )}
           />
           <span className="absolute inset-[14px] rounded-full border border-accent/20" />
           <span
             className={cn(
               "size-11 rounded-full",
+              // Paused vs recording is a state, and 1.4.11 asks 3:1 of the
+              // thing that shows it. On this plate (`bg-bg-primary` #161826)
+              // neutral-700 measures 2.69:1; neutral-600 measures 4.08:1.
+              // `bg-error` is 5.40:1 and needs nothing.
               paused
-                ? "bg-neutral-700"
+                ? "bg-neutral-600"
                 : "bg-error shadow-[0_0_26px_color-mix(in_srgb,var(--color-error)_50%,transparent)]",
             )}
           />
@@ -490,7 +597,12 @@ export function RecordStage({
                   "flex-1 rounded-[1px] transition-colors duration-75",
                   i < lit && i < headroom && "bg-accent",
                   i < lit && i >= headroom && "bg-error",
-                  i >= lit && "bg-neutral-800",
+                  // The unlit segments are what draw the meter's full extent,
+                  // so they carry the 1.4.11 duty. `gap-0.5` + `p-px` means
+                  // every segment's neighbour is the track, never another
+                  // segment: neutral-800 on the neutral-900 track measured
+                  // 1.41:1, neutral-600 measures 3.28:1.
+                  i >= lit && "bg-neutral-600",
                 )}
               />
             ))}
@@ -534,7 +646,13 @@ export function RangeField({
         }}
         placeholder="1-3, 5, 8-10"
         aria-label="Page range"
-        className="h-[30px] w-[200px] rounded-[7px] border border-border bg-bg-elevated px-2.5 font-mono text-xs leading-none text-text-primary placeholder:text-text-muted focus:border-accent focus:outline-none disabled:opacity-45"
+        // `border-border` is `#e9e9ed` at 16% — a decorative hairline that
+        // measures 1.52:1 over the canvas ground. It is the right token for a
+        // divider and the wrong one for the only thing that says "this is a
+        // field" (1.4.11). neutral-700, which the audit prescribed, does NOT
+        // reach 3:1 here: 2.83:1 outside, 2.32:1 against the `bg-elevated`
+        // fill. neutral-600 measures 4.30:1 outside and 3.52:1 inside.
+        className="h-[30px] w-[200px] rounded-[7px] border border-neutral-600 bg-bg-elevated px-2.5 font-mono text-xs leading-none text-text-primary placeholder:text-text-muted focus:border-accent focus:outline-none disabled:opacity-45"
       />
       <span className="font-body text-[11px] leading-[1.4] text-text-muted">{hint}</span>
     </div>
@@ -705,10 +823,18 @@ export function CodeBlock({
           {action}
         </div>
       )}
+      {/* A scroll container with no focusable child cannot be scrolled from a
+          keyboard in Safari or Firefox (only Chrome auto-focuses scrollers), so
+          the block takes the tab stop itself — WCAG 2.1.1. Named, so the stop
+          announces what it is rather than "group". */}
       <pre
+        tabIndex={0}
+        role="region"
+        aria-label={label ?? "Generated code"}
         className={cn(
           "m-0 overflow-auto rounded-[9px] border border-neutral-800 bg-nocturne-sunken p-[13px]",
           "font-mono text-[11.5px] leading-[1.8] whitespace-pre-wrap text-neutral-400",
+          "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent",
           SCROLL_CLASS,
         )}
       >
@@ -1042,6 +1168,12 @@ export function CompareStage({
         "relative overflow-hidden rounded-[10px] border border-neutral-800 bg-[#0c0e17]",
         STAGE_GROW,
         "min-h-[clamp(18rem,calc(100vh_-_28rem),40rem)]",
+        // The split slider covers the whole plate at `opacity-0`, which renders
+        // its own focus ring at zero opacity too — a full-stage tab stop with
+        // no indicator at all (WCAG 2.4.7). Draw the ring on the plate, which
+        // is opaque. Inset, because the plate clips its own overflow and sits
+        // flush in the canvas column.
+        "has-[input:focus-visible]:outline-2 has-[input:focus-visible]:outline-offset-[-3px] has-[input:focus-visible]:outline-accent",
         className,
       )}
     >
@@ -1050,30 +1182,54 @@ export function CompareStage({
           <div className="relative">
             {beforeUrl && (
               // eslint-disable-next-line @next/next/no-img-element -- blob: URL, nothing for next/image to optimise
-              <img src={beforeUrl} alt="" className="absolute inset-0 size-full object-contain" />
+              <img
+                src={beforeUrl}
+                alt={inLabel}
+                className="absolute inset-0 size-full object-contain"
+              />
             )}
           </div>
           <div className="relative border-l border-neutral-800">
             {afterUrl && (
               // eslint-disable-next-line @next/next/no-img-element -- blob: URL, nothing for next/image to optimise
-              <img src={afterUrl} alt="" className="absolute inset-0 size-full object-contain" />
+              <img
+                src={afterUrl}
+                alt={outLabel}
+                className="absolute inset-0 size-full object-contain"
+              />
             )}
           </div>
         </div>
       ) : mode === "diff" ? (
-        <canvas ref={diffRef} className="absolute inset-0 size-full object-contain" />
+        // The diff is the whole stage in this mode, so it has to name itself —
+        // an unnamed <canvas> is nothing at all to a screen reader (WCAG 1.1.1).
+        <canvas
+          ref={diffRef}
+          role="img"
+          aria-label="Pixel difference between the input and the output, amplified four times"
+          className="absolute inset-0 size-full object-contain"
+        />
       ) : (
         <>
           {beforeUrl && (
             // eslint-disable-next-line @next/next/no-img-element -- blob: URL, nothing for next/image to optimise
-            <img src={beforeUrl} alt="" className="absolute inset-0 size-full object-contain" />
+            <img
+              src={beforeUrl}
+              alt={inLabel}
+              className="absolute inset-0 size-full object-contain"
+            />
           )}
 
-          {/* The "after" side, revealed by the wipe. */}
+          {/* The "after" side, revealed by the wipe. It is the tool's actual
+              output, so `alt=""` was hiding the result itself (WCAG 1.1.1). */}
           {afterUrl && (
             <div className="absolute inset-0" style={{ clipPath: `inset(0 0 0 ${split}%)` }}>
               {/* eslint-disable-next-line @next/next/no-img-element -- blob: URL, nothing for next/image to optimise */}
-              <img src={afterUrl} alt="" className="absolute inset-0 size-full object-contain" />
+              <img
+                src={afterUrl}
+                alt={outLabel}
+                className="absolute inset-0 size-full object-contain"
+              />
             </div>
           )}
 
@@ -1141,12 +1297,22 @@ export function CompareStage({
           value={split}
           onChange={(e) => onSplitChange(Number(e.target.value))}
           aria-label="Compare position"
-          className={cn(TOOL_RANGE_CLASS, "absolute inset-0 h-full cursor-ew-resize opacity-0")}
+          className={cn(
+            TOOL_RANGE_CLASS,
+            "absolute inset-0 h-full cursor-ew-resize opacity-0",
+            // Its own ring would be drawn at opacity 0; the plate wears it
+            // instead (see the `has-[input:focus-visible]` rules above).
+            "focus-visible:outline-none",
+          )}
         />
       )}
 
       {busy && (
-        <div className="pointer-events-none absolute inset-x-0 top-0 h-14 animate-tm-sweep bg-[linear-gradient(180deg,transparent,color-mix(in_srgb,var(--color-accent)_55%,transparent),transparent)]" />
+        // 1.5s, infinite, and it runs for as long as the conversion does —
+        // WCAG 2.2.2. The busy state is still carried by everything else on
+        // the stage, so dropping the animation costs a reduced-motion user
+        // nothing.
+        <div className="pointer-events-none absolute inset-x-0 top-0 h-14 animate-tm-sweep bg-[linear-gradient(180deg,transparent,color-mix(in_srgb,var(--color-accent)_55%,transparent),transparent)] motion-reduce:animate-none" />
       )}
     </div>
   );
@@ -1182,7 +1348,19 @@ export function QueueTable({ rows, footnote }: { rows: QueueRow[]; footnote?: st
           <span className="text-right">STATE</span>
         </div>
 
-        <div className={cn("max-h-[26rem] overflow-y-auto", SCROLL_CLASS)}>
+        {/* Every row is a <span>, so without a tab stop of its own this
+            scroller is unreachable from a keyboard in Safari and Firefox —
+            WCAG 2.1.1. Offset inward: the plate clips its own overflow. */}
+        <div
+          tabIndex={0}
+          role="region"
+          aria-label="Conversion queue"
+          className={cn(
+            "max-h-[26rem] overflow-y-auto",
+            "focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-accent",
+            SCROLL_CLASS,
+          )}
+        >
           {rows.map((r, i) => (
             <div
               key={`${r.name}-${i}`}
@@ -1197,7 +1375,32 @@ export function QueueTable({ rows, footnote }: { rows: QueueRow[]; footnote?: st
               <span className="truncate text-neutral-300">{r.name}</span>
               <span className="text-right font-mono text-[11px] text-text-muted">{r.inSize}</span>
               <span className="text-right font-mono text-[11px] text-accent-300">{r.outSize}</span>
-              <span className="block h-[3px] overflow-hidden rounded-[2px] bg-neutral-800">
+              {/*
+                1.4.11 on a progress bar is a THREE-way constraint, and the two
+                halves fight: the track has to be visible against the plate
+                (`bg-bg-primary` #161826) so you can see where 100% is, and the
+                fill has to be visible against the track so you can see where
+                the value is. Measured, with the track as the only variable:
+
+                  track          vs plate   accent fill   success   error
+                  neutral-800      1.76        3.10        6.25      3.07
+                  neutral-700      2.69        2.03        4.09      2.01
+                  neutral-600      4.08        1.34        2.69      1.32
+
+                Raising the token cannot fix this — it can only move the failure
+                from the track to the fill, and doing so is a net loss (the
+                value stops being readable at all). It is arithmetic, not taste:
+                the fill clears the plate by 5.45:1, so a track wedged between
+                them can never clear 3:1 on both sides (5.45 / 3 = 1.82), and
+                going darker is capped at 1.19:1 because the plate is already
+                near-black. Fixing it needs a second colour, not a different
+                one. So: the track keeps neutral-800, which is the only value
+                where all three fills clear 3:1, and gains a neutral-600
+                outline at 4.08:1 against the plate to draw its extent.
+                `outline` and not `border` because outline is painted outside
+                the box — the 3px bar keeps its 3px.
+              */}
+              <span className="block h-[3px] overflow-hidden rounded-[2px] bg-neutral-800 outline-1 outline-neutral-600">
                 <span
                   className={cn(
                     "block h-full rounded-[2px] transition-[width] duration-[400ms] ease-out",

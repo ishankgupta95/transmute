@@ -19,6 +19,32 @@ const CAPABILITIES = [
   { tag: "DEV", text: "Build CSS gradients and box shadows, pick colours" },
 ] as const;
 
+/*
+  This page used to tell every visitor that working in the tab means "faster
+  results, no queue, no size cap, and nothing to sign up for". Three of those
+  four are still true. "No size cap" is the same unqualified absolute that was
+  taken off the drop zones, the spec rows and the homepage tile, and it is
+  false in two different ways at once: nine tools ENFORCE a 1.5 GB ceiling and
+  refuse a larger file outright ("File is too large (1.56 GB). Maximum is
+  1.5 GB." on /video-trimmer), and seventeen more hold the whole file in the
+  tab and disclose that on their own drop zone. A site-wide claim that the
+  tools themselves contradict is worse than no claim.
+
+  So the paragraph names the numbers instead of denying them, and counts them
+  off the registry so they cannot go stale the way the sentence did.
+  `Tool.takesNoFile` keeps the denominator honest — a password generator has
+  nothing to say about file sizes.
+*/
+const FILE_TOOLS = tools.filter((t) => !t.takesNoFile);
+const UNCAPPED_COUNT = FILE_TOOLS.filter((t) => !t.maxSizeMB && !t.practicalLimitNote).length;
+const ENFORCED_CAPS = tools.filter((t) => t.maxSizeMB);
+const MEMORY_BOUND_COUNT = tools.filter((t) => t.practicalLimitNote).length;
+/* Every enforced cap on the site is the same number; printed the way the drop
+   zones print it (`formatCap` in DropZone.tsx), not as "1536 MB". */
+const CAP_GB = (Math.max(...ENFORCED_CAPS.map((t) => t.maxSizeMB ?? 0)) / 1024)
+  .toFixed(2)
+  .replace(/\.?0+$/, "");
+
 const H2 = "m-0 font-display text-[17px] leading-[1.25] font-medium text-text-primary";
 const BODY = "m-0 font-body text-sm leading-[1.75] text-neutral-400";
 const RULE =
@@ -45,8 +71,17 @@ export default function AboutPage() {
           <p className={BODY}>
             Most online converters ask you to upload a file, wait in a queue, and trust
             them with it. Transmute does the work in your tab instead. That means faster
-            results, no queue, no size cap, and nothing to sign up for — because there is
-            no account and no data to hand over.
+            results, no queue, and nothing to sign up for — because there is no account
+            and no data to hand over.
+          </p>
+          <p className={BODY}>
+            What it does not mean is no limit. There is no upload limit, because there is
+            no upload — but a browser tab has a ceiling of its own, and the honest thing
+            is to name it. {UNCAPPED_COUNT} of the {FILE_TOOLS.length} tools that take a
+            file take one of any size. {ENFORCED_CAPS.length} enforce a {CAP_GB} GB cap
+            and print it on the drop zone before you pick anything, and{" "}
+            {MEMORY_BOUND_COUNT} more hold the whole file in memory to do their work and
+            say so on the page rather than promise otherwise.
           </p>
         </section>
 
@@ -73,8 +108,8 @@ export default function AboutPage() {
           <h2 className={H2}>How it is built</h2>
           <p className={BODY}>
             Next.js and TypeScript, exported as a fully static site. The heavy lifting is
-            done by FFmpeg.wasm, pdf-lib, pdf.js, the Canvas API, Web Audio and
-            WebCodecs. Because everything compiles to static HTML, CSS and JavaScript,
+            done by FFmpeg.wasm, pdf-lib, pdf.js, qpdf, the Canvas API, Web Audio
+            and WebCodecs. Because everything compiles to static HTML, CSS and JavaScript,
             there is no backend — and therefore nothing that can leak your files.{" "}
             {tools.length} tools ship this way today.
           </p>

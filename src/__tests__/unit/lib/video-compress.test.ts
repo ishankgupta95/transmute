@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // --- Hoisted mocks for vi.mock factories ---
@@ -74,7 +77,15 @@ const mockVideoEncoderFlush = vi.fn().mockResolvedValue(undefined);
 const mockVideoEncoderClose = vi.fn();
 const mockVideoEncoderConfigure = vi.fn();
 
-function MockVideoEncoder() {
+/*
+  Every `VideoEncoderInit` the engine hands to `new VideoEncoder(...)`, so a
+  test can drive the `output` callback the way a real encoder would — which is
+  the only place the muxer's metadata requirement is checked.
+*/
+const videoEncoderInits: VideoEncoderInit[] = [];
+
+function MockVideoEncoder(init: VideoEncoderInit) {
+  videoEncoderInits.push(init);
   return {
     encode: mockVideoEncoderEncode,
     flush: mockVideoEncoderFlush,
@@ -134,12 +145,17 @@ vi.stubGlobal("URL", {
   revokeObjectURL: mockRevokeObjectURL,
 });
 
-import { compressVideo } from "@/lib/tools/video-compress";
+import {
+  compressVideo,
+  WEBCODECS_AAC_MESSAGE,
+  WEBCODECS_MP4_METADATA_MESSAGE,
+} from "@/lib/tools/video-compress";
 import type { CompressionPreset } from "@/lib/tools/video-compress";
 
 describe("compressVideo", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    videoEncoderInits.length = 0;
     mockAudioEncoderIsConfigSupported.mockResolvedValue({ supported: true });
     mockResolveDuration.mockImplementation((video: { duration: number }) =>
       Promise.resolve(video.duration),
@@ -528,5 +544,97 @@ describe("compressVideo", () => {
         mockAudioEncoderIsConfigSupported.mock.calls[0][0],
       );
     });
+  });
+
+  describe("a browser whose encoder cannot feed the muxer", () => {
+    /*
+      F20. mp4-muxer needs the H.264 codec description that rides on the FIRST
+      chunk's metadata; it stores it as `track.info.decoderConfig` and reaches
+      straight into `.colorSpace`. WebKit encodes the frames but returns no
+      description, so the sentence the user was shown was the library's own —
+      verbatim: "null is not an object (evaluating
+      'track.info.decoderConfig.colorSpace')".
+
+      The engine now refuses to hand a chunk over until a description arrives,
+      so the same browser fails with a sentence a person can act on.
+    */
+    /** Drive the encoder's own `output` callback the way WebCodecs would. */
+    function emitChunk(meta: EncodedVideoChunkMetadata | undefined) {
+      mockVideoEncoderEncode.mockImplementation(() => {
+        videoEncoderInits[0]?.output?.(
+          { type: "key", timestamp: 0, duration: 33_333 } as unknown as EncodedVideoChunk,
+          meta as EncodedVideoChunkMetadata,
+        );
+      });
+    }
+
+    it("says so in words when the first chunk carries no codec description", async () => {
+      emitChunk(undefined);
+      const file = new File(["video"], "input.mp4", { type: "video/mp4" });
+
+      await expect(compressVideo(file, "web")).rejects.toThrow(
+        /doesn't return the H.264 codec description/,
+      );
+      // …and the muxer never saw the chunk that would have crashed it.
+      expect(mockAddVideoChunk).not.toHaveBeenCalled();
+    });
+
+    it("refuses metadata that exists but holds no decoderConfig", async () => {
+      // WebKit's shape: a metadata object arrives, the description does not.
+      emitChunk({} as EncodedVideoChunkMetadata);
+      const file = new File(["video"], "input.mp4", { type: "video/mp4" });
+
+      await expect(compressVideo(file, "web")).rejects.toThrow(/Chrome or Edge/);
+      expect(mockAddVideoChunk).not.toHaveBeenCalled();
+    });
+
+    it("passes every chunk through once a description has arrived", async () => {
+      /*
+        The guard must not become a per-chunk test: Chrome sends the
+        description on the first chunk ONLY, so rejecting later chunks for
+        lacking one would break every healthy encode. Three frames are pumped
+        by the harness; the first carries the config, the next two do not.
+      */
+      let emitted = 0;
+      mockVideoEncoderEncode.mockImplementation(() => {
+        const meta =
+          emitted++ === 0
+            ? ({ decoderConfig: { codec: "avc1.640034" } } as EncodedVideoChunkMetadata)
+            : ({} as EncodedVideoChunkMetadata);
+        videoEncoderInits[0]?.output?.(
+          { type: "key", timestamp: 0, duration: 33_333 } as unknown as EncodedVideoChunk,
+          meta,
+        );
+      });
+      const file = new File(["video"], "input.mp4", { type: "video/mp4" });
+
+      const result = await compressVideo(file, "web");
+
+      expect(result.blob).toBeInstanceOf(Blob);
+      expect(mockAddVideoChunk).toHaveBeenCalledTimes(3);
+    });
+  });
+});
+
+describe("the two sentences CompressVideoUI has to repeat verbatim", () => {
+  /*
+    The pre-flight in CompressVideoUI prints these before a file is dropped;
+    the engine throws them mid-run. They are DUPLICATED rather than imported —
+    a static import of this module would drag mp4-muxer and the whole encode
+    path into the eager bundle of two tool pages — so the thing a comment
+    cannot enforce is enforced here instead: the page and the post-click error
+    must never say different things about the same browser.
+  */
+  const ui = readFileSync(
+    resolve(process.cwd(), "src/components/tools/CompressVideoUI.tsx"),
+    "utf8",
+  );
+
+  it("keeps the AAC sentence identical on both sides", () => {
+    expect(ui).toContain(WEBCODECS_AAC_MESSAGE);
+  });
+
+  it("keeps the MP4-metadata sentence identical on both sides", () => {
+    expect(ui).toContain(WEBCODECS_MP4_METADATA_MESSAGE);
   });
 });

@@ -40,6 +40,37 @@ export function MobileNav() {
         e.preventDefault();
         setOpen(false);
         buttonRef.current?.focus();
+        return;
+      }
+      if (e.key !== "Tab") return;
+      /*
+        `aria-modal="true"` hides the rest of the page from assistive tech but
+        does nothing to the tab order, and this panel is portalled to <body>
+        (below), so Tab off the last link walked straight into the content the
+        overlay is covering — invisible focus, on a page the user believes is
+        behind a menu. WCAG 2.4.3.
+      */
+      const panel = panelRef.current;
+      if (!panel) return;
+      const stops = panel.querySelectorAll<HTMLElement>(
+        'a[href], button:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      );
+      if (stops.length === 0) return;
+      const first = stops[0];
+      const last = stops[stops.length - 1];
+      // Focus outside the panel entirely (the trigger, or <body> after a
+      // click on the backdrop) is pulled back in rather than left loose.
+      if (!panel.contains(document.activeElement)) {
+        e.preventDefault();
+        (e.shiftKey ? last : first).focus();
+        return;
+      }
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
       }
     };
     document.addEventListener("keydown", onKeyDown);

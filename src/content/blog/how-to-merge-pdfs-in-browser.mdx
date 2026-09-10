@@ -1,6 +1,6 @@
 Merging PDFs is the most common reason people open an "online PDF tool." Tax return + receipts. Job application + portfolio + references. Lease + amendments + signatures. The use cases are mundane, but the privacy concerns aren't — most of the documents people merge are also documents they would prefer not to upload to a stranger's server.
 
-Browser-based merging solves the problem cleanly: the merge happens in your tab, the merged file downloads to your machine, and nothing leaves your device. This guide explains how that actually works, what's preserved and what isn't, and how to handle the edge cases — page reordering, large documents, password-protected files, and broken bookmarks.
+Browser-based merging solves the problem cleanly: the merge happens in your tab, the merged file downloads to your machine, and nothing leaves your device. This guide explains how that actually works, what's preserved and what isn't, and how to handle the edge cases — page reordering, large documents, password-protected files that have to be unlocked first, and broken bookmarks.
 
 ## What "merging" actually means
 
@@ -96,13 +96,16 @@ For most use cases, the merged page numbering you add at the end is what readers
 
 ## Password-protected and signed PDFs
 
-Most browser-based mergers cannot handle password-protected PDFs without first decrypting them. The standard PDF security model uses RC4 or AES encryption keyed off the password, and the merge step needs decrypted content.
+A password-protected PDF cannot be merged as it stands: the encryption has to come off first. The standard PDF security model uses RC4 or AES encryption keyed off the password, and the merge step needs decrypted content — the page tree itself is unreadable until the file is decrypted. Drop one on the merge tool and it stops with a message rather than handing back something broken.
 
 The flow:
 
-1. Open each protected PDF in a viewer (Preview on Mac, Acrobat Reader, browser viewer)
-2. Save a copy with the password removed (most viewers offer this through "save as" or print-to-PDF)
-3. Merge the unprotected copies
+1. Run each protected PDF through [unlock PDF](/unlock-pdf), using the password you open it with. That step runs in your tab too — it is qpdf compiled to WebAssembly, and the decrypted copy never leaves your machine. It removes a password you already know; there is no cracking here, so a file you cannot open is a file you cannot merge.
+2. Merge the unlocked copies with [merge PDF](/merge-pdf) as usual.
+
+If a file opens without prompting you but refuses to print or copy, its protection is an owner password rather than a user one. The merge tool refuses it just the same, and unlock PDF still clears it — those restrictions are advisory in the format, so they come off without a password.
+
+Worth saying plainly, because it is the advice this section used to give: do not do this by opening each file in a viewer and printing it back to PDF. Print-to-PDF re-renders the pages as fresh graphics and throws the text layer away, so the merged result stops being searchable — and nothing warns you.
 
 Digital signatures, as mentioned, become invalid after merging. If signature integrity matters, do not merge signed PDFs — present them separately, or have the documents re-signed after merging.
 

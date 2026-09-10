@@ -28,11 +28,20 @@ const popularTools = POPULAR.map((p) => ({ ...p, tool: getToolBySlug(p.slug) }))
   (p): p is typeof p & { tool: Tool } => p.tool !== undefined,
 );
 
-/** What each workshop covers, and what actually runs it. */
-const WORKSHOPS: Record<string, { blurb: string; engine: string; icon: React.ReactNode }> = {
+/*
+  What each workshop covers. What RUNS it is not repeated here.
+
+  Every card used to carry its own `engine` string beside the one in
+  data/categories.ts, kept in step by a pair of comments that asked the next
+  editor to remember. They did not: this card said "WEB AUDIO" while the audio
+  hub one click away said "WEB AUDIO · LAMEJS · FFMPEG" and "DOWNLOAD 0–31 MB",
+  so the homepage understated a 31 MB fetch and a 254 KB one. The field is gone
+  and the card reads `cat.engine` straight off the category it is already
+  looping over, which is the only way two surfaces cannot disagree.
+*/
+const WORKSHOPS: Record<string, { blurb: string; icon: React.ReactNode }> = {
   "image-tools": {
     blurb: "HEIC, WebP, AVIF, compression to an exact KB, crop, resize, favicons, EXIF.",
-    engine: "CANVAS 2D",
     icon: (
       <>
         <rect x="32" y="48" width="192" height="160" rx="16" />
@@ -44,7 +53,6 @@ const WORKSHOPS: Record<string, { blurb: string; engine: string; icon: React.Rea
   },
   "pdf-tools": {
     blurb: "Merge, split, rotate, reorder pages, compress, add numbers, images to PDF.",
-    engine: "PDF-LIB · PDFJS",
     icon: (
       <>
         <path d="M56 128V40a8 8 0 0 1 8-8h96l40 40v56" />
@@ -58,7 +66,6 @@ const WORKSHOPS: Record<string, { blurb: string; engine: string; icon: React.Rea
   },
   "audio-tools": {
     blurb: "Trim on a waveform, merge clips, convert between MP3, WAV and M4A.",
-    engine: "WEB AUDIO",
     icon: (
       <>
         <path d="M96 200V56l112-24v144" />
@@ -69,7 +76,6 @@ const WORKSHOPS: Record<string, { blurb: string; engine: string; icon: React.Rea
   },
   "video-tools": {
     blurb: "Trim, compress, record your screen, pull the audio out, convert to GIF.",
-    engine: "FFMPEG · WEBCODECS",
     icon: (
       <>
         <rect x="24" y="56" width="176" height="144" rx="16" />
@@ -80,7 +86,6 @@ const WORKSHOPS: Record<string, { blurb: string; engine: string; icon: React.Rea
   },
   "developer-tools": {
     blurb: "JSON, JWT, regex, hashes, UUIDs, cron, gradients, diffs, timestamps.",
-    engine: "NATIVE JS",
     icon: (
       <>
         <polyline points="64 88 16 128 64 168" />
@@ -92,47 +97,255 @@ const WORKSHOPS: Record<string, { blurb: string; engine: string; icon: React.Rea
 };
 
 /*
+  ───────────────────────────────────────────────────────────────────────────
+  THE RULE THIS COLUMN OBEYS. One ruler, stated once, and it is short:
+  a row is an engine THIS ORIGIN SERVES AS ITS OWN FILE, and its DOWNLOAD
+  figure is the byte count of that file. Nothing else gets a row.
+  ───────────────────────────────────────────────────────────────────────────
+
+  That rule is why the figures below are measurements of files rather than
+  estimates, why `engine-disclosure.test.ts` can pin one to a file in public/
+  or node_modules/ and go red when the file changes size, and why a reader can
+  settle any of them against a line in the Network tab. (Not every row is
+  pinned yet — pdf-lib's "320 KB" is the one figure here that answers to no
+  file: the chunk /workers/ actually serves for it measured 431,490 bytes on
+  this build, and the blog post quotes ~445 KB. It is flagged, not fixed, in
+  this pass because inventing a fourth number for it is worse than leaving one
+  wrong one visible.)
+
+  It was being broken by the two rows that are no longer here. `pica` (36 KB)
+  and `utif2` (96 KB) are not served files: they are bundled into whichever
+  code-split chunk the importing tool lands in — `await import("utif2")` in
+  lib/tools/image-convert.ts is the same mechanism as `import("bwip-js/generic")`
+  in lib/tools/barcode.ts — and the paragraph that used to sit at the bottom of
+  this comment cited exactly that mechanism as the reason bwip-js, svgo and
+  mammoth had no row. One mechanism, two verdicts, and the three excluded were
+  each an order of magnitude bigger than the two included: 947,409 / 579,847 /
+  489,613 bytes against 96 KB and 36 KB.
+
+  Measuring is the deeper reason, not squeamishness. A bundled library has no
+  size of its own — it has whatever chunk the bundler put it in, alongside
+  whatever else that page happened to need. In the static export the chunks
+  carrying `utif2` measure 60,485, 36,086 and 380,757 bytes, the last of those
+  because utif2 is sharing a chunk with pdf-lib. There is no one number to put
+  in a column beside qpdf's 2,403,819 exact bytes, so putting one there makes
+  the column mean two things.
+
+  So bundled code is DISCLOSED rather than ROWED. `BUNDLED` below feeds a
+  paragraph under the table naming every bundled library that costs a real
+  download, with a figure measured off this site's own static export and marked
+  "about". What is not allowed, anywhere on the site, is silence: /licenses
+  described /barcode-generator as fetching nothing while it fetched 947,409
+  bytes of BWIPP encoder, and that is the defect this whole comment exists to
+  close.
+
   Every claim here is checked against the actual engine per tool — the design
   doc's seeded table credited FFmpeg with GIF encoding (it's gifenc) and
   undersold its own download. Sizes are the files we actually serve.
 
   Canvas 2D used to be credited with "every image conversion, compression,
-  resize and crop": resizing is pica's Lanczos3 in both the main-thread
-  (lib/tools/image-resize.ts) and worker (lib/workers/image.worker.ts) paths,
-  and HEIC and TIFF are decoded by heic2any and utif2 before Canvas ever sees a
-  bitmap — so those three have their own rows now. pdf.js did every page
-  thumbnail and every PDF→image render with no row at all; pdf-lib's row used
-  to say only "building a PDF out of images", which stopped being true when it
-  absorbed all seven page and document operations.
+  resize and crop", and three of those it does not do: resizing is pica's
+  Lanczos3 in both the main-thread (lib/tools/image-resize.ts) and worker
+  (lib/workers/image.worker.ts) paths, and HEIC and TIFF are decoded by
+  heic2any and utif2 before Canvas ever sees a bitmap. heic2any keeps a row
+  because /vendor/heic2any.js is a file we serve; pica and utif2 are named
+  under the table for the reason above. pdf.js did every page thumbnail and
+  every PDF→image render with no row at all; pdf-lib's row used to say only
+  "building a PDF out of images", which stopped being true when it absorbed all
+  seven page and document operations.
 
-  There is no PDF engine row with a download attached any more. This table used
-  to carry a 10 MB MuPDF WASM row that loaded on the first PDF; that engine is
-  gone from the app entirely, so merging, splitting, rotating, reordering,
-  numbering and compressing now cost nothing beyond the JavaScript already in
-  the page.
+  This table used to carry a 10 MB MuPDF WASM row that loaded on the first PDF;
+  that engine is gone from the app entirely, so merging, splitting, rotating,
+  reordering, numbering and compressing cost nothing beyond pdf-lib.
+
+  qpdf replaced none of that — it is a second, separate engine, and it has its
+  own row because it has its own download. Encryption, decryption, permissions
+  and repair are the four things pdf-lib cannot do (it cannot so much as parse
+  an AES-256 document), so protect-pdf, unlock-pdf, pdf-permissions and
+  repair-pdf fetch /qpdf.js and /qpdf.wasm — 63,089 + 2,340,730 bytes, 2.3 MB
+  together, the byte counts of the files we copy into public/. Size is the pair,
+  because you never get one without the other. It lands the first time one of
+  those tools reads a file, not when the page opens: the three that pre-flight
+  fetch it on the drop, repair-pdf on the click. Leaving it out would have made
+  the "no black box" framing above false on the one row a reader most needs.
+
+  The FFmpeg row was rewritten on 2026-09-05. It used to read "Container swaps
+  WITHOUT re-encoding … and MP3 extraction from video", and this table is framed
+  as exhaustive, so that sentence was doing two false things at once. The remux
+  cluster (2026-09-03) shipped an H.264 re-encode arm — video-remux.ts builds
+  "-c:v libx264" and VideoRemuxUI offers it as a toggle when a stream copy would
+  produce a file the user's player refuses — so "without re-encoding" described
+  the happy path as if it were the whole engine. And the audio matrix
+  (2026-09-04) added FLAC encoding and WMA decode, neither of which is "MP3
+  extraction from video". The loudness and silence filters are this session's
+  addition. The row now names the re-encode explicitly, because a reader
+  choosing this site over an uploader is entitled to know which of their pixels
+  get rewritten.
 
   lamejs has its own row for the same reason heic2any does: it is no longer
   bundled into the audio worker but fetched from /vendor/ at the first MP3
   encode, so folding it into Web Audio's "0 KB, built in" would hide a real
   254 KB request. Size is the byte count of the file we copy into public/vendor/.
+
+  zxing-wasm and libarchive are the developer hub's first real downloads, added
+  2026-09-05 with /qr-code-reader and /extract-archive. Both npm packages expect
+  to fetch their .wasm from a CDN — zxing-wasm hardcodes fastly.jsdelivr.net —
+  and shipping that unconfigured would have handed a third party the visitor's
+  IP on a site whose whole pitch is that nothing leaves the tab. So both are
+  staged into the origin root by `npm run copy:wasm` and loaded from there, and
+  the sizes below are again the byte counts of the files we copy into public/:
+  zxing_reader.wasm is 1,093,289 bytes and libarchive.wasm is 613,235 bytes.
+
+  Those two figures are the WebAssembly only. Each engine also has a JavaScript
+  loader, and that loader is bundled rather than served, so by the rule at the
+  top of this comment it is not part of the row — it is named under the table
+  with the rest of the bundled code, at about 37 KB and 65 KB (38,227 and
+  66,712 bytes, bundled and minified with esbuild). Keeping it out is also what
+  keeps the row exact: measured a second way libarchive's sum rounds to 665 KB
+  instead of 664, and a figure whose last digit turns on which bundler you asked
+  cannot be pinned to an artifact. One surface does quote the pair —
+  /qr-code-reader's ADVANCED rail renders 1.1 MB from ZXING_FIRST_SCAN_BYTES
+  while this row and the developer hub say 1.0 MB — and it is the outlier, not
+  the ruler; category-hub-claims.test.tsx now pins this row AND the hub to the
+  bytes of zxing_reader.wasm on disk so the anchor is the artifact rather than
+  another sentence on the site.
+
+  oxipng joins them on 2026-09-06 with /compress-png, and it is the first image
+  engine on this table since heic2any. The rule at the top settles the row
+  without argument: `npm run copy:wasm` stages
+  node_modules/@jsquash/oxipng/codec/pkg/squoosh_oxipng_bg.wasm into public/,
+  the worker fetches it from the origin root as /squoosh_oxipng_bg.wasm on the
+  first PNG, so it is a file this origin serves and 164,172 bytes is what the
+  Network tab shows — 160.3 KiB on this column's binary one-decimal ruler.
+  Its 6,307-byte wasm-bindgen loader is not part of the figure, for the reason
+  zxing's and libarchive's loaders are not: it is bundled into
+  /workers/image.worker.js rather than served, and by this comment's own rule
+  bundled code is disclosed under the table instead of rowed. It is far too
+  small to name there beside bwip-js, so it goes in the loaders clause under
+  the table with pica and utif2 — which is why that clause no longer counts
+  the engines it covers and no longer says every loader is tens of kilobytes.
+  It said "the two WebAssembly engines above" until oxipng made it three, and
+  6,307 bytes is not tens of kilobytes by any rounding: a sentence that has to
+  be edited every time an engine arrives is a sentence that will be wrong
+  between arrivals, so it names no count and states the outlier instead.
+
+  Why an image engine needs a row at all, when Canvas 2D sits at 0 KB two rows
+  up: re-encoding a PNG through a canvas is not compression. It decodes the
+  pixels and writes them again with the browser's own encoder, which is
+  routinely LARGER than what came in, and it is the no-op /compress-png exists
+  to replace. oxipng re-searches the filters and the deflate stream over the
+  same pixels, which is a different operation and needs a different engine.
+
+  What is NOT here is deliberate too. zxing-wasm publishes a writer build as
+  well; /barcode-generator does not use it — bwip-js draws those in JavaScript,
+  and the reader .wasm we serve contains no zint symbols at all. That is a
+  claim about WebAssembly and not about cost: bwip-js is the single largest
+  bundled download on the site, and it is named as such below. libarchive is
+  the read-only build: sixteen archive_read_support_format_* symbols and zero
+  archive_write_set_format_*, so /extract-archive cannot create an archive even
+  if someone asked it to.
 */
 const ENGINES = [
   { name: "Canvas 2D", handles: "Image conversion, compression and crop — plus the frames gifenc quantises into a GIF", size: "0 KB", when: "BUILT IN" },
-  { name: "pica", handles: "Image resizing, Lanczos3 — on the main thread and in the worker", size: "36 KB", when: "ON FIRST RESIZE" },
-  { name: "heic2any", handles: "Decoding iPhone HEIC, which Canvas cannot open", size: "1.3 MB", when: "ON FIRST HEIC" },
-  { name: "utif2", handles: "Decoding TIFF, likewise", size: "96 KB", when: "ON FIRST TIFF" },
+  { name: "heic2any", handles: "Decoding iPhone HEIC, which Canvas cannot open — TIFF is decoded by utif2, which is bundled rather than served and is named under the table", size: "1.3 MB", when: "ON FIRST HEIC" },
+  { name: "oxipng", handles: "Real PNG re-compression — the one image job a canvas re-encode cannot do at all", size: "160 KB", when: "ON FIRST PNG" },
   { name: "pdf.js", handles: "All PDF rendering — page thumbnails, and PDF to JPG or PNG", size: "1.6 MB", when: "ON PAGE PREVIEW" },
-  { name: "pdf-lib", handles: "Every PDF page and document operation — merge, split, rotate, reorder, page numbers, compression, and images into a PDF", size: "320 KB", when: "ON FIRST PDF" },
-  { name: "FFmpeg WASM", handles: "Lossless video trimming, MP3 extraction from video", size: "31 MB", when: "ON FIRST USE" },
+  { name: "pdf-lib", handles: "PDF page and document work — merge, split, rotate, reorder, page numbers, compression, and images into a PDF", size: "320 KB", when: "ON FIRST PDF" },
+  { name: "qpdf", handles: "PDF passwords and permissions — protect, unlock, restrict, and repair a damaged file", size: "2.3 MB", when: "ON FIRST USE" },
+  { name: "FFmpeg WASM", handles: "Stream-copy video work — container swaps, muting, rotating, trimming, splitting and joining — plus audio extraction and formats, loudness and silence filters, and the one H.264 re-encode offered when a copy would not play", size: "31 MB", when: "ON FIRST USE" },
   { name: "WebCodecs", handles: "Video compression and WebM→MP4, hardware H.264 encoding", size: "0 KB", when: "BUILT IN" },
   { name: "Web Audio", handles: "Decoding, trimming and merging audio", size: "0 KB", when: "BUILT IN" },
-  { name: "lamejs", handles: "MP3 encoding — the one codec browsers will decode but not write", size: "254 KB", when: "ON FIRST MP3" },
+  { name: "lamejs", handles: "MP3 encoding — the one codec browsers will decode but not write", size: "253 KB", when: "ON FIRST MP3" },
+  { name: "zxing-wasm", handles: "Reading QR codes and barcodes out of a dropped image — the zxing-cpp reader, self-hosted rather than fetched from its default CDN", size: "1.0 MB", when: "ON FIRST SCAN" },
+  { name: "libarchive", handles: "Opening TAR, 7z, RAR, CAB, ISO and CPIO, including tar.gz, tar.bz2 and tar.xz — listing what is inside and extracting it. This build cannot write an archive, and cannot open a bare .gz, .bz2 or .xz: a lone .gz is unpacked by the browser’s own DecompressionStream instead", size: "599 KB", when: "ON FIRST ARCHIVE" },
 ] as const;
+
+/*
+  The other half of the disclosure: the libraries that arrive INSIDE a tool's
+  own code-split chunk instead of as a file this origin names. By the rule at
+  the top of ENGINES they get no row, and until this pass they got no mention
+  either — which is how /licenses came to describe /barcode-generator as
+  fetching nothing while it fetched 947,409 bytes.
+
+  Sizes are the chunks this site's own static export emits (`npm run build`,
+  out/_next/static/chunks), rounded on the same binary ruler the table uses:
+
+    bwip-js        947,409 B  out/…/0_rlp8txzn-b0.js  (BWIPP encoders, nothing else)
+    svgo           579,847 B  out/…/03aw_xbxoykjg.js
+    mammoth        489,613 B  out/…/0-ttxtgopk56i.js  (mammoth + its jszip + pako)
+    sql-formatter  294,798 B  out/…/0fx2vcg6z4pj2.js
+    jszip          127,460 B  out/…/05-w2owfel3~q.js  (jszip + pako)
+
+  sql-formatter is the one that shows why this list had to be measured rather
+  than guessed at: the comment this replaced filed it with "js-yaml, marked,
+  turndown, diff, qrcode" as an obviously-small parsing library, and it is
+  bigger than jszip.
+
+  Every one of them says "about", and that word is doing real work rather than
+  hedging: the bundler decides how a library is split and who it shares with.
+  The four above happen to sit in chunks of their own (mammoth's carries the
+  jszip and pako it depends on, and the note says so), which is why they are
+  quotable at all — utif2, by contrast, appears in a 60,485-byte chunk on one
+  page and inside a 380,757-byte one shared with pdf-lib on another, and has no
+  figure that would mean anything. None of this can be pinned to an artifact
+  the way a served file can, which is why it is prose under the table rather
+  than a number in it — and why it is still here, because "about 925 KB" is
+  very much closer to the truth than saying nothing.
+*/
+const BUNDLED = [
+  { name: "bwip-js", size: "925 KB", where: "/barcode-generator" },
+  { name: "svgo", size: "566 KB", where: "/svg-optimizer" },
+  { name: "mammoth", size: "478 KB", where: "/docx-to-markdown" },
+  { name: "sql-formatter", size: "288 KB", where: "/sql-formatter" },
+  { name: "jszip", size: "124 KB", where: "/create-zip and /unzip-files" },
+] as const;
+
+const BUNDLED_SENTENCE = BUNDLED.map(
+  (b) => `about ${b.size} of ${b.name} on ${b.where}`,
+).join("; ");
+
+/*
+  Counted, not asserted — and counted over the right population, which took two
+  goes.
+
+  This tile used to read "∞ — file size ceiling, your RAM is the only limit",
+  and by now both halves were wrong: nine tools enforce a 1.5 GB cap
+  (`Tool.maxSizeMB`), seventeen more hold the whole file in memory and say so
+  (`Tool.practicalLimitNote`), and the wall behind all of them is V8's ~2 GB
+  single-buffer limit rather than the machine's RAM — the derivation block at
+  the top of src/lib/tools/ffmpeg-loader.ts measures it at 2040 MiB ok /
+  2047 MiB `RangeError`.
+
+  The count that replaced it was "neither field", and that was wrong too, in a
+  quieter way: 24 of the tools it counted take no file at all. A password
+  generator has nothing to say about file sizes — /password-generator's own
+  spec panel reads ACCEPTS: NONE, MAX SIZE: NONE — so counting it as a tool
+  that takes a file of any size overstated 66 as 90. A count is only better
+  than the absolute claim it replaced if the count is right.
+
+  So the denominator is the tools that take a file (`!t.takesNoFile`), and the
+  two halves of the sentence partition exactly that set: 66 print "NO SIZE CAP"
+  because they have no ceiling anyone has found, 26 name one.
+  `src/__tests__/unit/data/file-input-claims.test.ts` checks `takesNoFile`
+  against what each component actually mounts, and
+  `src/__tests__/unit/data/size-claims.test.ts` keeps the ceiling half honest.
+*/
+const FILE_TOOLS = tools.filter((t) => !t.takesNoFile);
+const UNCAPPED_TOOL_COUNT = FILE_TOOLS.filter(
+  (t) => !t.maxSizeMB && !t.practicalLimitNote,
+).length;
+const BOUNDED_TOOL_COUNT = FILE_TOOLS.length - UNCAPPED_TOOL_COUNT;
 
 const STATS = [
   { n: "0", label: "bytes of your files sent anywhere, on any tool, ever" },
   { n: String(TOOL_COUNT), label: "tools, from HEIC conversion to cron expressions" },
-  { n: "∞", label: "file size ceiling — your RAM is the only limit" },
+  {
+    n: String(UNCAPPED_TOOL_COUNT),
+    // "of the N that take one" is load-bearing, not padding: the tile above
+    // this one counts all 116 tools, so a bare "the other 26" would be read
+    // against that and would once again be counting generators.
+    label: `of the ${FILE_TOOLS.length} tools that take a file, this many take one of any size — the other ${BOUNDED_TOOL_COUNT} name their ceiling`,
+  },
   { n: "—", label: "no account, no email, no trial, no watermark" },
 ] as const;
 
@@ -246,7 +459,7 @@ export default function Home() {
                     {w.blurb}
                   </div>
                   <div className="mt-auto font-mono text-[10.5px] leading-none tracking-[0.06em] text-text-muted">
-                    {w.engine}
+                    {cat.engine}
                   </div>
                 </Link>
               );
@@ -358,8 +571,10 @@ export default function Home() {
               What is actually running
             </h2>
             <p className="m-0 font-body text-[13px] leading-[1.6] text-text-muted">
-              No black box. These are the engines compiled into the page, and what each
-              one costs you on first use.
+              No black box. Every engine this site serves you as its own file, and what
+              that file costs the first time a tool needs it. The parsing libraries that
+              ride inside a tool&rsquo;s own bundle are not files, so they are named under
+              the table rather than guessed at inside it.
             </p>
           </div>
 
@@ -397,6 +612,22 @@ export default function Home() {
                 </div>
               ))}
             </div>
+            <p className="m-0 border-t border-border px-[18px] py-3.5 font-body text-[12px] leading-[1.6] text-text-muted">
+              <span className="font-mono text-[9.5px] tracking-[0.12em] text-neutral-400">
+                BUNDLED, NOT SERVED
+              </span>{" "}
+              &mdash; a handful of tools reach for a parsing library that arrives inside
+              that tool&rsquo;s own code-split chunk instead of as a file named above. It
+              is a real download and this is roughly the size of it:{" "}
+              {BUNDLED_SENTENCE}. Smaller ones &mdash; utif2 for TIFF, pica for resizing,
+              js-yaml, marked, turndown, diff, qrcode, gifenc, and the JavaScript loaders
+              for the WebAssembly engines above &mdash; are at most tens of kilobytes
+              each rather than hundreds; oxipng&rsquo;s wasm-bindgen loader, the smallest
+              of them, is 6,307 bytes. Every figure here says
+              &ldquo;about&rdquo; because the bundler decides how a library is split, and
+              the same library measures differently on two pages; the numbers come from
+              this site&rsquo;s own static export.
+            </p>
           </div>
         </div>
       </section>

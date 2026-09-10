@@ -83,3 +83,23 @@ export function stepDimensions(
 export function scaledToTargetWarning(width: number, height: number): string {
   return `Scaled to ${width}×${height} to reach the target size.`;
 }
+
+/**
+ * The document-level counterpart to `scaledToTargetWarning`, for the PDF image
+ * recompressor: one PDF holds many images at many sizes, so there is no single
+ * W×H to name — the honest disclosure is the factor the images were scaled by.
+ * One producer, one exact string.
+ *
+ * The trailing clause is not padding. The factor is applied per image through
+ * the same `MIN_LONGEST_SIDE` floor this module owns, so an image whose longest
+ * side would fall below it is scaled LESS than the number quoted here (a 40 px
+ * bullet icon is not ground to 20 px to save four bytes). Stating the factor
+ * flatly would therefore be false for exactly those images, which is the kind
+ * of small, checkable inaccuracy this project treats as a bug.
+ */
+export function scaledImagesWarning(scale: number): string {
+  return (
+    `Images scaled to ${Math.round(scale * 100)}% of their original size to reach the target — ` +
+    `except any that would have fallen below ${MIN_LONGEST_SIDE}px, which were scaled less.`
+  );
+}

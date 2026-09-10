@@ -6,9 +6,39 @@
 /public/ffmpeg-core.js
 /public/ffmpeg-core.wasm
 
+# The qpdf engine, staged the same way — but from vendor/qpdf/ rather than
+# node_modules, because qpdf is not an npm package. The checked-in copies are
+# the source of truth; these are the build's.
+/public/qpdf.js
+/public/qpdf.wasm
+
+# The barcode reader and the archive reader, staged from node_modules by the
+# same script. Both npm packages ship their .wasm expecting to fetch it from a
+# CDN at runtime — zxing-wasm hardcodes fastly.jsdelivr.net — so the copy here
+# is not an optimisation, it is what keeps the "nothing leaves this origin"
+# promise on /privacy true. The loaders point at these paths; the packages'
+# own URL resolution is never allowed to run.
+/public/zxing_reader.wasm
+/public/libarchive.wasm
+
+# The PNG re-compressor, staged the same way. @jsquash/oxipng's glue locates
+# its binary as `new URL("squoosh_oxipng_bg.wasm", import.meta.url)`, which
+# inside the esbuild-bundled worker resolves to /workers/… and 404s — so the
+# loader passes this path explicitly and the package's own resolution never
+# runs. Single-thread build only: the parallel one needs SharedArrayBuffer and
+# this origin cannot be cross-origin-isolated.
+/public/squoosh_oxipng_bg.wasm
+
 # Pool workers (bundled from src/lib/workers by scripts/build-workers.mjs,
 # invoked by `npm run copy:wasm` — same build-artifact treatment as the WASM).
 /public/workers/
+
+# The service worker, bundled from src/lib/pwa/service-worker.ts by the same
+# script but emitted to the ORIGIN ROOT rather than /workers/: a worker at
+# /workers/sw.js could only ever claim scope /workers/*, and GitHub Pages
+# cannot send the Service-Worker-Allowed header that would widen it.
+# public/offline.html beside it is HAND-WRITTEN and stays tracked.
+/public/sw.js
 
 # LGPL libraries copied verbatim from node_modules by `npm run copy:wasm`.
 # They are loaded from here at runtime instead of being bundled, which is what

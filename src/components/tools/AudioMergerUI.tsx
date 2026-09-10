@@ -18,6 +18,14 @@ import {
 import { ToolControl, ToolControlGroup, ToolProgress } from "@/components/tools/ToolControls";
 import { CanvasHeader, StatStrip } from "@/components/tools/ToolCanvas";
 import { CANVAS_COLUMN } from "@/components/workspace/shared";
+import { getToolBySlug } from "@/data/tools";
+
+/*
+  Read from the registry so the zone and the spec panel say one thing. This is
+  a disclosure, not a check — nothing is compared against `file.size`, and the
+  tool still accepts every queue it accepted before.
+*/
+const PRACTICAL_LIMIT_NOTE = getToolBySlug("merge-audio")?.practicalLimitNote;
 
 export function AudioMergerUI() {
   const [files, setFiles] = useState<File[]>([]);
@@ -95,6 +103,7 @@ export function AudioMergerUI() {
         <DropZone
           accept=".mp3,.wav,.ogg,.m4a,.flac,.aac"
           multiple
+          practicalLimitNote={PRACTICAL_LIMIT_NOTE}
           onFiles={handleFiles}
           disabled={status === "processing"}
         />

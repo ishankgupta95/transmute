@@ -8,7 +8,7 @@ import {
   probeImageInPage,
   toolError,
 } from "./support";
-import { assertJpeg, assertPng, hasExifSegment } from "./validators";
+import { assertJpeg, assertPng, assertWebp, hasExifSegment } from "./validators";
 
 /**
  * Image pipelines run on canvas + pica, neither of which exists in jsdom, so
@@ -178,8 +178,11 @@ test.describe("image conversions — real output", () => {
     await expect(dl, `crop failed: ${await toolError(page)}`).toBeVisible({ timeout: 60_000 });
     const { name, bytes } = await captureDownload(page, dl);
 
-    // `cropImage` always re-encodes to lossless PNG regardless of input type —
-    // deliberate, and pinned by src/__tests__/unit/lib/image-crop.test.ts.
+    // Nothing is picked here, so this is the default arm: lossless PNG
+    // regardless of input type. crop-image was PNG-only until the shared
+    // format picker landed and the default did not move with it — pinned by
+    // src/__tests__/unit/lib/image-crop.test.ts. The picked arms are the two
+    // tests below.
     expect(name).toMatch(/\.png$/);
     const png = assertPng(bytes);
     const dims = await probeImageInPage(page, bytes, "image/png");
@@ -189,6 +192,58 @@ test.describe("image conversions — real output", () => {
     expect(dims.width).toBeLessThanOrEqual(800);
     expect(dims.height).toBeGreaterThan(0);
     expect(dims.height).toBeLessThanOrEqual(600);
+  });
+
+  test("crop-image encodes JPG when JPG is picked, and the browser can decode it", async ({
+    page,
+  }) => {
+    await page.goto("/crop-image");
+    await uploadFixture(page, await SAMPLES.jpg());
+
+    // The format chips only exist before a crop — the rail gives way to the
+    // download once a result lands — so the pick happens first.
+    await page.getByRole("button", { name: "JPG", exact: true }).click();
+    await primaryAction(page, /^Crop$/).click();
+
+    const dl = downloadAffordance(page);
+    await expect(dl, `JPG crop failed: ${await toolError(page)}`).toBeVisible({ timeout: 60_000 });
+    const { name, bytes } = await captureDownload(page, dl);
+
+    expect(name).toMatch(/\.jpg$/);
+    assertJpeg(bytes);
+    // Decoding it in the page proves the opaque-fill path produced a real
+    // picture and not a canvas the encoder choked on.
+    const dims = await probeImageInPage(page, bytes, "image/jpeg");
+    expect(dims.width).toBeGreaterThan(0);
+    expect(dims.width).toBeLessThanOrEqual(800);
+  });
+
+  test("crop-image never saves PNG bytes under a .webp name", async ({ page }) => {
+    await page.goto("/crop-image");
+    await uploadFixture(page, await SAMPLES.jpg());
+
+    await page.getByRole("button", { name: "WEBP", exact: true }).click();
+    await primaryAction(page, /^Crop$/).click();
+
+    /*
+      Two correct outcomes, and this spec runs in a browser for each: a real
+      RIFF/WEBP container, or the named refusal. `canvas.toBlob` substitutes
+      PNG for a type it cannot encode (image-convert.ts:5-9), which is why
+      image-crop.ts sniffs the container rather than trusting the request — the
+      third outcome, PNG bytes saved as `.webp`, is what this test forbids.
+    */
+    const dl = downloadAffordance(page);
+    const refusal = page.locator('[role="alert"]').filter({ hasText: /can't encode WebP/i });
+    await expect(dl.or(refusal).first()).toBeVisible({ timeout: 60_000 });
+
+    if ((await refusal.count()) > 0) {
+      expect(await dl.count(), "a refused encode must offer nothing to download").toBe(0);
+      return;
+    }
+
+    const { name, bytes } = await captureDownload(page, dl);
+    expect(name).toMatch(/\.webp$/);
+    assertWebp(bytes);
   });
 
   test("exif-viewer reads GPS and strips it on demand", async ({ page }) => {

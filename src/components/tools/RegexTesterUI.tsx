@@ -26,6 +26,16 @@ import { evalRegexGuarded, regexRunsInline } from "@/lib/workers/regex-client";
 import { useCopied } from "@/hooks/useCopied";
 import { formatFileSize } from "@/lib/utils/file-helpers";
 
+/**
+ * Focus ring for the keyboard-focusable text panes below. It cannot live in
+ * `TEXT_PANE_BODY` today, and it needs `outline-solid` of its own:
+ * `TEXT_PANE_BODY` ends in `focus:outline-none`, which sets
+ * `--tw-outline-style: none`, and a bare `focus-visible:outline-2` resolves
+ * its style from that same variable — so the ring would compile to nothing.
+ */
+const PANE_FOCUS =
+  "focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-accent";
+
 /** What each flag letter does, for the rail's hint line. */
 const FLAGS: readonly { flag: string; hint: string }[] = [
   { flag: "g", hint: "global" },
@@ -172,8 +182,11 @@ export function RegexTesterUI() {
               size={formatFileSize(new Blob([testStr]).size)}
             >
               <div
+                tabIndex={0}
+                role="region"
+                aria-label="Match highlights"
                 data-testid="regex-highlight"
-                className={TEXT_PANE_BODY}
+                className={cn(TEXT_PANE_BODY, PANE_FOCUS)}
                 dangerouslySetInnerHTML={{ __html: highlighted }}
               />
             </TextPane>

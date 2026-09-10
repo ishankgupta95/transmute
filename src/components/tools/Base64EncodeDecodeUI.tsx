@@ -20,7 +20,18 @@ import { cn } from "@/lib/utils/cn";
 import { ToolControl, ToolControlGroup } from "@/components/tools/ToolControls";
 import { CANVAS_COLUMN } from "@/components/workspace/shared";
 import { useCopied } from "@/hooks/useCopied";
+import { decodeBase64ToBytes } from "@/lib/tools/base64-image";
 import { formatFileSize } from "@/lib/utils/file-helpers";
+
+/**
+ * Focus ring for the keyboard-focusable text panes below. It cannot live in
+ * `TEXT_PANE_BODY` today, and it needs `outline-solid` of its own:
+ * `TEXT_PANE_BODY` ends in `focus:outline-none`, which sets
+ * `--tw-outline-style: none`, and a bare `focus-visible:outline-2` resolves
+ * its style from that same variable — so the ring would compile to nothing.
+ */
+const PANE_FOCUS =
+  "focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-accent";
 
 export function Base64EncodeDecodeUI() {
   const [mode, setMode] = useState<"encode" | "decode">("encode");
@@ -48,15 +59,16 @@ export function Base64EncodeDecodeUI() {
           for (const b of bytes) binary += String.fromCharCode(b);
           setOutput(btoa(binary));
         } else {
-          // Accept URL-safe Base64 (-/_ , no padding) as used by JWTs and many
-          // APIs, and line-wrapped Base64 — `base64` wraps at 76 columns, and
-          // PEM bodies and `kubectl get secret -o yaml` values are wrapped.
-          // `atob` tolerates the newlines itself; it was the `% 4` padding
-          // arithmetic below that counted them and produced a wrong pad.
-          let normalized = text.replace(/\s+/g, "").replace(/-/g, "+").replace(/_/g, "/");
-          while (normalized.length % 4) normalized += "=";
-          const binary = atob(normalized);
-          const bytes = Uint8Array.from(binary, (c) => c.charCodeAt(0));
+          // One decoder, shared with `base64-to-image`. It still accepts
+          // URL-safe Base64 (JWTs, many APIs) and line-wrapped Base64 (`base64`
+          // wraps at 76 columns; PEM bodies and `kubectl get secret -o yaml`
+          // values are wrapped), and the ordering that makes that work —
+          // whitespace stripped BEFORE the `% 4` padding arithmetic, which used
+          // to count the newlines and produce a wrong pad — is recorded in that
+          // module's header, where both callers can see it.
+          const bytes = decodeBase64ToBytes(text);
+          // Caught below, which already words this mode's failure.
+          if (!bytes) throw new Error("Invalid Base64 string");
           setOutput(new TextDecoder().decode(bytes));
         }
       } catch {
@@ -117,7 +129,12 @@ export function Base64EncodeDecodeUI() {
         <TextPanes columns={output ? 2 : 1}>
           {fileMode ? (
             <TextPane label="File" lines={undefined}>
-              <div className={cn(TEXT_PANE_BODY, "text-text-muted")}>
+              <div
+                tabIndex={0}
+                role="region"
+                aria-label="Selected file"
+                className={cn(TEXT_PANE_BODY, "text-text-muted", PANE_FOCUS)}
+              >
                 {fileName || "Drop a file above to encode it."}
               </div>
             </TextPane>

@@ -6,6 +6,7 @@ import {
   MIN_LONGEST_SIDE,
   MIN_SCALE_FACTOR,
   nextScale,
+  scaledImagesWarning,
   scaledToTargetWarning,
   stepDimensions,
 } from "@/lib/tools/target-size";
@@ -142,5 +143,42 @@ describe("scaledToTargetWarning", () => {
       "Scaled to 800×600 to reach the target size.",
     );
     expect(scaledToTargetWarning(64, 48)).toBe("Scaled to 64×48 to reach the target size.");
+  });
+});
+
+describe("scaledImagesWarning", () => {
+  /*
+    The document-level counterpart, used by recompress-pdf-images. It is a
+    single-producer user-facing string with no other coverage anywhere — the
+    UI is its only caller and the conversion suite does not assert on it — so
+    the wording is pinned here or it is pinned nowhere.
+  */
+  it("names the floor, because the factor is NOT applied to images near it", () => {
+    // The clause is load-bearing: clampScale raises the scale for any image
+    // whose longest side would drop under MIN_LONGEST_SIDE, so a flat "scaled
+    // to 50%" would be false for exactly those images.
+    expect(scaledImagesWarning(0.5)).toContain(`${MIN_LONGEST_SIDE}px`);
+  });
+
+  it("produces the exact user-facing string", () => {
+    expect(scaledImagesWarning(0.5)).toBe(
+      "Images scaled to 50% of their original size to reach the target — " +
+        "except any that would have fallen below 64px, which were scaled less.",
+    );
+    expect(scaledImagesWarning(0.729)).toBe(
+      "Images scaled to 73% of their original size to reach the target — " +
+        "except any that would have fallen below 64px, which were scaled less.",
+    );
+  });
+
+  it("never renders a bare 1 as a scale, because the caller gates on scale < 1", () => {
+    // Documents the contract between producer and caller rather than the
+    // maths: at scale 1 nothing was resized, so the sentence must not appear.
+    // If a future caller drops that gate, this string is what it would show.
+    expect(scaledImagesWarning(1)).toContain("Images scaled to 100% of their original size");
+  });
+
+  it("rounds rather than truncating, so a 99.6% scale does not read as 99%", () => {
+    expect(scaledImagesWarning(0.996)).toContain("Images scaled to 100% of their original size");
   });
 });

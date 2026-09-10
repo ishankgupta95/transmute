@@ -29,6 +29,27 @@ import { fileURLToPath } from "node:url";
  */
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+
+/*
+  Where the two notices files are written. Defaults to the checked-in location;
+  `--out-dir <path>` sends them somewhere else.
+
+  WHY THE FLAG EXISTS. `license-notices.test.ts` proves the checked-in notices
+  still describe the installed tree by regenerating and diffing, and its comment
+  said it "regenerates into a temporary location and compares" — which was not
+  true. It ran this script against the repo root, so the generator OVERWROTE the
+  very file the test then re-read. A stale file therefore failed the run once and
+  was silently repaired by it, so the next run passed: a gate that cannot fail
+  twice, which is this repo's own "a verification gate that cannot fail proves
+  nothing" in its subtler form. It also meant a test mutated the working tree.
+  With --out-dir the comparison is real and the tree is left alone.
+*/
+const outDirFlag = process.argv.indexOf("--out-dir");
+const outDir =
+  outDirFlag !== -1 && process.argv[outDirFlag + 1]
+    ? path.resolve(process.argv[outDirFlag + 1])
+    : path.join(root, "public/licenses");
+
 const BAR = "=".repeat(78);
 
 /**
@@ -160,14 +181,14 @@ for (const font of GOOGLE_FONTS) {
 }
 
 fs.writeFileSync(
-  path.join(root, "public/licenses/font-notices.txt"),
+  path.join(outDir, "font-notices.txt"),
   "Typeface notices for transmute.tools\n" +
     "Every typeface this site serves, with its own copyright line. The shared SIL\n" +
     "Open Font License text is at /licenses/ofl-1.1.txt.\n\n" +
     fontSections.join("\n"),
 );
 
-const out = path.join(root, "public/licenses/third-party-notices.txt");
+const out = path.join(outDir, "third-party-notices.txt");
 fs.writeFileSync(
   out,
   "Third-party notices for transmute.tools\n" +

@@ -1,0 +1,13 @@
+import * as bwipNs from "bwip-js/generic";
+const bwip = bwipNs.default ?? bwipNs;
+const t = (bcid, text, extra={}) => { try { bwip.toSVG({ bcid, text, scale: 2, height: 12, ...extra }); return "ok"; } catch (e) { return e.message.replace(/^bwipp\.[A-Za-z0-9_]+#\d+: /, ""); } };
+console.log("c128 500 mixed", t("code128", "aA1-".repeat(125)));
+console.log("c128 501 mixed", t("code128", "aA1-".repeat(125) + "x"));
+console.log("c39  500      ", t("code39", "A".repeat(500)));
+console.log("c39  501      ", t("code39", "A".repeat(501)));
+console.log("c39  500 +chk ", t("code39", "A".repeat(500), { includecheck: true }));
+console.log("c39  499 +chk ", t("code39", "A".repeat(499), { includecheck: true }));
+console.log("qr 5500 digits", t("qrcode", "1".repeat(5500)));
+console.log("qr 2300 latin ", t("qrcode", "a".repeat(2300)));
+console.log("qr 2331 latin ", t("qrcode", "a".repeat(2331)));
+console.log("qr 2332 latin ", t("qrcode", "a".repeat(2332)));

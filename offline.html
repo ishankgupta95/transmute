@@ -1,0 +1,203 @@
+<!doctype html>
+<!--
+  The navigation fallback, served by public/sw.js when a page request finds no
+  network AND no cached copy of that page.
+
+  SELF-CONTAINED ON PURPOSE. No stylesheet, no font file, no image, no script
+  file — every byte that renders this page is in this file. It is the page that
+  has to work when nothing else does, so it cannot reference a hashed chunk
+  that a deploy may have deleted, and it cannot wait on a woff2 that is not on
+  this device. That is also why out/404.html is the wrong page for this job:
+  it is a real Next page, and its four stylesheets and its script chunks are
+  exactly what is missing when this fires.
+
+  Un-hashed and copied verbatim from public/ into the export, so the URL
+  /offline.html is stable across every build — which is what lets the service
+  worker precache it by name (src/lib/pwa/service-worker.ts).
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex" />
+    <title>Offline · Transmute</title>
+    <style>
+      /* The Nocturne values from globals.css, written out literally: this file
+         cannot import the theme, and a token it cannot resolve renders black
+         on black. */
+      :root {
+        color-scheme: dark;
+        --page: #0f111c;
+        --text: #e9e9ed;
+        --muted: #b2b6ca;
+        --dim: #75798c;
+        --accent: #9184d9;
+        --accent-300: #d2cefd;
+        --line: rgba(233, 233, 237, 0.16);
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 40px 20px;
+        background: var(--page);
+        color: var(--text);
+        /* System stacks only — the site's Newsreader/Outfit/JetBrains faces are
+           hashed files under /_next/static/media and may not be on this
+           device. */
+        font-family:
+          system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+        -webkit-font-smoothing: antialiased;
+      }
+      main {
+        width: 100%;
+        max-width: 560px;
+      }
+      .eyebrow {
+        margin: 0;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: 10.5px;
+        font-weight: 500;
+        letter-spacing: 0.16em;
+        line-height: 1;
+        color: var(--accent-300);
+      }
+      h1 {
+        margin: 20px 0 16px;
+        font-size: clamp(28px, 5.5vw, 40px);
+        font-weight: 500;
+        letter-spacing: -0.028em;
+        line-height: 1.1;
+      }
+      p {
+        margin: 0 0 18px;
+        font-size: 15px;
+        line-height: 1.7;
+        color: var(--muted);
+      }
+      .row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        align-items: center;
+        margin-top: 26px;
+      }
+      button,
+      a.button {
+        appearance: none;
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        height: 44px;
+        padding: 0 18px;
+        border-radius: 8px;
+        border: 1px solid var(--line);
+        background: transparent;
+        color: var(--text);
+        font: inherit;
+        font-size: 14px;
+        text-decoration: none;
+        transition:
+          border-color 0.2s,
+          color 0.2s;
+      }
+      button {
+        border-color: var(--accent);
+        color: var(--accent-300);
+      }
+      button:hover,
+      a.button:hover {
+        border-color: var(--accent);
+        color: var(--accent-300);
+      }
+      button:focus-visible,
+      a.button:focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 2px;
+      }
+      footer {
+        margin-top: 34px;
+        padding-top: 18px;
+        border-top: 1px solid var(--line);
+        font-size: 12.5px;
+        line-height: 1.7;
+        color: var(--dim);
+      }
+      .mark {
+        display: block;
+        margin-bottom: 28px;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <!-- The "seam" mark with its arc unresolved, as /404 draws it — the
+           conversion that did not happen. Inline because an <img> here would
+           be one more request that fails. -->
+      <svg class="mark" width="44" height="44" viewBox="0 0 32 32" fill="none" aria-hidden="true">
+        <path
+          d="M13 6.5 H7.5 V25.5 H13"
+          stroke="#595d6c"
+          stroke-width="3"
+          stroke-linejoin="miter"
+          fill="none"
+        />
+        <path
+          d="M16.5 5 A11 11 0 0 1 16.5 27"
+          stroke="#595d6c"
+          stroke-width="3"
+          stroke-dasharray="3 4"
+          fill="none"
+        />
+      </svg>
+
+      <p class="eyebrow">NO NETWORK · SERVED FROM THIS DEVICE</p>
+
+      <h1>This page isn't on this device.</h1>
+
+      <p>
+        You are offline, and the page you asked for is not one this browser has stored. Pages
+        you have already opened on this device open normally while offline; this one has not
+        been opened here yet, so there is nothing to show you.
+      </p>
+
+      <p>
+        Nothing here ever needed a server — the conversions run inside the tab. What can be
+        missing offline is a file this device never downloaded: a tool's own code, if you have
+        not opened that tool here, or one of the separate engines — the video and audio engine,
+        the MP3 encoder, the HEIC decoder, the PDF security engine, the barcode, archive and PNG
+        readers. Those are on this device only if you chose to add them while online. Nothing was
+        downloaded on your behalf.
+      </p>
+
+      <div class="row">
+        <button type="button" id="retry">Try again</button>
+        <a class="button" href="/">Go to the home page</a>
+      </div>
+
+      <footer>
+        The home page will open: it is stored in the same place this page came from, so if you
+        can read this, it is there too. This page reloads by itself the moment your browser
+        reports a connection.
+      </footer>
+    </main>
+
+    <script>
+      // Two ways back, both local. Nothing here talks to a server.
+      document.getElementById("retry").addEventListener("click", function () {
+        location.reload();
+      });
+      // `online` fires when the browser regains an interface. It is not proof
+      // that the site is reachable — so this reloads and lets the request
+      // decide, rather than claiming to be back.
+      window.addEventListener("online", function () {
+        location.reload();
+      });
+    </script>
+  </body>
+</html>

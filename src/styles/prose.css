@@ -1,0 +1,6 @@
+@import "tailwindcss/theme.css" layer(theme) source(none);
+@import "tailwindcss/utilities.css" layer(utilities) source(none);
+@source "../app/blog";
+@source "../components/tools/MarkdownToPdfUI.tsx";
+@source "../components/tools/MarkdownToHtmlUI.tsx";
+@plugin "@tailwindcss/typography";

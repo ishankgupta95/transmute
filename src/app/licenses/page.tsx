@@ -20,11 +20,11 @@ export const metadata: Metadata = {
   // The root layout's template appends " | Transmute".
   title: "Licenses",
   description:
-    "Third-party licenses and notices for every engine transmute.tools ships — FFmpeg, qpdf, zxing-cpp, libarchive, oxipng, lamejs, libheif, ExifReader, and the permissive libraries behind the tools.",
+    "Third-party licenses and notices for every engine transmute.tools ships — FFmpeg, qpdf, Tesseract, zxing-cpp, libarchive, oxipng, lamejs, libheif, ExifReader and the permissive libraries beside them.",
   alternates: { canonical: "/licenses" },
 };
 
-const LAST_UPDATED = "05 SEP 2026";
+const LAST_UPDATED = "12 SEP 2026";
 
 /**
  * The site currently deploys at an apex domain with no basePath, so this
@@ -116,17 +116,19 @@ const ENGINES: readonly Engine[] = [
     id: "libheif",
     name: "libheif and libde265",
     spdx: "LGPL-3.0-OR-LATER",
-    ships: "Compiled inside heic2any 0.0.4 — served unbundled at /vendor/heic2any.js, byte for byte as published, and imported at runtime the first time you open a HEIC.",
+    ships: "libheif-js 1.23.2 — served unbundled at /vendor/libheif.js and /vendor/libheif.wasm, byte for byte as published, and loaded at runtime the first time you open a HEIC.",
     paras: [
-      "The heic2any wrapper is MIT, but the file it publishes has libheif and libde265 compiled into it, and both of those are LGPL. That makes the same replaceability condition apply to it as to lamejs, so it gets the same treatment: not bundled, served at its own stable URL, loaded by that URL at runtime. Replacing the HEIC decoder is replacing that single file.",
+      "libheif-js is an Emscripten build of libheif with libde265 for HEVC decoding, and both of those are LGPL. That makes the same replaceability condition apply to it as to lamejs, so it gets the same treatment: not bundled, served at its own stable URL, loaded by that URL at runtime. Replacing the HEIC decoder is replacing those two files — the loader reads the WebAssembly binary itself and hands it to the module, so a substituted binary at the same path is the one that runs.",
+      "The build is decode-only, which is what keeps it LGPL rather than GPL. Verified against the shipped bytes on 2026-09-12: it registers exactly one decoder plugin, libde265 1.0.15, and its only encoder is libheif's own built-in mask format. x265, x264, aom, rav1e, SVT-AV1 and kvazaar appear nowhere in it, so no GPL encoder is conveyed.",
+      "The package publishes the FSF's LGPL-3.0 boilerplate and no copyright line of its own, so the authors are named here rather than quoted from it: libheif and libde265 are copyright struktur AG and Dirk Farin; the npm distribution is maintained by Kiril Vatev.",
     ],
     refs: [
-      { href: "https://github.com/alexcorvi/heic2any", label: "WRAPPER SOURCE" },
+      { href: "https://github.com/catdad-experiments/libheif-js", label: "LIBHEIF-JS SOURCE" },
       { href: "https://github.com/strukturag/libheif", label: "LIBHEIF SOURCE" },
       { href: "https://github.com/strukturag/libde265", label: "LIBDE265 SOURCE" },
       { href: licenseText("lgpl-3.0.txt"), label: "LGPL-3.0 TEXT" },
       { href: licenseText("gpl-3.0.txt"), label: "GPL-3.0 TEXT" },
-      { href: licenseText("third-party-notices.txt"), label: "WRAPPER MIT NOTICE" },
+      { href: licenseText("third-party-notices.txt"), label: "FULL NOTICES" },
     ],
   },
   {
@@ -168,6 +170,30 @@ const ENGINES: readonly Engine[] = [
     ],
   },
   {
+    id: "tesseract",
+    name: "Tesseract (tesseract.js 7.0.0, tesseract.js-core 7.0.0)",
+    spdx: "APACHE-2.0",
+    ships: "Served from this origin under /tesseract/ as five files totalling 5,088,998 bytes \u2014 tesseract.esm.min.js (63,220), worker.min.js (111,307), tesseract-core-simd-lstm.js (89,271), tesseract-core-simd-lstm.wasm (2,857,601) and eng.traineddata.gz (1,967,599) \u2014 fetched the first time you read text out of an image, and not before.",
+    paras: [
+      "Taken prebuilt, but not from where it wanted to come from. Unlike qpdf, this is upstream\u2019s own published build, copied out of the npm packages byte for byte. What is changed is where it loads from: tesseract.js ships pointing at public CDNs \u2014 one for its WebAssembly core, another for the language model \u2014 so every path it resolves is overridden here and pointed at this origin instead. Those addresses are never contacted and never even constructed. A test asserts that the shipped source names no CDN, and the end-to-end suite fails a run in which any request left this origin, and equally a run in which the engine was never fetched at all, because a guard that cannot tell those two apart proves nothing.",
+      "One variant is served, not six. The core is published in six builds \u2014 SIMD, relaxed-SIMD and plain, each with and without the legacy engine \u2014 and the library picks one at runtime by feature detection unless it is told exactly which file to load. It is told: the fixed-SIMD, LSTM-only build. Fixed SIMD is the one instruction set available in every browser this site is tested against, and the LSTM-only build is 2.86 MB where the full one is 3.45 MB, with the difference being a legacy engine the language model here cannot drive anyway.",
+      "The language model is a separate work under the same licence. eng.traineddata comes from the tesseract-ocr/tessdata_fast repository, which publishes the LSTM \u201cfast\u201d English model under Apache-2.0. It is checked into this repository rather than fetched at build time \u2014 fetching it would mean trusting a third party at exactly the moment this site promises not to \u2014 and it is served gzipped. Its hash before and after decompression is pinned by a test, so a model swapped for a different line fails the build rather than shipping quietly.",
+    ],
+    libsCaption:
+      "What is inside the WebAssembly core, checked against the bytes this site serves rather than against a package manifest:",
+    libs: [
+      { name: "Tesseract OCR", license: "Apache-2.0" },
+      { name: "Leptonica (image processing)", license: "BSD-2-Clause" },
+      { name: "eng.traineddata (tessdata_fast)", license: "Apache-2.0" },
+    ],
+    refs: [
+      { href: "https://github.com/naptha/tesseract.js", label: "TESSERACT.JS SOURCE" },
+      { href: "https://github.com/tesseract-ocr/tesseract", label: "TESSERACT SOURCE" },
+      { href: "https://github.com/tesseract-ocr/tessdata_fast", label: "TESSDATA_FAST SOURCE" },
+      { href: licenseText("apache-2.0.txt"), label: "APACHE-2.0 TEXT" },
+    ],
+  },
+  {
     id: "zxing-cpp",
     name: "zxing-cpp",
     spdx: "APACHE-2.0",
@@ -184,7 +210,7 @@ const ENGINES: readonly Engine[] = [
       },
       { href: "https://github.com/Sec-ant/zxing-wasm", label: "WRAPPER SOURCE" },
       { href: licenseText("apache-2.0.txt"), label: "APACHE-2.0 TEXT" },
-      { href: licenseText("third-party-notices.txt"), label: "WRAPPER MIT NOTICE" },
+      { href: licenseText("third-party-notices.txt"), label: "FULL NOTICES" },
     ],
   },
   {
@@ -309,6 +335,11 @@ const PERMISSIVE: readonly {
     name: "@ffmpeg/util 0.12.2",
     license: "MIT",
     note: "Its helper package, and the second of the two that ships no license file. MIT on the same terms, from the same repository.",
+  },
+  {
+    name: "omggif 1.0.10",
+    license: "MIT",
+    note: "A pure-JavaScript GIF reader, used to pull the frames out of an animation in browsers whose own ImageDecoder cannot — which today means Safari. It is bundled rather than served, so it adds no file to this origin. Named here by hand because it publishes no license file; MIT on the terms its manifest and repository declare.",
   },
 ];
 
@@ -557,8 +588,8 @@ export default function LicensesPage() {
             rather than written by hand, and a test fails the build if the checked-in
             copy no longer matches what is installed, so it cannot quietly drift. A
             handful of packages publish no license file of their own for the generator
-            to read — @ffmpeg/ffmpeg, @ffmpeg/util and @ffmpeg/types, @next/env and
-            client-only (all MIT), and railroad-diagrams (CC0-1.0) — so they are named
+            to read — @ffmpeg/ffmpeg, @ffmpeg/util and @ffmpeg/types, @next/env,
+            client-only and omggif (all MIT), and railroad-diagrams (CC0-1.0) — so they are named
             here instead, and nothing is left silently uncovered. One package fails the
             generator in the other direction and is worth naming for it: @jsquash/oxipng
             ships two notices, Apache-2.0 for the wrapper in its root and MIT for the

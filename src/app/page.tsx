@@ -147,8 +147,8 @@ const WORKSHOPS: Record<string, { blurb: string; icon: React.ReactNode }> = {
   resize and crop", and three of those it does not do: resizing is pica's
   Lanczos3 in both the main-thread (lib/tools/image-resize.ts) and worker
   (lib/workers/image.worker.ts) paths, and HEIC and TIFF are decoded by
-  heic2any and utif2 before Canvas ever sees a bitmap. heic2any keeps a row
-  because /vendor/heic2any.js is a file we serve; pica and utif2 are named
+  libheif and utif2 before Canvas ever sees a bitmap. libheif keeps a row
+  because /vendor/libheif.js and its .wasm are files we serve; pica and utif2 are named
   under the table for the reason above. pdf.js did every page thumbnail and
   every PDF→image render with no row at all; pdf-lib's row used to say only
   "building a PDF out of images", which stopped being true when it absorbed all
@@ -182,7 +182,7 @@ const WORKSHOPS: Record<string, { blurb: string; icon: React.ReactNode }> = {
   choosing this site over an uploader is entitled to know which of their pixels
   get rewritten.
 
-  lamejs has its own row for the same reason heic2any does: it is no longer
+  lamejs has its own row for the same reason libheif does: it is no longer
   bundled into the audio worker but fetched from /vendor/ at the first MP3
   encode, so folding it into Web Audio's "0 KB, built in" would hide a real
   254 KB request. Size is the byte count of the file we copy into public/vendor/.
@@ -211,7 +211,7 @@ const WORKSHOPS: Record<string, { blurb: string; icon: React.ReactNode }> = {
   another sentence on the site.
 
   oxipng joins them on 2026-09-06 with /compress-png, and it is the first image
-  engine on this table since heic2any. The rule at the top settles the row
+  engine on this table since the HEIC decoder. The rule at the top settles the row
   without argument: `npm run copy:wasm` stages
   node_modules/@jsquash/oxipng/codec/pkg/squoosh_oxipng_bg.wasm into public/,
   the worker fetches it from the origin root as /squoosh_oxipng_bg.wasm on the
@@ -247,12 +247,13 @@ const WORKSHOPS: Record<string, { blurb: string; icon: React.ReactNode }> = {
 */
 const ENGINES = [
   { name: "Canvas 2D", handles: "Image conversion, compression and crop — plus the frames gifenc quantises into a GIF", size: "0 KB", when: "BUILT IN" },
-  { name: "heic2any", handles: "Decoding iPhone HEIC, which Canvas cannot open — TIFF is decoded by utif2, which is bundled rather than served and is named under the table", size: "1.3 MB", when: "ON FIRST HEIC" },
+  { name: "libheif", handles: "Decoding iPhone HEIC, which Canvas cannot open — the decoder and its WebAssembly binary, fetched as a pair. TIFF is decoded by utif2, which is bundled rather than served and is named under the table", size: "1.4 MB", when: "ON FIRST HEIC" },
   { name: "oxipng", handles: "Real PNG re-compression — the one image job a canvas re-encode cannot do at all", size: "160 KB", when: "ON FIRST PNG" },
   { name: "pdf.js", handles: "All PDF rendering — page thumbnails, and PDF to JPG or PNG", size: "1.6 MB", when: "ON PAGE PREVIEW" },
   { name: "pdf-lib", handles: "PDF page and document work — merge, split, rotate, reorder, page numbers, compression, and images into a PDF", size: "320 KB", when: "ON FIRST PDF" },
   { name: "qpdf", handles: "PDF passwords and permissions — protect, unlock, restrict, and repair a damaged file", size: "2.3 MB", when: "ON FIRST USE" },
   { name: "FFmpeg WASM", handles: "Stream-copy video work — container swaps, muting, rotating, trimming, splitting and joining — plus audio extraction and formats, loudness and silence filters, and the one H.264 re-encode offered when a copy would not play", size: "31 MB", when: "ON FIRST USE" },
+  { name: "Tesseract", handles: "Reading printed text out of a photo, screenshot or scan — the OCR engine, its worker and the English language model, which is the only language served", size: "4.9 MB", when: "ON FIRST OCR" },
   { name: "WebCodecs", handles: "Video compression and WebM→MP4, hardware H.264 encoding", size: "0 KB", when: "BUILT IN" },
   { name: "Web Audio", handles: "Decoding, trimming and merging audio", size: "0 KB", when: "BUILT IN" },
   { name: "lamejs", handles: "MP3 encoding — the one codec browsers will decode but not write", size: "253 KB", when: "ON FIRST MP3" },
@@ -309,12 +310,19 @@ const BUNDLED_SENTENCE = BUNDLED.map(
   goes.
 
   This tile used to read "∞ — file size ceiling, your RAM is the only limit",
-  and by now both halves were wrong: nine tools enforce a 1.5 GB cap
-  (`Tool.maxSizeMB`), seventeen more hold the whole file in memory and say so
-  (`Tool.practicalLimitNote`), and the wall behind all of them is V8's ~2 GB
-  single-buffer limit rather than the machine's RAM — the derivation block at
-  the top of src/lib/tools/ffmpeg-loader.ts measures it at 2040 MiB ok /
-  2047 MiB `RangeError`.
+  and by now both halves were wrong: 11 tools enforce a cap (`Tool.maxSizeMB`),
+  37 more hold the whole file in memory and say so (`Tool.practicalLimitNote`),
+  and the wall behind all of them is the RENDERER's ~2 GB single-buffer limit
+  rather than the machine's RAM — the derivation block at the top of
+  src/lib/tools/ffmpeg-loader.ts measures it at 2040 MiB ok / 2047 MiB
+  `RangeError`.
+  ⚠ Two corrections, both made 2026-09-13. (a) Those counts were "nine" and
+  "seventeen" and are now 11 and 37 — they are re-counted from the registry
+  here, and every number the TILE renders is computed from `FILE_TOOLS` below,
+  so what drifted was this explanation and never the page. (b) It said "V8's"
+  limit. It is not V8's: the same V8 under Node allocates 4096 MiB with the
+  last byte writable. The ceiling belongs to the renderer, which is why it is
+  a fact about where this runs rather than about the language.
 
   The count that replaced it was "neither field", and that was wrong too, in a
   quieter way: 24 of the tools it counted take no file at all. A password
@@ -324,8 +332,10 @@ const BUNDLED_SENTENCE = BUNDLED.map(
   than the absolute claim it replaced if the count is right.
 
   So the denominator is the tools that take a file (`!t.takesNoFile`), and the
-  two halves of the sentence partition exactly that set: 66 print "NO SIZE CAP"
-  because they have no ceiling anyone has found, 26 name one.
+  two halves of the sentence partition exactly that set: 104 print "NO SIZE CAP"
+  because they have no ceiling anyone has found, 48 name one. (Those were 66
+  and 26 when this was written at 92 file-taking tools; there are 152 now. The
+  rendered numbers are computed, so only this sentence went stale.)
   `src/__tests__/unit/data/file-input-claims.test.ts` checks `takesNoFile`
   against what each component actually mounts, and
   `src/__tests__/unit/data/size-claims.test.ts` keeps the ceiling half honest.

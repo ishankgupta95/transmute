@@ -31,7 +31,16 @@
 import { ENGINE_CACHE, OWNED_CACHES, isEngineUrl } from "./sw-policy";
 
 export interface EngineBundle {
-  id: "ffmpeg" | "lamejs" | "heic" | "qpdf" | "zxing" | "libarchive" | "oxipng" | "print-fonts";
+  id:
+    | "ffmpeg"
+    | "lamejs"
+    | "heic"
+    | "qpdf"
+    | "zxing"
+    | "libarchive"
+    | "oxipng"
+    | "tesseract"
+    | "print-fonts";
   label: string;
   /** What it is FOR, in one honest clause. */
   handles: string;
@@ -39,7 +48,7 @@ export interface EngineBundle {
   bytes: number;
   /** Origin-root paths, exactly as the loaders request them. */
   urls: readonly string[];
-  /** How many of the 179 tools need it. */
+  /** How many REGISTERED TOOLS need it — a count, never a fraction of a number that moves. */
   toolCount: number;
 }
 
@@ -55,11 +64,11 @@ export interface EngineBundle {
  * also what the reader sees in the Network tab and what `navigator.storage`
  * will report afterwards.
  *
- * `toolCount` is the number of the 179 registered tools whose code path can
+ * `toolCount` is the number of registered tools whose code path can
  * reach that engine, and the two figures that look surprising are the two
- * corrections that mattered when this was derived. heic2any reads 5 rather
- * than 63 because image-convert.ts:230 tests the extension and MIME type
- * before it calls `loadHeic2Any()` — the 63 tools that go through
+ * corrections that mattered when this was derived. libheif reads 5 rather
+ * than 63 because `toDecodableSource` tests the extension and MIME type
+ * before it calls `decodeHeic()` — the 63 tools that go through
  * `toDecodableSource` never touch it unless the file really is a HEIC. oxipng
  * reads 1 rather than 61 because `optimisePng` has exactly one caller,
  * CompressPngUI.tsx:212, even though the worker hosting it serves 61 tools.
@@ -80,14 +89,18 @@ export const ENGINE_BUNDLES: readonly EngineBundle[] = [
   },
   {
     id: "heic",
-    label: "heic2any",
+    label: "libheif",
     handles: "Decoding iPhone HEIC photos, which Canvas cannot open on its own.",
-    bytes: 1_361_547,
-    urls: ["/vendor/heic2any.js"],
+    bytes: 1_513_632,
+    // The glue and the binary are one download or neither: image-convert.ts's
+    // loadLibheif() hands the .wasm to the factory itself rather than letting
+    // Emscripten resolve it, so a missing binary is a failed load, not a
+    // silently degraded one.
+    urls: ["/vendor/libheif.js", "/vendor/libheif.wasm"],
     // 6 since remove-metadata landed: its image arm accepts .heic/.heif and
-    // reaches loadHeic2Any through toDecodableBlob (exif-viewer.ts:81 ->
-    // image-convert.ts:231), exactly like the five before it. The six new PDF
-    // tools beside it need no origin-root binary at all.
+    // reaches loadLibheif through toDecodableBlob (exif-viewer.ts:81 ->
+    // image-convert.ts's decodeHeic), exactly like the five before it. The six
+    // new PDF tools beside it need no origin-root binary at all.
     toolCount: 6,
   },
   {
@@ -134,6 +147,34 @@ export const ENGINE_BUNDLES: readonly EngineBundle[] = [
     toolCount: 1,
   },
   {
+    id: "tesseract",
+    label: "Tesseract OCR",
+    handles: "Reading printed text out of a photo, screenshot or scan.",
+    bytes: 5_088_998,
+    /*
+      FIVE files, and they must be stored together or the tool half-works in a
+      way that is worse than not working: the core glue resolves its own .wasm
+      against worker.min.js's URL, so a cache holding four of these answers the
+      page and then 404s the binary from inside the worker.
+      `addBundle` is all-or-nothing for exactly this reason.
+    */
+    urls: [
+      "/tesseract/tesseract.esm.min.js",
+      "/tesseract/worker.min.js",
+      "/tesseract/tesseract-core-simd-lstm.js",
+      "/tesseract/tesseract-core-simd-lstm.wasm",
+      "/tesseract/eng.traineddata.gz",
+    ],
+    /*
+      TWO, and derived the way this file's own note demands — by counting
+      reachable CALL SITES, not importers. `recognizeImage` has one
+      (ImageToTextUI) and `openOcrSession` has one (ocr-pdf.ts, itself reached
+      only from OcrPdfUI). Counting importers is what made the HEIC decoder read 63
+      instead of 5.
+    */
+    toolCount: 2,
+  },
+  {
     id: "print-fonts",
     label: "Print typefaces",
     handles:
@@ -158,21 +199,56 @@ export const ENGINE_BUNDLES: readonly EngineBundle[] = [
  * THE SHAPE OF THE CHOICE, and the reason this page leads with it rather than
  * with a list of toggles.
  *
- * 133 of the 179 registered tools reach no origin-root engine binary at all —
+ * 142 of the 190 registered tools reach no origin-root engine binary at all —
  * they are Canvas, Web Audio, WebCodecs, pdf-lib and ordinary bundled
  * JavaScript, and the app shell alone is enough for every one of them. Of the
- * 46 that do need something, 14 are covered by everything-except-FFmpeg
+ * 48 that do need something, 16 are covered by everything-except-FFmpeg
  * together, and the remaining 32 need the 32 MB core.
  *
- * That is a twentieth of the bytes for a third of the engine-needing tools,
- * and a visitor deciding what to store is entitled to see it before they see a
- * download button. `offline.test.ts` pins 133 + 46 to the registry's own
+ * A visitor deciding what to store is entitled to see that shape before they
+ * see a download button. `offline.test.ts` pins 133 + 46 to the registry's own
  * length, so a new tool cannot quietly make this paragraph wrong.
  */
-export const TOOLS_WITHOUT_ENGINES = 133;
-export const TOOLS_WITH_ENGINES = 46;
+export const TOOLS_WITHOUT_ENGINES = 142;
+export const TOOLS_WITH_ENGINES = 48;
 export const TOOLS_NEEDING_FFMPEG = 32;
-export const TOOLS_NEEDING_ONLY_SMALL_ENGINES = 14;
+export const TOOLS_NEEDING_ONLY_SMALL_ENGINES = 16;
+
+/**
+ * THE TWO SHARES THE PAGE LEADS WITH — COMPUTED, NEVER WRITTEN DOWN.
+ *
+ * ⚠ These replace a sentence that was FALSE the day it was committed, and
+ * that nothing in the suite could have contradicted. It read "a twentieth of
+ * the bytes for a third of the tools". The tool half was right; the byte half
+ * was out by a factor of ~3.8 AS AT 2026-09-10, when the eight bundles then
+ * present summed to 6,125,478 B against FFmpeg's 32,344,478 — about a fifth,
+ * where a twentieth would have needed the small set under 1,617,224 B. It had
+ * never been that small in any committed revision (`git show 4549b77
+ * --name-status` adds the file already carrying all eight); the figure was
+ * most likely taken from lamejs + heic2any (the HEIC decoder of the day)
+ * alone, 1,621,055 B, which really
+ * is FFmpeg/19.95.
+ *
+ * ⚠⚠ EVERY FIGURE IN THE PARAGRAPH ABOVE IS HISTORICAL AND DATED FOR A
+ * REASON — it went stale within two days. Adding the 5,088,998 B Tesseract
+ * bundle moved the real ratio from a fifth to about a third, so a reader who
+ * took "a fifth" as current would be repeating the very mistake this note
+ * exists to describe. DO NOT state the live ratio here. It is
+ * `SMALL_BYTE_SHARE_PCT` below, and that is the only place it is allowed to
+ * exist.
+ *
+ * The lesson is not "that fraction was wrong". It is that AN ENGLISH FRACTION
+ * CANNOT BE CONTRADICTED BY ARITHMETIC, so no test can hold it to anything —
+ * the one that carried its name asserted a different number entirely (see
+ * `offline.test.ts`). These are percentages divided out of ENGINE_BUNDLES, so
+ * a ninth engine moves the sentence without anyone editing prose.
+ */
+export const SMALL_BUNDLES = ENGINE_BUNDLES.filter((b) => b.id !== "ffmpeg");
+export const SMALL_ENGINE_BYTES = totalBundleBytes(SMALL_BUNDLES);
+export const SMALL_BYTE_SHARE_PCT = Math.round((SMALL_ENGINE_BYTES / totalBundleBytes()) * 100);
+export const SMALL_TOOL_SHARE_PCT = Math.round(
+  (TOOLS_NEEDING_ONLY_SMALL_ENGINES / TOOLS_WITH_ENGINES) * 100,
+);
 
 /**
  * ⚠ THE ONE CLAIM THAT CANNOT BE MADE EITHER WAY.
@@ -457,10 +533,14 @@ export async function storageEstimate(): Promise<{ usage: number; quota: number 
  *
  * It is not a free choice — it is the ruler the homepage DOWNLOAD column
  * already uses, measured off the rows that were there before this file
- * existed: heic2any is 1,361,547 bytes and reads "1.3 MB" (1.30 MiB; decimal
- * would be 1.4), lamejs is 259,508 and reads "254 KB" (253.4 KiB; decimal
- * would be 260). Printing the same artifacts on a decimal ruler here would
- * make two pages of this site disagree about the size of one file.
+ * existed: lamejs is 259,508 bytes and reads "253 KB" (253.4 KiB; decimal
+ * would be 260 — and "254" is what this comment said until 2026-09-12, which
+ * is the arithmetic slip engine-disclosure.test.ts:73 already records fixing
+ * on the homepage), and the HEIC decoder — heic2any's 1,361,547 B then, libheif's
+ * 1,513,632 B since 2026-09-12 — reads "1.3 MB" and "1.4 MB" respectively,
+ * where a decimal ruler would have printed 1.4 and 1.5 for the same two files.
+ * Printing the same artifacts on a decimal ruler here would make two pages of
+ * this site disagree about the size of one file.
  *
  * Under a mebibyte the figure is whole kibibytes, which is what
  * engine-disclosure.test.ts derives libarchive's "599 KB" with; above it, one

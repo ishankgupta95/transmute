@@ -37,6 +37,17 @@ export type ToolType =
   | "image-splitter"
   | "social-media-image-resizer"
   | "compress-png"
+  | "image-to-text"
+  | "ocr-pdf"
+  | "vcf-to-csv"
+  | "ics-to-csv"
+  | "resize-gif"
+  | "gif-speed-changer"
+  | "reverse-gif"
+  | "split-gif"
+  | "gif-maker"
+  | "csv-markdown-table"
+  | "bcrypt-generator"
   | "ico-to-png"
   | "base64-to-image"
   | "change-image-dpi"
@@ -307,14 +318,14 @@ export const tools: Tool[] = [
     sourceFormat: "heic",
     targetFormat: "jpeg",
     relatedTools: ["webp-to-jpg", "png-to-jpg", "avif-to-jpg", "jpg-to-png"],
-    aboutText: "HEIC (High Efficiency Image Container) is the default photo format on iPhones and iPads since iOS 11. While HEIC files are roughly half the size of JPGs at the same quality — saving significant storage space on your device — many websites, apps, email clients, and devices still do not support them. Windows PCs, older Android devices, most social media upload forms, and many photo printing services cannot open HEIC files, which makes sharing iPhone photos frustrating. This tool converts your HEIC photos to the universally compatible JPG format instantly — no upload to any server, no sign-up, no waiting. Everything happens locally in your browser using the Canvas API and the heic2any library. Your photos stay on your device the entire time, ensuring complete privacy for personal and sensitive images. You can adjust the output quality to balance file size and visual fidelity, and batch convert multiple photos at once. Whether you are preparing iPhone photos for a website, sharing vacation pictures with family members on non-Apple devices, uploading product photos to an e-commerce platform, or simply need a format that works everywhere, this tool handles the conversion in seconds.",
+    aboutText: "HEIC (High Efficiency Image Container) is the default photo format on iPhones and iPads since iOS 11. While HEIC files are roughly half the size of JPGs at the same quality — saving significant storage space on your device — many websites, apps, email clients, and devices still do not support them. Windows PCs, older Android devices, most social media upload forms, and many photo printing services cannot open HEIC files, which makes sharing iPhone photos frustrating. This tool converts your HEIC photos to the universally compatible JPG format instantly — no upload to any server, no sign-up, no waiting. Everything happens locally in your browser using the Canvas API and the libheif decoder. Your photos stay on your device the entire time, ensuring complete privacy for personal and sensitive images. You can adjust the output quality to balance file size and visual fidelity, and batch convert multiple photos at once. Whether you are preparing iPhone photos for a website, sharing vacation pictures with family members on non-Apple devices, uploading product photos to an e-commerce platform, or simply need a format that works everywhere, this tool handles the conversion in seconds.",
   },
   {
     name: "HEIC to WebP",
     slug: "heic-to-webp",
     category: "image-tools",
     toolType: "image-convert",
-    description: "Convert iPhone HEIC photos to WebP for the web. Decoding pulls the 1.3 MB heic2any library once; both formats are lossy, so this is a second generation.",
+    description: "Convert iPhone HEIC photos to WebP for the web. Decoding pulls the 1.4 MB libheif decoder once; both formats are lossy, so this is a second generation.",
     hubLine: "iPhone photos into what the web serves.",
     keywords: ["heic to webp", "heif to webp", "convert heic to webp", "iphone photo to webp"],
     h1: "Convert HEIC to WebP Online — Free, No Upload",
@@ -323,7 +334,7 @@ export const tools: Tool[] = [
     sourceFormat: "heic",
     targetFormat: "webp",
     relatedTools: ["heic-to-jpg", "webp-to-jpg", "png-to-webp", "compress-image"],
-    aboutText: "HEIC is what an iPhone writes by default, and almost nothing on the web reads it. WebP is read by every current browser and by most of the software behind them, so this is the conversion that gets a phone photo onto a page. Two things about the mechanics are worth stating plainly. First, no browser decodes HEIC natively, so this page fetches heic2any — a 1.3 MB library, once, on your first HEIC, served from this site rather than from a CDN — and decodes with that. It is why the first photo takes noticeably longer than the second. Second, HEIC and WebP are both lossy, so what you get back is a second generation: the HEIC is decoded to pixels and those pixels are compressed again by a different codec. That cannot recover anything the first encode discarded, and it costs a little of its own, most visibly in smooth gradients and skin tones. The quality slider controls the second pass only. Metadata does not survive either — the photo is decoded and re-encoded through the Canvas API, so EXIF, GPS and the capture time are not carried into the WebP, which is often exactly what you want before posting one. If the destination wants JPG instead, the HEIC to JPG page takes the same files. Batch conversion is supported, and nothing is uploaded.",
+    aboutText: "HEIC is what an iPhone writes by default, and almost nothing on the web reads it. WebP is read by every current browser and by most of the software behind them, so this is the conversion that gets a phone photo onto a page. Two things about the mechanics are worth stating plainly. First, no browser decodes HEIC natively, so this page fetches libheif — a 1.4 MB decoder and its WebAssembly binary, once, on your first HEIC, served from this site rather than from a CDN — and decodes with that. It is why the first photo takes noticeably longer than the second. Second, HEIC and WebP are both lossy, so what you get back is a second generation: the HEIC is decoded to pixels and those pixels are compressed again by a different codec. That cannot recover anything the first encode discarded, and it costs a little of its own, most visibly in smooth gradients and skin tones. The quality slider controls the second pass only. Metadata does not survive either — the photo is decoded and re-encoded through the Canvas API, so EXIF, GPS and the capture time are not carried into the WebP, which is often exactly what you want before posting one. If the destination wants JPG instead, the HEIC to JPG page takes the same files. Batch conversion is supported, and nothing is uploaded.",
   },
   {
     name: "WebP to JPG",
@@ -1299,21 +1310,23 @@ export const tools: Tool[] = [
     h1: "Hash Generator — SHA-256, SHA-512, MD5 & More",
     subtitle: "Generate MD5, SHA-1, SHA-256, and SHA-512 hashes from text or a file, entirely in your browser.",
     /*
-      The File arm is not a stream. `HashGeneratorUI.handleFiles` does
-      `await run(await f.arrayBuffer())`, so the whole file becomes ONE JS
-      ArrayBuffer before a single digest starts, and `computeHashesGuarded`
-      then TRANSFERS that one buffer to the worker (hash-client.ts:41) rather
-      than chunking it. Ceiling (2) in the derivation block atop
-      ffmpeg-loader.ts is exactly this wall — V8 hands out 2040 MiB in one
-      piece and throws `RangeError` at 2047 MiB — and it binds here with no
-      FFmpeg anywhere near the page. A 2.2 GB ISO, the most natural thing a
-      person brings to a checksum tool, makes `arrayBuffer()` reject.
-      The page's own FAQ already said this ("the whole file is loaded at
-      once"); the spec row and the drop zone were still printing NONE /
-      NO SIZE CAP over it.
+      ⚠ NO `practicalLimitNote` HERE ANY MORE, AND THAT IS A CHANGE RATHER THAN
+      AN OMISSION. Until 2026-09-13 the File arm read the whole file into ONE
+      ArrayBuffer before the first digest started, so ceiling (2) in the
+      derivation block atop ffmpeg-loader.ts bound this page with no FFmpeg
+      anywhere near it: a 2.2 GB ISO — the most natural thing a person brings
+      to a checksum tool — made `arrayBuffer()` reject outright.
+
+      The digests are now computed off `blob.stream()` (hash-digest.ts), so
+      nothing is ever resident and there is no allocation left to refuse. This
+      is the one tool family on the site where the ceiling was pure accident:
+      hash functions are incremental by construction, and only SubtleCrypto's
+      single whole-buffer entry point was forcing the file to be materialised.
+      The cost, measured, is throughput — ~39 MB/s for all four digests in JS
+      in the browser, against SubtleCrypto's native speed — which is why the
+      page shows a progress bar and why the trade is written down in
+      hash-digest.ts.
     */
-    practicalLimitNote:
-      "Nothing is enforced, but a dropped file is read into a single ArrayBuffer before the first digest starts — the hash is not streamed — so a file past the roughly 2 GB a browser will allocate in one piece cannot be read at all.",
     relatedTools: ["password-generator", "uuid-generator", "base64-encode-decode", "text-diff"],
     aboutText: "Cryptographic hashes are one-way functions that produce a fixed-length fingerprint of any input data. They are fundamental to data integrity verification, password storage, digital signatures, and blockchain technology. This tool generates hashes using four widely used algorithms: SHA-1 and SHA-256 (the most common for checksums and general use), SHA-512 (maximum security), and MD5 (legacy compatibility and quick checksums). SHA-1, SHA-256, and SHA-512 are computed using the browser's native Web Crypto API for maximum performance, while MD5 uses the js-md5 library. You can hash text input directly or upload files to compute their checksum. File hashing is particularly useful for verifying software downloads — compare the hash against the one published by the developer to confirm the file has not been tampered with or corrupted during download. Other common use cases include generating content fingerprints for deduplication, creating deterministic identifiers from strings, and verifying data integrity after transfer.",
   },
@@ -1661,7 +1674,7 @@ export const tools: Tool[] = [
     h1: "Convert HEIC to PDF — Free Online Tool",
     subtitle: "Turn iPhone HEIC photos into a single PDF document, decoded entirely in your browser.",
     relatedTools: ["images-to-pdf", "heic-to-jpg", "jpg-to-pdf", "merge-pdf"],
-    aboutText: "HEIC (High Efficiency Image Container) has been the iPhone's default photo format since iOS 11, and it is exactly the format that document portals, application forms, and office workflows tend to reject. This tool turns those photos into a single PDF without them ever leaving your device: each HEIC is decoded in your browser by the heic2any library, then saved into the document as a JPEG at quality 0.92 — a re-encode with a slight, usually invisible cost — or as a lossless PNG in the rare case the image carries transparency. Add several photos and each becomes its own page; drag the cards to set the order. Pages come out as A4 or US Letter with the photo centered inside a 40-point margin and never enlarged beyond its natural size, or as fit-to-image pages that match each photo exactly. It is the quick path from photos of your documents on an iPhone to one PDF a form will actually accept — leases, receipts, whiteboards, handwritten notes.",
+    aboutText: "HEIC (High Efficiency Image Container) has been the iPhone's default photo format since iOS 11, and it is exactly the format that document portals, application forms, and office workflows tend to reject. This tool turns those photos into a single PDF without them ever leaving your device: each HEIC is decoded in your browser by the libheif decoder, then saved into the document as a JPEG at quality 0.92 — a re-encode with a slight, usually invisible cost — or as a lossless PNG in the rare case the image carries transparency. Add several photos and each becomes its own page; drag the cards to set the order. Pages come out as A4 or US Letter with the photo centered inside a 40-point margin and never enlarged beyond its natural size, or as fit-to-image pages that match each photo exactly. It is the quick path from photos of your documents on an iPhone to one PDF a form will actually accept — leases, receipts, whiteboards, handwritten notes.",
   },
   {
     name: "WebP to PDF",
@@ -3171,8 +3184,14 @@ export const tools: Tool[] = [
     keywords: ["file checksum", "verify checksum", "sha256 checksum", "checksum verifier", "verify download hash"],
     h1: "File Checksum Verifier — Match a Published Hash",
     subtitle: "Drop a download, paste the checksum from the release page, and see which algorithm matched — or that none did.",
-    practicalLimitNote:
-      "Nothing is enforced, but every file is read into a single ArrayBuffer and handed to the hashing worker whole rather than streamed, so a file past the roughly 2 GB a browser will allocate in one piece cannot be read at all.",
+    /*
+      ⚠ NO `practicalLimitNote`, deliberately — see the fuller note on
+      /hash-generator. This page used to read every file into one ArrayBuffer
+      and hand it to the worker whole, which put the renderer's ~2 GB
+      single-allocation wall in front of exactly the files a checksum tool is
+      for (an ISO, a database dump). It streams since 2026-09-13, so the
+      ceiling is gone rather than merely undisclosed.
+    */
     relatedTools: ["hash-generator", "hmac-generator", "jwt-encoder", "base64-encode-decode"],
     aboutText: "A checksum is the cheapest way to tell whether the file that landed on your disk is the file the publisher meant to send. A mirror can be stale, a proxy can rewrite, a transfer can stop at 99 percent, and none of those announce themselves: the archive opens, the installer runs, and something is subtly wrong. This tool computes MD5, SHA-1, SHA-256 and SHA-512 for every file you drop, in a background worker so the tab keeps painting, and compares all four against whatever you paste into the expected-checksum box. It reads that paste as the release page wrote it: a bare digest, the two-space sha256sum form with a filename after it, the BSD parenthesised form, an OCI sha256: prefix, or an entire SHA256SUMS file, in which case each file is matched to the line that names it. The algorithm is worked out from the digest's length, and a paste a character short is refused rather than truncated to fit. The verdict names the algorithm that matched, or says plainly that none of them did. You can also save the digests back out as a coreutils-format sums file.",
   },
@@ -3538,6 +3557,243 @@ export const tools: Tool[] = [
     aboutText:
       "Most tools called a PDF editor are really PDF markers, and this page says so on the way in: the text already in your document cannot be edited here. A PDF page is not a document in the word-processor sense. It is a list of drawing instructions \u2014 this glyph, this font, this size, at these coordinates \u2014 with no paragraphs, no line boxes and nothing to reflow. Neither pdf-lib nor PDF.js, the two libraries behind this page, can find the sentence a letter belongs to, change it and re-lay-out what follows. Adobe's own free tier cannot do it either. What you get instead are five things a PDF genuinely can do, and all five are exact. Add text anywhere on a page, in Helvetica or Helvetica Bold, at whatever size and colour you choose. Place a PNG or JPEG \u2014 a logo, a stamp, a photo \u2014 sized as a share of the page width, so nothing is stretched. Paint a whiteout rectangle over something you want out of sight. Draw freehand with a pointer. And delete whole pages you do not want. The page you are working on is rendered exactly as a reader will see it, marks are placed on that picture, and every mark remembers the page it belongs to, so you can work through several pages and apply the lot in one pass. Placement is expressed as percentages of the page as displayed, and those number fields are the mark \u2014 dragging on the page writes the same numbers \u2014 so text, images and whiteout boxes can be placed to the point from a keyboard alone. Freehand is the one exception, and this page says so rather than pretending. Two limits are worth reading twice. Whiteout is paint, not redaction: the covered text is still in the file and still copyable by anything that reads the page. And every mark is drawn into the page's own content rather than attached as an annotation object, so no reader will offer you a comment to click or a Delete. Nothing is uploaded, because your browser does all of it.",
   },
+
+  // ── OCR ────────────────────────────────────────────────────────────
+  {
+    name: "Image to Text",
+    slug: "image-to-text",
+    titleTag: "Image to Text (OCR) — Free & Private",
+    category: "image-tools",
+    toolType: "image-to-text",
+    description:
+      "Read printed text out of a photo, screenshot or scan with Tesseract OCR, running in your browser. The picture is never uploaded — the engine is.",
+    hubLine: "OCR that runs in the tab. The picture never leaves it.",
+    keywords: [
+      "image to text",
+      "ocr online",
+      "extract text from image",
+      "photo to text",
+      "screenshot to text",
+      "jpg to text",
+      "png to text",
+    ],
+    h1: "Image to Text — Free OCR in Your Browser",
+    subtitle:
+      "Pull the printed words out of a picture without uploading it. Tesseract is compiled to WebAssembly and runs in this tab.",
+    acceptFormats: ".jpg,.jpeg,.png,.webp,.bmp,.gif",
+    practicalLimitNote:
+      "Nothing is enforced, but the ceiling is real: the engine holds the decoded picture and the 4.1 MB English model in wasm memory at the same time, so a very large scan can exhaust the tab before it finishes.",
+    relatedTools: ["pdf-to-text", "pdf-to-jpg", "compress-image", "png-to-jpg", "qr-code-reader"],
+    aboutText:
+      "OCR is the one job on this site that people assume must involve a server, because for twenty years it did. It does not have to. Tesseract — the optical character recognition engine Google has maintained since 2006 — compiles to WebAssembly, and this page runs it in your tab against a picture the browser already has in memory. Nothing is uploaded, which for this particular tool is worth saying plainly: the images people run OCR over are receipts, invoices, passports, prescriptions, contracts and screenshots of private conversations, and every free OCR site that asks you to upload one has taken a copy of it. The cost of doing it this way is a download. The engine and its English language model are about 4.9 MB together, fetched from this site the first time you read an image and not before — the page itself pulls none of it. What comes back is a guess, not a transcript. Tesseract is very good on clean, high-contrast printed text: a screenshot, a PDF page rendered to an image, a flatbed scan of a printed document. It is markedly worse on photographs taken at an angle, on low-resolution images, on text over a busy background, and on anything decorative. It does not read handwriting at all — that is a different class of model, not a setting. Layout is the other limit worth knowing before you start. Tesseract reads down the page, so a two-column article comes back as the whole of the left column followed by the whole of the right, rather than as you would read it. Tables lose their structure entirely: the cells arrive as separate lines with nothing to say which row or column they came from. For a document that still has its text layer — most PDFs that were exported rather than scanned — PDF to Text will give you the characters exactly as the file stores them, with no guessing involved at all. Use this when the text only exists as pixels.",
+  },
+
+  // ── OCR for documents ──────────────────────────────────────────────
+  {
+    name: "OCR PDF",
+    slug: "ocr-pdf",
+    titleTag: "OCR a PDF — Make a Scan Searchable, Free & Private",
+    category: "pdf-tools",
+    toolType: "ocr-pdf",
+    description:
+      "Make a scanned PDF searchable by laying invisible OCR text over the pages. The pages themselves are not changed, and nothing is uploaded.",
+    hubLine: "Searchable scans. The page image is left alone.",
+    keywords: [
+      "ocr pdf",
+      "searchable pdf",
+      "scanned pdf to text",
+      "make pdf searchable",
+      "pdf ocr online",
+      "recognize text in pdf",
+    ],
+    h1: "OCR a PDF — Make a Scanned Document Searchable",
+    subtitle:
+      "Adds an invisible text layer to a scan so you can search, select and copy it. The pages look exactly as they did.",
+    acceptFormats: ".pdf",
+    practicalLimitNote:
+      "Nothing is enforced about file size, but 50 pages is: each page is rendered at about 300 dpi and held in wasm memory beside the language model, and beyond that a tab is likely to run out before it finishes.",
+    relatedTools: ["pdf-to-text", "image-to-text", "pdf-to-jpg", "compress-pdf", "merge-pdf"],
+    aboutText:
+      "A scanned PDF is a stack of photographs. It may look like a document, but there is no text in it at all — searching finds nothing, selecting gets you nothing, and a screen reader has nothing to read. OCR is what puts the words back, and this page does it in your tab: Tesseract, compiled to WebAssembly, renders each page, reads it, and writes what it found back into the file as text nobody can see. What comes out is the same PDF plus a searchable layer. That last point is worth being precise about, because it is where tools of this kind usually mislead. The pages are not rebuilt. The scan's own images, their compression and any vector artwork are exactly the bytes that arrived; the recognised words are appended as invisible text at the coordinates they were found. So the document cannot silently reflow, lose a signature or change how it prints — and equally, this is not a conversion into something editable. The text is a layer over the picture, not a retyping of it. The accuracy is OCR accuracy, and here the errors are harder to notice than usual. On a page of readable text you can see when a word has been misread. Here you cannot: what you see is the original scan, which is right, while what you copy is the guess, which may not be. A misread digit in an invoice total does not announce itself. Check anything that matters against the page. Layout is the other limit. Reading runs down the page, so a two-column article comes back as the whole left column followed by the whole right one, and a table loses its rows and columns entirely. Handwriting is not supported at all — that is a different class of model, not a setting. Only English is served. And if your PDF was exported rather than scanned, it already has real text: PDF to Text will give you the characters the file stores, exactly, with no guessing involved, and this tool would only add a second and less accurate copy on top.",
+  },
+
+  // ── Personal-data exports ──────────────────────────────────────────
+  {
+    name: "VCF to CSV",
+    slug: "vcf-to-csv",
+    titleTag: "VCF to CSV — Convert Contacts, Free & Private",
+    category: "developer-tools",
+    toolType: "vcf-to-csv",
+    description:
+      "Turn a .vcf contacts export into a spreadsheet. Each contact becomes a row, repeated emails and phones get their own columns, and nothing is uploaded.",
+    hubLine: "Your address book as a spreadsheet, read in the tab.",
+    keywords: ["vcf to csv", "vcard to csv", "contacts to spreadsheet", "convert vcf", "export contacts csv"],
+    h1: "VCF to CSV — Convert a Contacts Export to a Spreadsheet",
+    subtitle:
+      "Reads a vCard file and writes a CSV you can open in any spreadsheet. Your contacts stay in this tab.",
+    acceptFormats: ".vcf,.vcard",
+    relatedTools: ["ics-to-csv", "csv-to-json", "json-to-csv", "xlsx-to-csv", "charset-converter"],
+    aboutText:
+      "A .vcf file is an address book, and an address book is one of the most revealing files a person owns — every name, number, email and home address of everyone they know. That is the reason this tool exists in the form it does. Every free VCF-to-CSV converter online asks you to upload that file to a server; this one reads it in the tab and sends nothing anywhere, which for this particular file type is the difference that matters. The conversion itself is less trivial than it looks, and the interesting parts are where converters usually go wrong. vCard folds long lines: any value over 75 characters is split across lines and continued with a leading space, so a note or an address routinely arrives in pieces. A parser that splits on newlines and stops does not crash — it silently truncates every long field and invents extra rows, which is the worst kind of failure because the output still looks like a contact list. This one unfolds first. Contacts also repeat properties: three emails and four phone numbers on one card is normal. Squashing those into a single cell separated by semicolons is what most converters do, and it destroys the thing people convert contacts for, because on re-import that cell is one string and every address after the first is lost. Here each occurrence gets its own numbered column, and the number of columns is derived from your file rather than fixed — a list whose busiest contact has two emails gets two email columns, not ten mostly empty ones. The structured name field is expanded into last, first, middle, prefix and suffix instead of being dumped as a semicolon string, and a structured address is joined into one readable cell. Anything the file carries that has no column is named on the page rather than dropped quietly. Photos are deliberately left out: a base64 portrait is not something a spreadsheet can use, and it would make the file enormous.",
+  },
+  {
+    name: "ICS to CSV",
+    slug: "ics-to-csv",
+    titleTag: "ICS to CSV — Convert a Calendar, Free & Private",
+    category: "developer-tools",
+    toolType: "ics-to-csv",
+    description:
+      "Turn an .ics calendar export into a spreadsheet. One row per event, with the time zone kept in its own column rather than guessed at.",
+    hubLine: "Your calendar as a spreadsheet, read in the tab.",
+    keywords: ["ics to csv", "ical to csv", "calendar to spreadsheet", "convert ics", "export calendar csv"],
+    h1: "ICS to CSV — Convert a Calendar Export to a Spreadsheet",
+    subtitle:
+      "Reads an iCalendar file and writes a CSV you can open in any spreadsheet. Your calendar stays in this tab.",
+    acceptFormats: ".ics,.ical,.ifb",
+    relatedTools: ["vcf-to-csv", "csv-to-json", "json-to-csv", "timezone-converter", "timestamp-converter"],
+    aboutText:
+      "An .ics export is a diary, and it says as much about a person as their contacts do — who they meet, where they go, and when they are not at home. So this reads it in your browser and uploads nothing, which is worth saying plainly for a file of this kind. Two decisions in the conversion are worth knowing about, because both are places where a more confident tool would quietly be wrong. The first is time zones. An iCalendar time can be UTC, it can be floating with no zone at all, or it can name a zone whose rules live in a VTIMEZONE block elsewhere in the same file. Converting all three into one zone means guessing which one you wanted, and when the guess is wrong every appointment moves by hours with nothing on screen to say so. This writes the wall-clock time exactly as the file stores it and puts the zone in a column of its own, where you can see it. A visible extra column is better than an invisible wrong time. The second is repetition. A weekly meeting is stored once, with a rule describing how it repeats — it is not stored as fifty-two events. Expanding that rule would turn one row into hundreds and would require resolving counts, end dates, exceptions and the calendar's own zone, each one a chance to invent an appointment that does not exist in the file. So a repeating event stays one row and its rule is written into a column. If you want the occurrences, a calendar application is the right thing to ask. Beyond that: reminders are kept out of the event's own columns, organisers and attendees are shown by name rather than as mailto: addresses, all-day events are marked, and any property with no column is named on the page instead of being dropped in silence.",
+  },
+
+  // ── GIF animation verbs ────────────────────────────────────────────
+  {
+    name: "Resize GIF",
+    slug: "resize-gif",
+    titleTag: "Resize a GIF — Free & Private",
+    category: "image-tools",
+    toolType: "resize-gif",
+    description:
+      "Make an animated GIF smaller without turning it into a still. Every frame is scaled and the timing is kept, and it all happens in your browser.",
+    hubLine: "Scales every frame and keeps the animation.",
+    keywords: ["resize gif", "shrink gif", "gif resizer", "make gif smaller", "scale animated gif"],
+    h1: "Resize a GIF Online — Keeps the Animation",
+    subtitle:
+      "Scales an animated GIF down and re-encodes every frame, keeping the frame timing exactly as it was.",
+    acceptFormats: ".gif",
+    practicalLimitNote:
+      "Nothing is enforced, but every frame is held decoded in memory at once, so a long GIF at full size can exhaust the tab before it finishes.",
+    relatedTools: ["gif-speed-changer", "reverse-gif", "split-gif", "video-to-gif", "compress-image"],
+    aboutText:
+      "Most tools that claim to resize a GIF quietly hand back a still, because the ordinary way a browser reads an image keeps only the first frame. This one decodes the whole animation first, scales every frame, and writes them back with the delays the original stored. Scaling down is the useful direction: it is the single most effective way to make a GIF smaller, because the file cost is roughly the pixel count multiplied by the number of frames. Halving the dimensions removes three quarters of the pixels in every frame at once, which usually does far more than any amount of palette tuning. Everything happens in this tab. The animation is decoded frame by frame, worked on, and written back out with gifenc, which this site already carries for its video-to-GIF tool — so nothing is uploaded and no new engine is downloaded. One thing is worth knowing before you start: re-encoding a GIF is not lossless. A GIF can hold at most 256 colours per frame, and rebuilding the file means choosing that palette again. Flat colour, line art and text come through cleanly; fine gradients and photographic frames can band slightly. The original file on your disk is untouched either way.",
+  },
+  {
+    name: "GIF Speed Changer",
+    slug: "gif-speed-changer",
+    titleTag: "Change GIF Speed — Free & Private",
+    category: "image-tools",
+    toolType: "gif-speed-changer",
+    description:
+      "Speed up or slow down an animated GIF in your browser. Every frame delay is rescaled and no frames are added or dropped, so nothing gets choppier.",
+    hubLine: "Re-times an animation without dropping frames.",
+    keywords: ["gif speed changer", "speed up gif", "slow down gif", "change gif speed", "gif fps"],
+    h1: "Change the Speed of a GIF — Faster or Slower",
+    subtitle:
+      "Rescales how long each frame is shown. No frames are added or thrown away, so nothing gets choppier than it started.",
+    acceptFormats: ".gif",
+    practicalLimitNote:
+      "Nothing is enforced, but every frame is held decoded in memory at once, so a long GIF at full size can exhaust the tab before it finishes.",
+    relatedTools: ["resize-gif", "reverse-gif", "split-gif", "video-to-gif", "video-trimmer"],
+    aboutText:
+      "Changing a GIF's speed means changing how long each frame is displayed, not adding or removing frames — and that distinction matters, because a tool that speeds things up by dropping frames makes the result visibly choppier while claiming to have done what you asked. Here every frame survives and only its delay is rescaled. There is a hard floor, and the page shows it rather than letting you drag past it into nothing. A GIF stores each frame's delay in hundredths of a second, so twenty milliseconds a frame is about as fast as the format can honestly describe; beyond that the file cannot say 'faster' and different browsers substitute their own timing anyway. Slowing down has no such limit. Everything happens in this tab. The animation is decoded frame by frame, worked on, and written back out with gifenc, which this site already carries for its video-to-GIF tool — so nothing is uploaded and no new engine is downloaded. One thing is worth knowing before you start: re-encoding a GIF is not lossless. A GIF can hold at most 256 colours per frame, and rebuilding the file means choosing that palette again. Flat colour, line art and text come through cleanly; fine gradients and photographic frames can band slightly. The original file on your disk is untouched either way.",
+  },
+  {
+    name: "Reverse GIF",
+    slug: "reverse-gif",
+    titleTag: "Reverse a GIF — Free & Private",
+    category: "image-tools",
+    toolType: "reverse-gif",
+    description:
+      "Play an animated GIF backwards in your browser. The frame order and the frame delays are reversed together, so it keeps its own rhythm in reverse.",
+    hubLine: "Plays it backwards, timings and all.",
+    keywords: ["reverse gif", "play gif backwards", "gif reverser", "backwards gif"],
+    h1: "Reverse a GIF Online — Play It Backwards",
+    subtitle:
+      "Reverses the frames and their delays together, which is what makes a reversed animation keep its own rhythm.",
+    acceptFormats: ".gif",
+    practicalLimitNote:
+      "Nothing is enforced, but every frame is held decoded in memory at once, so a long GIF at full size can exhaust the tab before it finishes.",
+    relatedTools: ["resize-gif", "gif-speed-changer", "split-gif", "video-to-gif"],
+    aboutText:
+      "Reversing an animation sounds like reversing a list, and that is where most implementations go slightly wrong. A GIF's delay belongs to the frame it is stored with — it means 'show this picture for this long' — so flipping the picture order while leaving the delays where they were produces an animation whose timing no longer matches its own frames. If the original paused on its last frame, a naively reversed copy pauses on what is now the last frame instead, and the rhythm is subtly wrong. This reverses the pairs, so a GIF that lingered at the end lingers at the beginning, exactly as it should. Everything happens in this tab. The animation is decoded frame by frame, worked on, and written back out with gifenc, which this site already carries for its video-to-GIF tool — so nothing is uploaded and no new engine is downloaded. One thing is worth knowing before you start: re-encoding a GIF is not lossless. A GIF can hold at most 256 colours per frame, and rebuilding the file means choosing that palette again. Flat colour, line art and text come through cleanly; fine gradients and photographic frames can band slightly. The original file on your disk is untouched either way.",
+  },
+  {
+    name: "Split GIF into Frames",
+    slug: "split-gif",
+    titleTag: "Split a GIF into Frames — Free & Private",
+    category: "image-tools",
+    toolType: "split-gif",
+    description:
+      "Pull every frame out of an animated GIF as a numbered PNG and download them as a ZIP. Runs in your browser, so the animation is never uploaded.",
+    hubLine: "Every frame as its own PNG, in order.",
+    keywords: ["split gif", "gif to frames", "extract gif frames", "gif frame extractor", "gif to png"],
+    h1: "Split a GIF into Frames — Every Frame as a PNG",
+    subtitle:
+      "Extracts each frame as a numbered PNG and hands them back as a ZIP, in the order they play.",
+    acceptFormats: ".gif",
+    practicalLimitNote:
+      "Nothing is enforced, but every frame is held decoded in memory at once, so a long GIF at full size can exhaust the tab before it finishes.",
+    relatedTools: ["resize-gif", "gif-speed-changer", "reverse-gif", "video-to-images", "create-zip"],
+    aboutText:
+      "This gives you every frame of an animation as a separate picture, numbered in playing order and zero-padded so a two-hundred-frame archive unzips in the right sequence. The frames come out as PNG rather than GIF, and that is deliberate. Decoding an animation composites each frame into a complete picture — most GIF frames store only the rectangle that changed since the last one, so the decoder has to build the whole image before it can hand it over. Writing those complete frames back through a 256-colour palette would throw away what the decode just recovered, for no benefit. PNG keeps them exactly as they were reconstructed. Everything happens in this tab. The animation is decoded frame by frame, worked on, and written back out with gifenc, which this site already carries for its video-to-GIF tool — so nothing is uploaded and no new engine is downloaded. One thing is worth knowing before you start: re-encoding a GIF is not lossless. A GIF can hold at most 256 colours per frame, and rebuilding the file means choosing that palette again. Flat colour, line art and text come through cleanly; fine gradients and photographic frames can band slightly. The original file on your disk is untouched either way.",
+  },
+
+  {
+    name: "GIF Maker",
+    slug: "gif-maker",
+    titleTag: "GIF Maker — Turn Images into a GIF, Free & Private",
+    category: "image-tools",
+    toolType: "gif-maker",
+    description:
+      "Build an animated GIF from a set of still images in your browser. Frames are ordered by filename and nothing is ever uploaded.",
+    hubLine: "Stills in, one animation out.",
+    keywords: ["gif maker", "images to gif", "make a gif", "photos to gif", "create animated gif"],
+    h1: "GIF Maker — Turn a Set of Images into an Animation",
+    subtitle:
+      "Drop several pictures and get one animated GIF. You choose how long each frame is shown.",
+    acceptFormats: ".jpg,.jpeg,.png,.webp,.bmp,.gif",
+    practicalLimitNote:
+      "Nothing is enforced, but every picture is decoded into memory at once, so a few hundred full-size photos can exhaust the tab before the animation is built.",
+    relatedTools: ["split-gif", "resize-gif", "gif-speed-changer", "video-to-gif", "reverse-gif"],
+    aboutText:
+      "This is the opposite of the frame splitter: stills go in and one animation comes out. Drop a set of pictures, choose how long each is shown, and the page builds a GIF in your browser — nothing is uploaded and no engine is downloaded, because the encoder this site already carries for its video-to-GIF tool does the work. Two details are worth knowing because they are where a GIF builder usually disappoints. The first is ordering. Files arrive from a drop in whatever order the operating system hands them over, which is rarely the order you meant, so they are sorted by filename using a numeric comparison — frame-2 lands before frame-10, not after it, which is what a plain alphabetical sort would do. If your pictures are named in sequence you will get the sequence you expect. The second is size. Every frame of a GIF has to be the same size: the format has one logical screen and places frames on it. Pictures dropped from a camera roll are never all the same shape, so each one is fitted inside the canvas with its aspect ratio kept and the spare space left transparent. The alternative — stretching each picture to fill — distorts faces and is what makes a home-made GIF look wrong in a way that is hard to name. Timing is a single delay applied to every frame, shown both in milliseconds and as a frame rate. GIF stores that delay in hundredths of a second, so around twenty milliseconds is the fastest the format can honestly describe.",
+  },
+  {
+    name: "CSV to Markdown Table",
+    slug: "csv-markdown-table",
+    titleTag: "CSV to Markdown Table — and Back, Free & Private",
+    category: "developer-tools",
+    toolType: "csv-markdown-table",
+    description:
+      "Convert a CSV into a Markdown table, or a Markdown table back into CSV. Pipes and line breaks are escaped so the columns survive.",
+    hubLine: "CSV to a Markdown table, and back again.",
+    keywords: ["csv to markdown", "markdown table generator", "csv to markdown table", "markdown to csv", "make markdown table"],
+    h1: "CSV to Markdown Table — and Back Again",
+    subtitle:
+      "Paste or drop a CSV and get a Markdown table you can put straight into a README. It converts the other way too.",
+    acceptFormats: ".csv,.md,.markdown",
+    relatedTools: ["csv-to-json", "json-to-csv", "xlsx-to-csv", "markdown-to-html", "vcf-to-csv"],
+    aboutText:
+      "Writing a Markdown table by hand is tedious and getting one out of a spreadsheet is worse, so this does both directions: a CSV becomes a table you can paste into a README, and a table pasted back becomes CSV again. Everything happens in the tab. The part worth caring about is escaping, because it is where hand-rolled converters quietly produce the wrong table rather than failing. A pipe character ends a cell in Markdown, so a single URL with a query string in it turns a two-column table into a three-column one — and the result is still a valid table, just not yours. Pipes are escaped here, and so are backslashes, which would otherwise eat the escape. Line breaks are the other case: a Markdown table row cannot contain one at all, so a multi-line CSV cell becomes a break tag, which is what every renderer expects and what survives a round trip back to CSV. Going the other way, the alignment row is recognised as structure rather than read as data, which is the mistake that inserts a row of dashes into your spreadsheet. Columns are padded so the Markdown source lines up in a plain text editor and in a diff — every renderer ignores that padding, so it costs nothing but readability, and it can be turned off. A ragged CSV, where some rows have fewer fields than others, is padded out rather than rejected, because a table with a missing cell is more useful than an error.",
+  },
+  {
+    name: "Bcrypt Generator",
+    slug: "bcrypt-generator",
+    titleTag: "Bcrypt Generator & Checker — Free & Private",
+    category: "developer-tools",
+    toolType: "bcrypt-generator",
+    takesNoFile: true,
+    description:
+      "Generate a bcrypt hash from a password, or check a password against an existing hash. It runs in your browser, so nothing you type is sent anywhere.",
+    hubLine: "Bcrypt hashes, made and checked in the tab.",
+    keywords: ["bcrypt generator", "bcrypt hash", "bcrypt checker", "hash password", "bcrypt online"],
+    h1: "Bcrypt Generator and Checker",
+    subtitle:
+      "Hash a password with bcrypt at a work factor you choose, or verify one against a hash you already have.",
+    acceptFormats: "",
+    relatedTools: ["hash-generator", "hmac-generator", "password-generator", "jwt-encoder", "uuid-generator"],
+    aboutText:
+      "Bcrypt is what you store instead of a password. Unlike SHA-256 or MD5 it is deliberately slow and it salts every hash, and both of those properties exist to make a stolen database worth less. The salt means two people with the same password get different hashes, so a precomputed lookup table is useless. The slowness means an attacker testing billions of guesses pays the same multiplier you did — which is why the work factor is the only setting that matters here, and why each step of it doubles the cost rather than adding to it. Ten is what most frameworks default to and twelve is the common current advice; this page stops at fourteen, because beyond that the tab freezes for long enough that people assume it has crashed. The page shows how long your hash actually took on your own machine, which is a far better guide than any general recommendation. A bcrypt hash carries its own version, work factor and salt inside those sixty characters, which is why checking a password needs nothing but the hash itself — there is no separate salt to store and no configuration to remember. The checker here reports three outcomes rather than two: match, no match, and 'that is not a bcrypt hash'. Collapsing the third into the second is a common shortcut and it is a bad one, because it tells someone their password is wrong when what is actually wrong is the thing they pasted. Everything runs in your tab. That matters more here than on most pages, because using an online bcrypt tool means typing a real password into someone else's website; this one has nowhere to send it.",
+  },
 ];
 
 export function getToolBySlug(slug: string): Tool | undefined {
@@ -3588,6 +3844,12 @@ const CONVERTER_TOOL_TYPES = new Set<ToolType>([
   "csv-to-json",
   "markdown-to-html",
   "html-to-markdown",
+  "image-to-text",
+  "vcf-to-csv",
+  "ics-to-csv",
+  "split-gif",
+  "gif-maker",
+  "csv-markdown-table",
   "base64-encode-decode",
   "url-encode-decode",
   "jwt-decoder",

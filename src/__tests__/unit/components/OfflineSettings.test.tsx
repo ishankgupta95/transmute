@@ -18,9 +18,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
     - the FFmpeg audio fallback gets a THIRD value, not a green badge:
       audio-decode.ts:411 reaches the core only after the browser's own decoder
       rejects a file, so for twelve tools the answer is per file, per browser;
-    - the shape (126 need nothing / 13 for a twentieth of the bytes / 32 for
-      FFmpeg) is stated BEFORE the buttons, because it is the only thing that
-      makes the choice an informed one.
+    - the shape of the choice is stated BEFORE the buttons, because it is the
+      only thing that makes the choice an informed one. No figure from it is
+      repeated here: this comment used to carry "126 need nothing / 13 for a
+      twentieth of the bytes / 32", and every one of those numerals was stale
+      or wrong while the suite stayed green.
 
   ENGINE_BUNDLES, the formatter and the counts are deliberately NOT mocked —
   they are pinned to the artifacts on disk by offline.test.ts, so asserting
@@ -49,7 +51,15 @@ vi.mock("@/lib/pwa/offline", async (importOriginal) => {
 });
 
 import { OfflineSettings } from "@/components/pwa/OfflineSettings";
-import { ENGINE_BUNDLES, formatEngineBytes, type EngineBundle } from "@/lib/pwa/offline";
+import {
+  ENGINE_BUNDLES,
+  TOOLS_NEEDING_FFMPEG,
+  TOOLS_NEEDING_ONLY_SMALL_ENGINES,
+  TOOLS_WITHOUT_ENGINES,
+  TOOLS_WITH_ENGINES,
+  formatEngineBytes,
+  type EngineBundle,
+} from "@/lib/pwa/offline";
 
 const FFMPEG = ENGINE_BUNDLES.find((b) => b.id === "ffmpeg") as EngineBundle;
 const OXIPNG = ENGINE_BUNDLES.find((b) => b.id === "oxipng") as EngineBundle;
@@ -103,9 +113,44 @@ describe("what the page says before anything is committed", () => {
     render(<OfflineSettings />);
     // Server-renderable: these are static facts and need no browser.
     expect(screen.getByText(/NEED NO ENGINE/)).toBeInTheDocument();
-    expect(screen.getByText("133 tools")).toBeInTheDocument();
-    expect(screen.getByText("14 tools")).toBeInTheDocument();
-    expect(screen.getByText("32 tools")).toBeInTheDocument();
+    expect(screen.getByText(`${TOOLS_WITHOUT_ENGINES} tools`)).toBeInTheDocument();
+    expect(screen.getByText(`${TOOLS_NEEDING_ONLY_SMALL_ENGINES} tools`)).toBeInTheDocument();
+    expect(screen.getByText(`${TOOLS_NEEDING_FFMPEG} tools`)).toBeInTheDocument();
+    await waitFor(() => expect(cachedBundleIds).toHaveBeenCalled());
+  });
+
+  /*
+    THE SENTENCE THIS PINS SHIPPED FALSE ONCE — it said everything-except-FFmpeg
+    was "a twentieth of the bytes" when it was a fifth, and the unit test named
+    for that fraction asserted a different one, so nothing was holding it.
+
+    Every expected value below is RECOMPUTED here from ENGINE_BUNDLES rather
+    than typed, which is what makes this fail in both directions: the prose
+    understating and the prose overstating are the same failure, and there is
+    no threshold anyone can widen to make it pass. ENGINE_BUNDLES and
+    formatEngineBytes are deliberately unmocked (see the header), so these
+    expectations track the artifacts on disk.
+  */
+  it("states the two shares as percentages recomputed from the bundles", async () => {
+    render(<OfflineSettings />);
+    const ffmpeg = ENGINE_BUNDLES.find((b) => b.id === "ffmpeg")!;
+    const small = ENGINE_BUNDLES.filter((b) => b.id !== "ffmpeg");
+    const smallBytes = small.reduce((sum, b) => sum + b.bytes, 0);
+    const total = smallBytes + ffmpeg.bytes;
+
+    const bytePct = Math.round((smallBytes / total) * 100);
+    const toolPct = Math.round((TOOLS_NEEDING_ONLY_SMALL_ENGINES / TOOLS_WITH_ENGINES) * 100);
+
+    const shape = screen.getByText(/of the bytes covers/).textContent ?? "";
+    expect(shape).toContain(`${bytePct}% of the bytes`);
+    expect(shape).toContain(`${toolPct}% of the tools`);
+    // The engine count is derived too — "seven of the eight" was a second
+    // hardcode on this line, and a ninth bundle would have falsified it while
+    // the eyebrow below went on rendering ENGINE_BUNDLES.length.
+    expect(shape).toContain(`${small.length} of the ${ENGINE_BUNDLES.length} engines`);
+    expect(shape).toContain(formatEngineBytes(smallBytes));
+    expect(shape).toContain(formatEngineBytes(ffmpeg.bytes));
+
     await waitFor(() => expect(cachedBundleIds).toHaveBeenCalled());
   });
 

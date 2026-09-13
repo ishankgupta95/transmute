@@ -7,6 +7,7 @@ import { CommandPalette } from "@/components/layout/CommandPalette";
 import { AnalyticsPageviews } from "@/components/layout/AnalyticsPageviews";
 import { ServiceWorkerRegistration } from "@/components/pwa/ServiceWorkerRegistration";
 import "./globals.css";
+import { HTML_LANG, OG_LOCALE } from "@/lib/seo/locale";
 
 const GA_ID = "G-TCWDH01ZSK";
 
@@ -88,13 +89,13 @@ export const metadata: Metadata = {
     canonical: BASE_URL,
   },
   openGraph: {
+    locale: OG_LOCALE,
     title: "Transmute — Free Online File Conversion Tools",
     description:
       "Convert images, PDFs, audio, video, and more — free, private, and entirely in your browser. No uploads, no sign-ups.",
     url: BASE_URL,
     siteName: "Transmute",
     type: "website",
-    locale: "en_US",
     images: [
       {
         url: "/og-image.png",
@@ -126,7 +127,7 @@ export default function RootLayout({
 }>) {
   return (
     <html
-      lang="en"
+      lang={HTML_LANG}
       className={`${inter.variable} ${plexMono.variable} h-full antialiased`}
     >
       <head>

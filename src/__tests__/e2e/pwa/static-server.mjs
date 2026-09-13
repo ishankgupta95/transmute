@@ -79,6 +79,16 @@ const CONTENT_TYPES = new Map(
     ".ico": "image/x-icon",
     ".pdf": "application/pdf",
     ".zip": "application/zip",
+    /*
+      The OCR language model. It is served PRE-COMPRESSED and inflated by the
+      engine itself (zlibjs, inside worker.min.js), so what matters is the
+      absence of `Content-Encoding: gzip` rather than this type: with that
+      header the browser would inflate it too, and the engine would then be
+      handed already-inflated bytes it cannot read. `application/gzip` with no
+      Content-Encoding is the shape tesseract.js's own CDN serves and the shape
+      this map mirrors.
+    */
+    ".gz": "application/gzip",
     ".map": "application/json; charset=utf-8",
   }),
 );

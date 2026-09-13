@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { getToolsByCategory } from "@/data/tools";
 import { CategoryHubPage } from "@/components/layout/CategoryHubPage";
+import { OG_LOCALE } from "@/lib/seo/locale";
 
 export const metadata: Metadata = {
   title: "Image Tools — Convert, Compress, Resize & More",
@@ -17,6 +18,7 @@ export const metadata: Metadata = {
   ],
   alternates: { canonical: "/image-tools" },
   openGraph: {
+    locale: OG_LOCALE,
     title: "Image Tools — Convert, Compress, Resize & More | Transmute",
     description: "Free browser-based image tools. Convert formats, compress, resize, crop, and more — no uploads needed.",
     url: "/image-tools",

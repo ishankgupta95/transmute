@@ -26,7 +26,7 @@ import {
  * a canvas is created, filled and encoded on this side of the boundary.
  *
  * NOT importable from a worker entrypoint: canvas-utils.ts uses `new Image()`
- * and `document`, and image-convert.ts reaches for heic2any.
+ * and `document`, and image-convert.ts reaches for libheif.
  */
 
 /** Rotate / flip / watermark / pixelate / circle crop / border — one output. */

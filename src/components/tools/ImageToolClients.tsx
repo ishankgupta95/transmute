@@ -16,6 +16,8 @@ import type { Tool } from "@/data/tools";
  * under `output: "export"`. Mirrors `DevToolClients.tsx`.
  */
 
+const GifMakerUI = dynamic(() => import("./GifMakerUI").then((m) => ({ default: m.GifMakerUI })), { ssr: false });
+const GifEditUI = dynamic(() => import("./GifEditUI").then((m) => ({ default: m.GifEditUI })), { ssr: false });
 const ImageConverterUI = dynamic(() => import("./ImageConverterUI").then((m) => ({ default: m.ImageConverterUI })), { ssr: false });
 const ImageCompressorUI = dynamic(() => import("./ImageCompressorUI").then((m) => ({ default: m.ImageCompressorUI })), { ssr: false });
 const ImageResizerUI = dynamic(() => import("./ImageResizerUI").then((m) => ({ default: m.ImageResizerUI })), { ssr: false });
@@ -48,10 +50,31 @@ const PixelateImageUI = dynamic(() => import("./PixelateImageUI").then((m) => ({
 const CropCircleUI = dynamic(() => import("./CropCircleUI").then((m) => ({ default: m.CropCircleUI })), { ssr: false });
 const ImageSplitterUI = dynamic(() => import("./ImageSplitterUI").then((m) => ({ default: m.ImageSplitterUI })), { ssr: false });
 const SocialMediaImageResizerUI = dynamic(() => import("./SocialMediaImageResizerUI").then((m) => ({ default: m.SocialMediaImageResizerUI })), { ssr: false });
+const ImageToTextUI = dynamic(() => import("./ImageToTextUI").then((m) => ({ default: m.ImageToTextUI })), { ssr: false });
 const CompressPngUI = dynamic(() => import("./CompressPngUI").then((m) => ({ default: m.CompressPngUI })), { ssr: false });
 const IcoToPngUI = dynamic(() => import("./IcoToPngUI").then((m) => ({ default: m.IcoToPngUI })), { ssr: false });
 const Base64ToImageUI = dynamic(() => import("./Base64ToImageUI").then((m) => ({ default: m.Base64ToImageUI })), { ssr: false });
 const ChangeImageDpiUI = dynamic(() => import("./ChangeImageDpiUI").then((m) => ({ default: m.ChangeImageDpiUI })), { ssr: false });
+
+export function GifMakerClient({ tool }: { tool: Tool }) {
+  return <GifMakerUI acceptFormats={tool.acceptFormats} />;
+}
+
+export function ResizeGifClient() {
+  return <GifEditUI verb="resize" />;
+}
+
+export function GifSpeedChangerClient() {
+  return <GifEditUI verb="speed" />;
+}
+
+export function ReverseGifClient() {
+  return <GifEditUI verb="reverse" />;
+}
+
+export function SplitGifClient() {
+  return <GifEditUI verb="split" />;
+}
 
 export function ImageToolClient({ tool }: { tool: Tool }) {
   return (
@@ -134,6 +157,10 @@ export function ImageSplitterClient({ tool }: { tool: Tool }) {
 
 export function SocialMediaImageResizerClient({ tool }: { tool: Tool }) {
   return <SocialMediaImageResizerUI acceptFormats={tool.acceptFormats} />;
+}
+
+export function ImageToTextClient({ tool }: { tool: Tool }) {
+  return <ImageToTextUI acceptFormats={tool.acceptFormats} />;
 }
 
 export function CompressPngClient({ tool }: { tool: Tool }) {

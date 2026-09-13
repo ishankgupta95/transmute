@@ -19,6 +19,7 @@ import { cn } from "@/lib/utils/cn";
 import { CANVAS_COLUMN } from "@/components/workspace/shared";
 import { useCopied } from "@/hooks/useCopied";
 import { formatFileSize } from "@/lib/utils/file-helpers";
+import "@/styles/prose.css";
 
 /**
  * Focus ring for the keyboard-focusable text panes below. It cannot live in

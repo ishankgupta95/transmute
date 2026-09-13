@@ -59,6 +59,11 @@ const TOS = ["JPG", "PNG", "WEBP", "PDF", "GIF", "MP4", "MP3", "WAV", "CSV"] as 
  *    a PNG. The WEBP cell beside it is filled by one of those five, so an
  *    empty PNG cell next to a filled WEBP one is the accurate reading rather
  *    than a row somebody stopped halfway through.
+ *  - JPG/PNG/WEBP → GIF, 2026-09-11: `gif-maker` fills three cells that had
+ *    read "no tool" since this matrix was written. It takes a SET of stills and
+ *    builds one animation, so a single picture in gives a one-frame GIF — which
+ *    is a real conversion and is why the cells are no longer empty. The empty
+ *    cell is a claim, and it had become a false one.
  *  - MKV→GIF, AVI→GIF and MKV/AVI→JPG/PNG/WEBP: every tool behind those cells
  *    (`video-to-gif`, `video-to-images`, `video-thumbnail`) decodes through the
  *    browser's own <video> element rather than FFmpeg, and all three therefore
@@ -72,10 +77,10 @@ const TOS = ["JPG", "PNG", "WEBP", "PDF", "GIF", "MP4", "MP3", "WAV", "CSV"] as 
  *    Filling the cell would trade a missing cell for a false one.
  */
 const ROUTES: Record<string, readonly string[]> = {
-  JPG: ["PNG", "WEBP", "PDF", "JPG"],
-  PNG: ["JPG", "WEBP", "PDF", "PNG"],
+  JPG: ["PNG", "WEBP", "PDF", "JPG", "GIF"],
+  PNG: ["JPG", "WEBP", "PDF", "PNG", "GIF"],
   HEIC: ["JPG", "PDF", "WEBP"],
-  WEBP: ["JPG", "PNG", "PDF", "WEBP"],
+  WEBP: ["JPG", "PNG", "PDF", "WEBP", "GIF"],
   PDF: ["JPG", "PNG", "WEBP", "PDF"],
   MP4: ["JPG", "PNG", "WEBP", "GIF", "MP4", "MP3", "WAV"],
   MOV: ["JPG", "PNG", "WEBP", "GIF", "MP4", "MP3", "WAV"],

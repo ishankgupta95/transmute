@@ -66,13 +66,38 @@ export default function manifest(): MetadataRoute.Manifest {
       which does nothing at all in the browsers — most of them — that have no
       such object.
 
-      No `launch_handler` beside it. The three client modes trade an unwanted
-      second window against navigating a window that may be minutes into a
-      conversion, and which one "auto" picks for a file launch is not something
-      this repo can measure from here. Declaring nothing leaves the browser's
+      `launch_handler` is declared below, and it REVERSES what stood here.
+
+      This comment used to argue that declaring nothing "leaves the browser's
       own default in place, which is the honest answer to a question we cannot
-      answer; pinning a mode on a guess is not.
+      answer". The premise was wrong, and the spec says so: the default is
+      `auto`, and `auto` is not neutral — it is "the user agent decides what
+      context makes sense for the platform", with `navigate-existing` the
+      documented typical choice on mobile. `navigate-existing` brings an
+      existing window into focus AND NAVIGATES IT to the launch URL.
+
+      So declaring nothing was never the safe option. It was the one option
+      that left this app exposed to a window being navigated away mid-run — a
+      tab that may be minutes into a conversion holding the user's only copy of
+      the output, which is the exact thing `ServiceWorkerRegistration` refuses
+      to do with an update. The question was answerable after all; it just
+      needed the spec rather than an installed PWA.
+
+      WHY `navigate-new` AND NOT `focus-existing`, which also never navigates:
+      `LaunchQueueIntake` is mounted in exactly one place — `OpenWithClient`,
+      which is `/open`, the same URL as this handler's `action`.
+      `focus-existing` focuses whatever window is already open WITHOUT
+      navigating it, so unless that window happens to be sitting on `/open`
+      the consumer is not mounted, `setConsumer` is never called, and the file
+      is silently dropped: the app pops to the front and nothing happens. A
+      silent drop is worse here than a second window.
+
+      `navigate-new` is the only mode whose behaviour is fully specified, whose
+      file always reaches the page that can handle it, and whose worst case —
+      an extra app window when one was already open — costs the user a click
+      and nothing else.
     */
+    launch_handler: { client_mode: "navigate-new" },
     file_handlers: [
       {
         action: SHARE_TARGET_ACTION,

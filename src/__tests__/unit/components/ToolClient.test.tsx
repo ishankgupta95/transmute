@@ -96,6 +96,17 @@ const EXPECTED_CLIENT: Record<string, string> = {
   "image-splitter": "ImageSplitterClient",
   "social-media-image-resizer": "SocialMediaImageResizerClient",
   "compress-png": "CompressPngClient",
+  "image-to-text": "ImageToTextClient",
+  "ocr-pdf": "OcrPdfClient",
+  "vcf-to-csv": "VcfToCsvClient",
+  "ics-to-csv": "IcsToCsvClient",
+  "resize-gif": "ResizeGifClient",
+  "gif-speed-changer": "GifSpeedChangerClient",
+  "reverse-gif": "ReverseGifClient",
+  "split-gif": "SplitGifClient",
+  "gif-maker": "GifMakerClient",
+  "csv-markdown-table": "CsvMarkdownTableClient",
+  "bcrypt-generator": "BcryptGeneratorClient",
   "ico-to-png": "IcoToPngClient",
   "base64-to-image": "Base64ToImageClient",
   "change-image-dpi": "ChangeImageDpiClient",
@@ -370,7 +381,7 @@ for (const { name, source } of CLIENT_SOURCES) {
 }
 
 /**
- * The four wrappers whose UI is not `<name minus "Client"> + "UI"`, and why.
+ * The ten wrappers whose UI is not `<name minus "Client"> + "UI"`, and why.
  * A fifth appearing here unannounced is what the mechanical check below is
  * for: it is how a paste lands on the wrong UI and reads as normal.
  */
@@ -385,6 +396,23 @@ const UI_FOR_CLIENT: Record<string, string> = {
   CompressVideoToSizeClient: "CompressVideoUI",
   // The tool is "merge audio"; the component was named for the noun.
   MergeAudioClient: "AudioMergerUI",
+  /*
+    `.vcf` and `.ics` are the same job — an RFC content-line file flattened
+    into a rectangle — so they share one UI with the format as a prop, the
+    way the image and audio converters above do. Two near-identical
+    components would be two places for the dropped-property warning to drift.
+  */
+  /*
+    The four GIF verbs are one decode-transform-encode pipeline with the verb
+    as a prop; four near-identical components would be four places for the
+    still-image warning and the palette caveat to drift apart.
+  */
+  ResizeGifClient: "GifEditUI",
+  GifSpeedChangerClient: "GifEditUI",
+  ReverseGifClient: "GifEditUI",
+  SplitGifClient: "GifEditUI",
+  VcfToCsvClient: "ContactsCalendarCsvUI",
+  IcsToCsvClient: "ContactsCalendarCsvUI",
 };
 
 describe("ToolClient — every client wrapper mounts the UI its name promises", () => {

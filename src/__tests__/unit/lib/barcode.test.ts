@@ -858,7 +858,23 @@ describe("the capacity every note quotes", () => {
     expect(await accepts("qrcode", "a".repeat(2331))).toBe(true);
     expect(await accepts("qrcode", "a".repeat(2332))).toBe(false);
     expect(await accepts("qrcode", "A".repeat(3391))).toBe(true);
-  });
+    /*
+      20s, not the 5s default, and the number is measured rather than padded:
+      the nine assertions above drive NINE version-40 QR encodes through BWIPP
+      — the largest symbol the format has — and this file costs ~4.0s of test
+      time on an idle machine, nearly all of it here.
+
+      It fit inside the default by luck, not by design, and it stopped fitting
+      on 2026-09-12 when the HEIC swap added one more test FILE: an extra
+      vitest worker is ~0.9s of environment setup competing for the same
+      cores, which was enough to push a 4s test past 5s. It then failed 3/3
+      while passing in isolation, which is the signature of contention rather
+      than of a defect.
+
+      Raising it changes nothing about what is asserted — every capacity
+      boundary above still has to hold exactly.
+    */
+  }, 20_000);
 
   it("quotes no capacity in a note the engine does not back", () => {
     // Every other note is free of numbers on purpose: Data Matrix, PDF417 and

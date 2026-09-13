@@ -153,12 +153,17 @@ describe("engines", () => {
       "/libarchive.wasm",
       "/squoosh_oxipng_bg.wasm",
     ]);
-    expect([...ENGINE_DIRS]).toEqual(["/vendor/", "/fonts/print/"]);
+    expect([...ENGINE_DIRS]).toEqual(["/vendor/", "/fonts/print/", "/tesseract/"]);
   });
 
   it("classifies the vendored LGPL libraries and the print fonts", () => {
     expect(decide("/vendor/lamejs.js", { destination: "script" })).toBe("engine");
-    expect(decide("/vendor/heic2any.js", { destination: "script" })).toBe("engine");
+    // BOTH halves of the HEIC decoder, and the .wasm especially: it is fetched
+    // by `fetch()` rather than as a script, so its `destination` is "" — a rule
+    // keyed on destination rather than on the directory would miss it and the
+    // offline opt-in would store a glue file with no binary.
+    expect(decide("/vendor/libheif.js", { destination: "script" })).toBe("engine");
+    expect(decide("/vendor/libheif.wasm", { destination: "" })).toBe("engine");
     expect(
       decide("/fonts/print/newsreader-latin-wght-normal.woff2", { destination: "font" }),
     ).toBe("engine");

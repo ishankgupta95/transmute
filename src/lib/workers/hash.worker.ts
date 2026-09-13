@@ -1,5 +1,5 @@
 /// <reference lib="webworker" />
-import { computeHashes } from "@/lib/tools/hash-digest";
+import { computeHashesStreaming } from "@/lib/tools/hash-digest";
 import type { PoolWorkerRequest, PoolWorkerResponse } from "./pool";
 
 /**
@@ -13,9 +13,9 @@ declare const self: DedicatedWorkerGlobalScope;
 
 self.onmessage = async (event: MessageEvent<PoolWorkerRequest>) => {
   const { id, payload } = event.data;
-  const { data } = payload as { data: ArrayBuffer };
+  const { blob } = payload as { blob: Blob };
   try {
-    const result = await computeHashes(data, (value) => {
+    const result = await computeHashesStreaming(blob, (value) => {
       self.postMessage({ id, type: "progress", value } satisfies PoolWorkerResponse);
     });
     self.postMessage({ id, type: "done", result } satisfies PoolWorkerResponse);

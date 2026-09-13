@@ -84,11 +84,14 @@ export const ENGINE_FILES: readonly string[] = [
 ];
 
 /**
- * Engine directories. `/vendor/` is lamejs + heic2any (audio-pcm.ts:62,
- * image-convert.ts:155); `/fonts/print/` is the five woff2 faces the Markdown
- * to PDF tool embeds (markdown-pdf-print-css.ts:25-53).
+ * Engine directories. `/vendor/` is lamejs + libheif (audio-pcm.ts:62,
+ * image-convert.ts:169); `/fonts/print/` is the five woff2 faces the Markdown
+ * to PDF tool embeds (markdown-pdf-print-css.ts:25-53); `/tesseract/` is the
+ * OCR engine, its language model and the worker script that loads them
+ * (ocr.ts:52) — one directory because the core locates its .wasm relative to
+ * the worker's URL, so they cannot be split.
  */
-export const ENGINE_DIRS: readonly string[] = ["/vendor/", "/fonts/print/"];
+export const ENGINE_DIRS: readonly string[] = ["/vendor/", "/fonts/print/", "/tesseract/"];
 
 /**
  * Is this one of the self-hosted engine binaries?

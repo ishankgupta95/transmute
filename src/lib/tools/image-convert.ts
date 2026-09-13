@@ -1,6 +1,6 @@
 import type { ProcessedResult } from "@/hooks/useFileProcessor";
 import { canvasToBlob, fillBackground, loadImage, mimeSupportsAlpha } from "./canvas-utils";
-import { fileFirstFrameWarning, tiffPageWarning } from "./image-frames";
+import { fileFirstFrameWarning, heicImageWarning, tiffPageWarning } from "./image-frames";
 
 /**
  * BMP is deliberately absent as a *target*: `canvas.toBlob` is only required to
@@ -17,7 +17,7 @@ export interface ImageConvertOptions {
 
 /**
  * Convert an image file to the target format using Canvas API.
- * Handles HEIC (via heic2any), TIFF (via utif2), SVG, and all
+ * Handles HEIC (via libheif-js), TIFF (via utif2), SVG, and all
  * browser-native formats.
  */
 export async function convertImage(
@@ -134,86 +134,207 @@ export interface DecodableSource {
 }
 
 /**
- * The one call shape this file makes into heic2any. Declared by hand because
- * the library is now reached through a dynamic `import()` with a computed
- * specifier, and such an import has no static type — TypeScript cannot know
- * which file will answer it.
+ * The slice of libheif-js's high-level binding this file drives. Declared by
+ * hand because the library is reached through a runtime-computed URL and has
+ * no static type here — TypeScript cannot know which file will answer it.
+ *
+ * `display` is callback-shaped rather than promise-shaped, and it hands back
+ * null on a decode failure instead of throwing.
  */
-type Heic2AnyOptions = { blob: Blob; toType?: string; quality?: number };
-type Heic2Any = (options: Heic2AnyOptions) => Promise<Blob | Blob[]>;
+interface HeifImage {
+  get_width(): number;
+  get_height(): number;
+  is_primary(): boolean;
+  display(into: ImageData, done: (out: ImageData | null) => void): void;
+  free(): void;
+}
+interface HeifDecoderInstance {
+  /**
+   * The wasm pointer to this decoder's `heif_context`. Public in the shipped
+   * binding (`Wr = function(){ this.decoder = null }`) and the only handle on
+   * the allocation — see the leak note on `decodeHeic`.
+   */
+  decoder: number | null;
+  decode(bytes: Uint8Array): HeifImage[];
+}
+interface HeifDecoderCtor {
+  new (): HeifDecoderInstance;
+}
+interface LibheifModule {
+  HeifDecoder: HeifDecoderCtor;
+  heif_context_free(context: number | null): void;
+}
+/** Emscripten module factory. Resolves once the wasm is instantiated. */
+type LibheifFactory = (options: { wasmBinary: ArrayBuffer }) => Promise<LibheifModule>;
 
 /**
  * Same-origin URL of a vendored third-party library, prefixed the way every
  * other self-hosted asset in this app is (see workers/image-client.ts).
  *
  * THIS FUNCTION IS LOAD-BEARING — see the twin in lib/tools/audio-pcm.ts.
- * Folding it into a plain template literal at the `import()` call site would
- * give the bundler a resolvable string constant and it would inline the
- * library again, which is precisely what must not happen.
+ * Folding it into a plain template literal at the call site would give the
+ * bundler a resolvable string constant and it would inline the library again,
+ * which is precisely what must not happen.
  */
 function vendorUrl(name: string, attempt = 0): string {
   const base = `${process.env.__NEXT_ROUTER_BASEPATH ?? ""}/vendor/${name}`;
-  // A failed module fetch is remembered per specifier by the browser's module
-  // map, so a retry of the identical URL rejects without a request. See the
-  // fuller note on the twin in lib/tools/audio-pcm.ts.
+  // A failed fetch is remembered — per specifier by the module map for the
+  // `import()` twin in audio-pcm.ts, and by the HTTP cache for the script tag
+  // and `fetch` here — so a retry of the identical URL can resolve to the
+  // failure without a request. The query string makes the retry a new URL.
   return attempt === 0 ? base : `${base}?retry=${attempt}`;
 }
 
 
-/** Memoised so a batch of HEICs shares one fetch of the 1.3 MB decoder. */
-let heic2anyScript: Promise<unknown> | null = null;
+/** Memoised so a batch of HEICs shares one fetch of the 1.4 MB decoder. */
+let libheifModule: Promise<LibheifModule> | null = null;
 /** How many times loading has been attempted; see vendorUrl's `attempt`. */
-let heic2anyAttempts = 0;
+let libheifAttempts = 0;
 
 /**
- * Fetch heic2any from `/vendor/heic2any.js` instead of bundling it.
+ * Fetch libheif-js from `/vendor/` instead of bundling it.
  *
- * The heic2any *wrapper* is MIT, but the file ships libheif and libde265
- * compiled into it, and both of those are LGPL. An LGPL library stays under
- * its own terms only while it remains replaceable — someone must be able to
- * substitute their own build of the decoder and have this app use it.
- * Minified into a Next client chunk it is not replaceable, so
- * `npm run copy:wasm` copies upstream's `dist/heic2any.js` byte-for-byte into
- * `public/vendor/` and this loads it at first HEIC.
+ * WHY VENDORED: libheif and libde265 are LGPL. An LGPL library stays under its
+ * own terms only while it remains replaceable — someone must be able to drop
+ * in their own build of the decoder and have this app use it. Minified into a
+ * Next client chunk it is not replaceable, so `npm run copy:wasm` copies
+ * upstream's `libheif-wasm/libheif.js` and `libheif-wasm/libheif.wasm`
+ * byte-for-byte into `public/vendor/` and this loads them at first HEIC.
  *
- * NOW THE PART THAT LOOKS WRONG AND IS NOT: the module namespace this import
- * resolves to is EMPTY. `dist/heic2any.js` is a UMD bundle, and when a UMD
- * bundle is executed as an ES module neither of its module-system branches
- * matches — there is no `exports`, no `module`, no AMD `define`, and
- * top-level `this` is `undefined`. It therefore falls through to its global
- * branch, `(global = global || self, global.heic2any = factory())`, and
- * assigns itself to `self`. So `(await import(url)).default` — which is
- * what this code used to do against the bare "heic2any" specifier, back when
- * Turbopack was interoperating the CommonJS branch for us — is `undefined`
- * here. The import is awaited purely for its side effect and the function is
- * read off `globalThis` afterwards. Verified in both Chromium and WebKit.
+ * WHY TWO FILES AND NOT THE ONE-FILE BUNDLE: libheif-js also publishes
+ * `libheif-bundle.mjs`, which is this same wasm base64'd inside the glue.
+ * Measured 2026-09-12: 1,989,119 B raw / 696,990 B gzipped against
+ * 1,513,632 B / 497,826 B for the pair — the convenience of one file costs
+ * 199,164 bytes on the wire, all of it base64 padding, for no capability. The
+ * two files are siblings in `/vendor/` and both are replaceable, which is what
+ * the licence needs.
+ *
+ * WHY A SCRIPT TAG AND NOT `import()`: this is the one place the twin in
+ * lib/tools/audio-pcm.ts could not be copied. heic2any's UMD had an explicit
+ * global branch (`global.heic2any = factory()`), so importing it for its side
+ * effect and reading the global worked. libheif-js's UMD tail does only
+ * `module.exports` / AMD `define` over a top-level `var libheif`, which in an
+ * ES module is module-scoped and unreachable: measured, `import()` yields an
+ * empty namespace AND leaves `globalThis.libheif` undefined. A classic script
+ * gets the sloppy-mode global, and — like the computed specifier it replaces —
+ * a runtime-built `src` is something no bundler can inline.
+ *
+ * WHY WE HAND IT THE WASM — and the reason is not the one you would guess.
+ * It is not about URL resolution: this build has ASYNC WASM COMPILATION OFF, so
+ * left alone the glue tries to read its binary SYNCHRONOUSLY, which no browser
+ * permits. Measured: it never issues a request for `libheif.wasm` at all, it
+ * aborts with "sync fetching of the wasm failed: you can preload it to
+ * Module['wasmBinary'] manually". Supplying `wasmBinary` is therefore
+ * REQUIRED, not an optimisation — it is what the package's own Node entrypoint
+ * does too. The happy side effect is that the URL is ours, so the tesseract
+ * sibling-resolution trap has nothing to bite.
  *
  * This is main-thread-only code: image-convert.ts is reachable from the UI and
  * from workers/image-client.ts's main-thread `prepareSource`, but from no
  * worker entrypoint (image.worker.ts imports it with `import type` only, which
  * esbuild erases). Keep it that way — dragging it into the worker graph would
- * put a 1.3 MB decoder into a worker bundle that today has none of it.
+ * put a 1.4 MB decoder into a worker bundle that today has none of it, and
+ * `document.createElement` would not be there to load it.
  */
-async function loadHeic2Any(): Promise<Heic2Any> {
-  if (!heic2anyScript) {
-    heic2anyScript = (
-      import(
-        /* webpackIgnore: true */ /* turbopackIgnore: true */ vendorUrl("heic2any.js", heic2anyAttempts++)
-      ) as Promise<unknown>
-    ).catch((err) => {
+async function loadLibheif(): Promise<LibheifModule> {
+  if (!libheifModule) {
+    const attempt = libheifAttempts++;
+    libheifModule = (async () => {
+      await new Promise<void>((resolve, reject) => {
+        const script = document.createElement("script");
+        script.src = vendorUrl("libheif.js", attempt);
+        script.onload = () => resolve();
+        script.onerror = () => reject(new Error("Could not load the HEIC decoder"));
+        document.head.appendChild(script);
+      });
+      const factory = (globalThis as { libheif?: LibheifFactory }).libheif;
+      if (typeof factory !== "function") throw new Error("Could not load the HEIC decoder");
+      const response = await fetch(vendorUrl("libheif.wasm", attempt));
+      if (!response.ok) throw new Error("Could not load the HEIC decoder");
+      return await factory({ wasmBinary: await response.arrayBuffer() });
+    })().catch((err) => {
       // Clearing the memo is only half of it — the retry also has to ask for a
-      // URL the module map has not already condemned, which is what the
+      // URL the HTTP cache has not already condemned, which is what the
       // attempt counter in vendorUrl buys. Without both, one flaky request for
-      // this 1.3 MB file breaks every later HEIC in the tab, including the
-      // retry the user reaches for by re-dropping the photo.
-      heic2anyScript = null;
+      // these 1.4 MB breaks every later HEIC in the tab, including the retry
+      // the user reaches for by re-dropping the photo.
+      libheifModule = null;
       throw err;
     });
   }
-  await heic2anyScript;
-  const heic2any = (globalThis as { heic2any?: Heic2Any }).heic2any;
-  if (!heic2any) throw new Error("Could not load the HEIC decoder");
-  return heic2any;
+  return await libheifModule;
+}
+
+/**
+ * Decode a HEIC/HEIF to PNG bytes the rest of the pipeline can `<img>`-decode,
+ * plus a warning when the container held more than one picture.
+ *
+ * WHICH image survives: the one the file marks primary, not index 0. The
+ * container's `pitm` box names the main picture and nothing requires it to be
+ * first — the decoder we used until 2026-09-12 always took `[0]`, which is why
+ * the shipped copy's promise of "the primary image" was not reliably true.
+ *
+ * Every handle is freed, including the ones we discard: they are wasm heap
+ * allocations, and a batch of bursts would otherwise grow the heap until it
+ * aborted. (Same lesson as the TIFF per-page retention fixed in Wave 1.)
+ */
+async function decodeHeic(file: File): Promise<DecodableSource> {
+  const libheif = await loadLibheif();
+  const decoder = new libheif.HeifDecoder();
+  let images: HeifImage[] = [];
+  try {
+    images = decoder.decode(new Uint8Array(await file.arrayBuffer()));
+    if (images.length === 0) throw new Error("This file has no image inside it");
+
+    const main = images.find((image) => image.is_primary()) ?? images[0];
+    const w = main.get_width();
+    const h = main.get_height();
+
+    const canvas = document.createElement("canvas");
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) throw new Error("Canvas 2D context not available");
+
+    const imageData = ctx.createImageData(w, h);
+    const decoded = await new Promise<ImageData | null>((resolve) => {
+      main.display(imageData, resolve);
+    });
+    if (!decoded) throw new Error("Could not decode this HEIC image");
+    ctx.putImageData(decoded, 0, 0);
+
+    const warning = heicImageWarning(images.length);
+    return {
+      // PNG, always: HEIC carries alpha in its own auxiliary item and a JPEG
+      // hand-off here would flatten it to black, which is the exact defect the
+      // decoder swap fixed.
+      blob: await canvasToBlob(canvas, "image/png", 1),
+      warnings: warning ? [warning] : [],
+    };
+  } finally {
+    for (const image of images) image.free();
+    // ⚠ FREEING THE CONTEXT IS NOT OPTIONAL, AND THE LIBRARY WILL NOT DO IT.
+    // `HeifDecoder.decode()` frees the previous context only when it is called
+    // AGAIN ON THE SAME INSTANCE — and a fresh instance per file (which is what
+    // safety requires here, see below) is dropped before that ever happens, so
+    // `heif_context_read_from_memory`'s copy of the whole file stays in the
+    // wasm heap for the life of the tab.
+    //
+    // Measured 2026-09-12, 400 decodes of an 82,878-byte photo: the heap grows
+    // 16.3 MB -> 48.6 MB without this line and stays flat at 16.3 MB with it.
+    // ~81 KB retained per photo, i.e. roughly the file. A batch of 3 MB iPhone
+    // photos would walk a browser into the same out-of-memory abort this swap
+    // was partly made to escape.
+    //
+    // WHY NOT SHARE ONE DECODER INSTANCE, which would also free the previous
+    // context: the image handles are used AFTER an `await` (display() is
+    // callback-shaped), so two conversions running at once — which a batch
+    // does — would let the second decode free the first's context out from
+    // under live handles. A fresh decoder plus an explicit free is the version
+    // that is both leak-free and safe.
+    libheif.heif_context_free(decoder.decoder);
+    decoder.decoder = null;
+  }
 }
 
 /**
@@ -228,9 +349,7 @@ export async function toDecodableSource(file: File): Promise<DecodableSource> {
 
   // HEIC / HEIF
   if (ext === "heic" || ext === "heif" || file.type === "image/heic" || file.type === "image/heif") {
-    const heic2any = await loadHeic2Any();
-    const result = await heic2any({ blob: file, toType: "image/png" });
-    return { blob: Array.isArray(result) ? result[0] : result, warnings: [] };
+    return await decodeHeic(file);
   }
 
   // TIFF

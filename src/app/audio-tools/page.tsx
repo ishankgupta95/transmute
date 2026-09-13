@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { getToolsByCategory, splitByJob } from "@/data/tools";
 import { CategoryHubPage } from "@/components/layout/CategoryHubPage";
+import { OG_LOCALE } from "@/lib/seo/locale";
 
 /*
   The description and keyword list below are hand-maintained, and they used to
@@ -32,6 +33,7 @@ export const metadata: Metadata = {
   ],
   alternates: { canonical: "/audio-tools" },
   openGraph: {
+    locale: OG_LOCALE,
     title: "Audio Tools — Convert, Trim, Normalize & Record | Transmute",
     description: "Free browser-based audio tools. Convert between MP3, WAV, M4A, AAC, FLAC, OGG, Opus and WMA, trim, merge, normalize loudness, cut silence and record — no uploads needed.",
     url: "/audio-tools",

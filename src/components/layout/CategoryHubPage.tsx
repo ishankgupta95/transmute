@@ -96,7 +96,7 @@ export function CategoryHubPage({
                 NEVER row uses — a flat claim that opening any tool here costs
                 you no bytes. It was false on four of the five: /video-tools
                 and /audio-tools can pull the ~31 MB FFmpeg core, /pdf-tools
-                pulls 2.3 MB of qpdf, /image-tools 1.3 MB of heic2any. The
+                pulls 2.3 MB of qpdf, /image-tools 1.4 MB of libheif. The
                 figure now comes from the category (see `data/categories.ts`,
                 which quotes the homepage ENGINES table), and the success
                 colour is spent only where the claim is still "0 KB".

@@ -262,6 +262,11 @@ export const posts: BlogPost[] = [
     ],
     primaryTool: "video-to-gif",
     relatedTools: [
+      "gif-maker",
+      "resize-gif",
+      "gif-speed-changer",
+      "reverse-gif",
+      "split-gif",
       "video-to-gif",
       "video-trimmer",
       "compress-video",
@@ -292,6 +297,10 @@ export const posts: BlogPost[] = [
     ],
     primaryTool: "json-formatter",
     relatedTools: [
+      "bcrypt-generator",
+      "csv-markdown-table",
+      "vcf-to-csv",
+      "ics-to-csv",
       "json-formatter",
       "regex-tester",
       "jwt-decoder",
@@ -382,6 +391,8 @@ export const posts: BlogPost[] = [
     relatedTools: [
       "heic-to-jpg",
       "compress-pdf",
+      "ocr-pdf",
+      "image-to-text",
       "pdf-to-text",
       "crop-pdf",
       "jwt-decoder",

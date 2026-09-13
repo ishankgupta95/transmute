@@ -41,12 +41,19 @@ async function decodedSize(
  * header, so a format-only assertion cannot fail on the regression that
  * matters.
  *
- * HEIC and AVIF are the only two inputs still on a page smoke, and for a
- * verified reason: neither can be synthesised. `heic2any` decodes but never
- * encodes, and Chromium's `canvas.toBlob("image/avif")` silently falls back to
- * PNG (probed 2026-08-19 — it returns `image/png`). TIFF used to be on that
- * list by assumption; `utif2` ships an encoder, so it now has a real
+ * AVIF is the only input still on a page smoke, for a verified reason: it
+ * cannot be synthesised in-browser — Chromium's `canvas.toBlob("image/avif")`
+ * silently falls back to PNG (probed 2026-08-19 — it returns `image/png`) —
+ * and its build-time fixture is written by sharp/libaom instead. TIFF used to
+ * be on that list by assumption; `utif2` ships an encoder, so it has a real
  * conversion test below.
+ *
+ * HEIC LEFT THIS LIST ON 2026-09-12. The note that stood here said it "cannot
+ * be synthesised" because the decoder never encodes — true of the library,
+ * and beside the point: macOS writes real HEVC stills through ImageIO, so
+ * `generate-test-fixtures.mjs --heic` produces genuine `.heic` files and the
+ * real decode now lives in `e2e/conversion/image-formats.spec.ts`, where the
+ * fixtures are. A premise worth re-testing when the machine changes.
  */
 
 test.describe("image converters — lightweight pairs", () => {

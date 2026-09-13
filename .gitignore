@@ -29,6 +29,12 @@
 # this origin cannot be cross-origin-isolated.
 /public/squoosh_oxipng_bg.wasm
 
+# Staged by `copy:wasm` from the tesseract.js devDependencies and from
+# vendor/tessdata/. Served from /tesseract/ as ONE directory on purpose: the
+# core glue locates its .wasm against worker.min.js's URL, not its own, so
+# these four must stay siblings or the binary 404s.
+/public/tesseract/
+
 # Pool workers (bundled from src/lib/workers by scripts/build-workers.mjs,
 # invoked by `npm run copy:wasm` — same build-artifact treatment as the WASM).
 /public/workers/

@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { getToolsByCategory, splitByJob } from "@/data/tools";
 import { CategoryHubPage } from "@/components/layout/CategoryHubPage";
+import { OG_LOCALE } from "@/lib/seo/locale";
 
 /*
   The description and keyword list below are hand-maintained, and they used to
@@ -35,6 +36,7 @@ export const metadata: Metadata = {
   ],
   alternates: { canonical: "/video-tools" },
   openGraph: {
+    locale: OG_LOCALE,
     title: "Video Tools — Convert, Split, Merge, Compress & Record | Transmute",
     description: "Free browser-based video tools. Swap containers, split and join clips without re-encoding, save frames as images, trim, compress, and record your screen or camera — no uploads needed.",
     url: "/video-tools",

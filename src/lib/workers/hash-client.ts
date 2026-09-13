@@ -1,4 +1,4 @@
-import { computeHashes, type Hashes } from "@/lib/tools/hash-digest";
+import { computeHashesStreaming, type Hashes } from "@/lib/tools/hash-digest";
 import { WorkerPool } from "./pool";
 
 /**
@@ -29,17 +29,21 @@ export function hashRunsInline(): boolean {
 }
 
 /**
- * NOTE: `data` is TRANSFERRED to the worker, so the caller's ArrayBuffer is
- * detached. Every caller builds a fresh buffer per run, which is why that is
- * safe (and why it avoids copying a 100 MB file across the boundary).
+ * A BLOB crosses the worker boundary, not an ArrayBuffer — and that is the
+ * whole point rather than a detail. A Blob is structured-cloned by REFERENCE
+ * to bytes the browser already has on disk, so nothing is copied and nothing
+ * has to be resident: the worker opens `blob.stream()` on the far side. The
+ * previous shape transferred an ArrayBuffer, which meant every caller first
+ * had to materialise the entire file in one allocation and so inherited the
+ * renderer's ~2 GB single-buffer ceiling.
+ *
+ * `memoryBytes` is still the file's size for the pool's scheduling, but it is
+ * now an upper bound on what the run is WORTH rather than what it COSTS.
  */
 export async function computeHashesGuarded(
-  data: ArrayBuffer,
+  blob: Blob,
   onProgress?: (percent: number) => void,
 ): Promise<Hashes> {
-  if (hashRunsInline()) return computeHashes(data, onProgress);
-  return getHashPool().run<Hashes>(
-    { data },
-    { transfer: [data], memoryBytes: data.byteLength, onProgress },
-  );
+  if (hashRunsInline()) return computeHashesStreaming(blob, onProgress);
+  return getHashPool().run<Hashes>({ blob }, { memoryBytes: blob.size, onProgress });
 }

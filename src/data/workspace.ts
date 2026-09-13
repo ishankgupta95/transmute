@@ -114,7 +114,7 @@ function acceptLabel(slug: string): string {
 }
 
 const rawWorkspaceTools: WorkspaceTool[] = [
-  { slug: "heic-to-jpg", name: "HEIC to JPG", cat: "IMAGE", route: "HEIC → JPG", kind: "batch", engine: "HEIC2ANY", accept: "HEIC" },
+  { slug: "heic-to-jpg", name: "HEIC to JPG", cat: "IMAGE", route: "HEIC → JPG", kind: "batch", engine: "LIBHEIF", accept: "HEIC" },
   { slug: "webp-to-jpg", name: "WebP to JPG", cat: "IMAGE", route: "WEBP → JPG", kind: "batch", engine: "CANVAS 2D", accept: "WEBP" },
   { slug: "webp-to-png", name: "WebP to PNG", cat: "IMAGE", route: "WEBP → PNG", kind: "batch", engine: "CANVAS 2D", accept: "WEBP" },
   { slug: "png-to-jpg", name: "PNG to JPG", cat: "IMAGE", route: "PNG → JPG", kind: "batch", engine: "CANVAS 2D", accept: "PNG" },
@@ -204,6 +204,17 @@ const rawWorkspaceTools: WorkspaceTool[] = [
   { slug: "social-media-image-resizer", name: "Social Media Image Resizer", cat: "IMAGE", route: "IMG → PNG · JPG · WEBP", kind: "image", engine: "CANVAS 2D", accept: "JPG PNG WEBP AVIF BMP GIF" },
   { slug: "image-splitter", name: "Image Splitter", cat: "IMAGE", route: "IMG → ZIP", kind: "image", engine: "CANVAS 2D · JSZIP", accept: "JPG PNG WEBP AVIF BMP GIF" },
   { slug: "compress-png", name: "Compress PNG", cat: "IMAGE", route: "PNG → PNG", kind: "image", engine: "OXIPNG", accept: "PNG" },
+  { slug: "resize-gif", name: "Resize GIF", cat: "IMAGE", route: "GIF → GIF", kind: "image", engine: "GIFENC", accept: "GIF" },
+  { slug: "gif-speed-changer", name: "GIF Speed Changer", cat: "IMAGE", route: "GIF → GIF", kind: "image", engine: "GIFENC", accept: "GIF" },
+  { slug: "reverse-gif", name: "Reverse GIF", cat: "IMAGE", route: "GIF → GIF", kind: "image", engine: "GIFENC", accept: "GIF" },
+  { slug: "split-gif", name: "Split GIF into Frames", cat: "IMAGE", route: "GIF → ZIP", kind: "image", engine: "GIFENC", accept: "GIF" },
+  { slug: "gif-maker", name: "GIF Maker", cat: "IMAGE", route: "IMAGES → GIF", kind: "image", engine: "GIFENC", accept: "JPG PNG WEBP BMP GIF" },
+  { slug: "bcrypt-generator", name: "Bcrypt Generator", cat: "DEV", route: "— → HASH", kind: "gen", engine: "BCRYPTJS", accept: "NONE" },
+  { slug: "csv-markdown-table", name: "CSV to Markdown Table", cat: "DEV", route: "CSV → MD", kind: "text", engine: "NATIVE JS", accept: "CSV MD" },
+  { slug: "vcf-to-csv", name: "VCF to CSV", cat: "DEV", route: "VCF → CSV", kind: "text", engine: "NATIVE JS", accept: "VCF" },
+  { slug: "ics-to-csv", name: "ICS to CSV", cat: "DEV", route: "ICS → CSV", kind: "text", engine: "NATIVE JS", accept: "ICS" },
+  { slug: "ocr-pdf", name: "OCR PDF", cat: "PDF", route: "PDF → PDF", kind: "pdfpages", engine: "TESSERACT · PDF-LIB", accept: "PDF" },
+  { slug: "image-to-text", name: "Image to Text", cat: "IMAGE", route: "IMG → TEXT", kind: "text", engine: "TESSERACT", accept: "JPG PNG WEBP BMP GIF" },
   { slug: "ico-to-png", name: "ICO to PNG", cat: "IMAGE", route: "ICO → PNG", kind: "image", engine: "ICO PARSER", accept: "ICO CUR" },
   // No file in — the input is pasted text — so `accept` stays the literal, the
   // same shape `base64-encode-decode` and the two recorders use. It says TEXT
@@ -219,7 +230,7 @@ const rawWorkspaceTools: WorkspaceTool[] = [
   { slug: "bmp-to-png", name: "BMP to PNG", cat: "IMAGE", route: "BMP → PNG", kind: "batch", engine: "CANVAS 2D", accept: "BMP" },
   { slug: "svg-to-jpg", name: "SVG to JPG", cat: "IMAGE", route: "SVG → JPG", kind: "image", engine: "CANVAS 2D", accept: "SVG" },
   { slug: "svg-to-webp", name: "SVG to WebP", cat: "IMAGE", route: "SVG → WEBP", kind: "image", engine: "CANVAS 2D", accept: "SVG" },
-  { slug: "heic-to-webp", name: "HEIC to WebP", cat: "IMAGE", route: "HEIC → WEBP", kind: "batch", engine: "HEIC2ANY", accept: "HEIC" },
+  { slug: "heic-to-webp", name: "HEIC to WebP", cat: "IMAGE", route: "HEIC → WEBP", kind: "batch", engine: "LIBHEIF", accept: "HEIC" },
   { slug: "merge-pdf", name: "Merge PDF", cat: "PDF", route: "PDF → PDF", kind: "pdfdocs", engine: "PDF-LIB", accept: "PDF" },
   { slug: "split-pdf", name: "Split PDF", cat: "PDF", route: "PDF → PDF", kind: "pdfpages", engine: "PDF-LIB", accept: "PDF" },
   { slug: "compress-pdf", name: "Compress PDF", cat: "PDF", route: "PDF → PDF", kind: "pdfdocs", engine: "PDF-LIB", accept: "PDF" },
@@ -232,7 +243,7 @@ const rawWorkspaceTools: WorkspaceTool[] = [
   { slug: "images-to-pdf", name: "Images to PDF", cat: "PDF", route: "IMG → PDF", kind: "pdfdocs", engine: "PDF-LIB", accept: "JPG PNG WEBP HEIC TIFF" },
   { slug: "jpg-to-pdf", name: "JPG to PDF", cat: "PDF", route: "JPG → PDF", kind: "pdfdocs", engine: "PDF-LIB", accept: "JPG" },
   { slug: "png-to-pdf", name: "PNG to PDF", cat: "PDF", route: "PNG → PDF", kind: "pdfdocs", engine: "PDF-LIB", accept: "PNG" },
-  { slug: "heic-to-pdf", name: "HEIC to PDF", cat: "PDF", route: "HEIC → PDF", kind: "pdfdocs", engine: "HEIC2ANY · PDF-LIB", accept: "HEIC" },
+  { slug: "heic-to-pdf", name: "HEIC to PDF", cat: "PDF", route: "HEIC → PDF", kind: "pdfdocs", engine: "LIBHEIF · PDF-LIB", accept: "HEIC" },
   { slug: "webp-to-pdf", name: "WebP to PDF", cat: "PDF", route: "WEBP → PDF", kind: "pdfdocs", engine: "CANVAS 2D · PDF-LIB", accept: "WEBP" },
   { slug: "tiff-to-pdf", name: "TIFF to PDF", cat: "PDF", route: "TIFF → PDF", kind: "pdfdocs", engine: "UTIF2 · PDF-LIB", accept: "TIFF" },
   { slug: "rotate-pdf", name: "Rotate PDF", cat: "PDF", route: "PDF → PDF", kind: "pdfpages", engine: "PDF-LIB", accept: "PDF" },

@@ -3,6 +3,7 @@
 import dynamic from "next/dynamic";
 import type { Tool } from "@/data/tools";
 
+const OcrPdfUI = dynamic(() => import("./OcrPdfUI").then((m) => ({ default: m.OcrPdfUI })), { ssr: false });
 const MergePdfUI = dynamic(() => import("./MergePdfUI").then((m) => ({ default: m.MergePdfUI })), { ssr: false });
 const SplitPdfUI = dynamic(() => import("./SplitPdfUI").then((m) => ({ default: m.SplitPdfUI })), { ssr: false });
 const CompressPdfUI = dynamic(() => import("./CompressPdfUI").then((m) => ({ default: m.CompressPdfUI })), { ssr: false });
@@ -31,6 +32,10 @@ const AnnotatePdfUI = dynamic(() => import("./AnnotatePdfUI").then((m) => ({ def
 const FillPdfFormUI = dynamic(() => import("./FillPdfFormUI").then((m) => ({ default: m.FillPdfFormUI })), { ssr: false });
 const FlattenPdfUI = dynamic(() => import("./FlattenPdfUI").then((m) => ({ default: m.FlattenPdfUI })), { ssr: false });
 const RemoveMetadataUI = dynamic(() => import("./RemoveMetadataUI").then((m) => ({ default: m.RemoveMetadataUI })), { ssr: false });
+
+export function OcrPdfClient() {
+  return <OcrPdfUI />;
+}
 
 export function MergePdfClient() { return <MergePdfUI />; }
 export function SplitPdfClient() { return <SplitPdfUI />; }

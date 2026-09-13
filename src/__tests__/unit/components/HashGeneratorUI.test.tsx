@@ -170,20 +170,45 @@ describe("HashGeneratorUI", () => {
   });
 
   /*
-    The File arm reads the whole file into ONE ArrayBuffer, and past V8's
-    single-allocation wall that read REJECTS. Before this, the rejection
-    escaped `handleFiles` unhandled and the surface just sat there: the file
-    name, no digests, no progress bar, no message. Reproduced live with a
-    2.2 GB ISO, under a drop zone that said "NO SIZE CAP".
+    ⚠ A TEST WAS DELETED HERE ON 2026-09-13, AND THE REASON IS THE POINT.
+
+    It was called "says so when the whole-file read is refused, instead of
+    showing nothing", and it pinned the error surfaced when `f.arrayBuffer()`
+    rejected past the renderer's single-allocation wall — reproduced live with
+    a 2.2 GB ISO under a drop zone that said "NO SIZE CAP".
+
+    THAT READ NO LONGER HAPPENS. The file is handed to the hasher as a Blob and
+    the digests are computed off `blob.stream()`, so there is no whole-file
+    allocation to refuse and no message to show. Keeping a test for it would
+    have meant keeping the `catch` that produced it, which would have meant
+    keeping a sentence that is no longer true. The replacement below asserts
+    the capability that took its place.
   */
-  it("says so when the whole-file read is refused, instead of showing nothing", async () => {
+  it("hashes a file far larger than one allocation would allow", async () => {
+    /*
+      Not a real 3 GB file — jsdom could not hold one either, which is the
+      whole point. This one REFUSES to be read whole: `arrayBuffer()` rejects
+      the way the renderer does past its wall, and `stream()` works. A pipeline
+      that still materialises the file fails here; the streaming one does not
+      care.
+    */
     dropped.make = () => {
-      const big = new File([], "big.iso");
+      const big = new File(["streamed-content"], "big.iso");
+      Object.defineProperty(big, "size", { value: 3 * 1024 * 1024 * 1024 });
       Object.defineProperty(big, "arrayBuffer", {
         value: () =>
           Promise.reject(
             new DOMException("The requested file could not be read", "NotReadableError"),
           ),
+      });
+      Object.defineProperty(big, "stream", {
+        value: () =>
+          new ReadableStream<Uint8Array>({
+            pull(controller) {
+              controller.enqueue(new TextEncoder().encode("streamed-content"));
+              controller.close();
+            },
+          }),
       });
       return big;
     };
@@ -192,20 +217,26 @@ describe("HashGeneratorUI", () => {
     fireEvent.click(screen.getByText("File"));
     fireEvent.click(screen.getByTestId("dropzone"));
 
-    const alert = await screen.findByRole("alert");
-    expect(alert.textContent).toMatch(/big\.iso/);
-    expect(alert.textContent).toMatch(/one buffer/i);
-    expect(document.querySelectorAll("code").length).toBe(0);
+    // Four digests, and no error: the file that used to be unreadable hashes.
+    await waitFor(() => expect(document.querySelectorAll("code").length).toBe(4));
+    expect(screen.queryByRole("alert")).toBeNull();
   });
 
-  it("does not print the absolute no-cap claim over that read", () => {
-    // The zone's note comes off the registry, so the sentence under the zone
-    // and the MAX SIZE row on the page cannot drift apart.
+  it("prints the absolute no-cap claim, which is true again", () => {
+    /*
+      ⚠ THE REVERSE OF WHAT THIS ASSERTED UNTIL 2026-09-13. It required the zone
+      to carry a note — because the File arm read the whole file into one
+      ArrayBuffer, so "NO SIZE CAP" was a claim the page could not keep. The
+      hash is streamed now, so there is no allocation to cap and the absolute
+      claim is the honest one; a note here would be the false statement.
+
+      `size-claims.test.ts` holds the other end (registry field gone, UI no
+      longer reading it); this holds the rendered surface.
+    */
     render(<HashGeneratorUI />);
     fireEvent.click(screen.getByText("File"));
     const note = screen.getByTestId("dropzone").getAttribute("data-practical-limit-note");
-    expect(note, "the drop zone is back to NO SIZE CAP").toBeTruthy();
-    expect(note).toMatch(/one piece/);
+    expect(note, "hashing streams, so the zone must not claim a ceiling").toBeFalsy();
   });
 
   it("produces known MD5 hash for 'hello'", async () => {

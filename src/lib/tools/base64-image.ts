@@ -43,7 +43,7 @@
  * element can draw, which is the only thing this tool does with the bytes.
  * HEIC and TIFF are images too, and are deliberately NOT sniffed: naming them
  * would promise a preview that no browser is going to produce (they are why
- * `heic2any` and `utif2` exist in this app at all), and "we know what this is
+ * `libheif` and `utif2` exist in this app at all), and "we know what this is
  * and cannot show it" is a worse answer here than "these are not bytes this
  * tool can name".
  *

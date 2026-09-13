@@ -136,6 +136,31 @@ readers, PSD/JP2 as document types, xref auto-repair, `garbage/compress/sanitize
 
 ---
 
+## ⚠ OWNER-LABEL RE-CLASSIFICATION — 2026-09-12, read before the waves
+
+Four open items below are headed **"⚠ Owner:"** and a fifth says "the decision
+itself is the owner's". That labelling was over-applied and it stalled a whole
+session. **Nothing in this repo reaches a user without the owner's `git push`,
+so building something never commits them to shipping it.** The corrected
+filing:
+
+| item | really blocked? |
+|---|---|
+| **libheif-js swap** (Wave 4) | **DONE 2026-09-12.** It was never blocked, and the licensing answer held. ⚠ But its stated motivation ("multi-image HEIC / Live Photos") was wrong in both halves — see the ticked item in Wave 4. What it actually fixed: HEIC transparency decoding to OPAQUE BLACK. |
+| **coi-serviceworker** (Wave 3) | **No, for the spike.** The item itself says "treat as a spike with exit criteria … not a Wave prerequisite" and "nothing waits on this". Run the spike, hand over the evidence; the *verdict* is the owner's. |
+| **Whisper** (Wave 5) | **Buildable, with one hard constraint.** ⚠ The bandwidth cost bites at DEPLOY, but GitHub's **hard ~100 MiB per-file limit bites at PUSH** — an 85–120 MB weight file cannot be committed at all. Solve the file-size question BEFORE building, or the tree becomes unpushable. Note also that Whisper and `background-remover` share ONE checkbox, so building Whisper alone cannot tick it. |
+| **i18n** (Platform) | **Plumbing is buildable; the constraint is real.** ⚠ `next.config.ts:5` is `output: "export"`, which has no built-in i18n routing — that is exactly what makes this a lift rather than a config change. String QUALITY is the genuine risk: this site's value is precise honest copy. |
+| **Search Console** (Wave 1) · **`launch_handler`** (Platform) | **Yes — genuinely need a deploy.** The first needs weeks of impressions; the second needs the PWA installed from a real origin and a file opened from the OS file manager (minutes, not weeks). |
+
+⚠ **A THIRD deploy-gated thing hides under a TICKED box**: home mobile LCP
+(see the Post-deploy Lighthouse entry). It is invisible to
+`grep '^- \[ \]'`. Its sibling — render-blocking CSS, then 136,085 B raw /
+21,322 gzipped — WAS untouched code rather than deploy-gated, and was cut to
+104,943 / 17,170 on 2026-09-13 (see the Post-deploy Lighthouse entry). The LCP
+number itself still needs a deploy.
+
+---
+
 ## Wave 0 — decisions and fixes before any new pages
 
 - [x] **Owner: commit/review the outstanding redesign tree.** *(Done — merged to master and
@@ -463,10 +488,13 @@ format-specific copy (per Wave 0 architecture decision), a registry entry in `to
   per category, one link per tool with its hubLine, derived counts only; footer "All
   tools" link on every page, sitemap entry, self-canonical. The responsive-sweep ROUTES
   arithmetic includes it, and a new meta spec asserts exactly `tools.length` tool links.)*
-- [ ] **Post-deploy verification — 2 of 3 CLOSED LOCALLY 2026-09-01; only Search Console is
-  genuinely deploy-blocked.** `master` is one commit ahead of `origin/master` (Wave 0+1 is
-  committed at `c828b0b` but NOT pushed), so transmute.tools still serves the **67-tool**
-  build. That blocks less than it first appeared:
+- [x] **Post-deploy verification — CLOSED 2026-09-13. Two were closed locally on 2026-09-01
+  and the third, Search Console, is now an owner DECISION rather than a blocker (see (1)).** ⚠ **Updated 2026-09-10: `master` is now THREE commits ahead of
+  `origin/master`** (`c828b0b`, `4880716`, `4549b77` — verified with `git ls-remote`, so the
+  local ref is not merely stale), and the working tree carries the OCR pair on top of those.
+  transmute.tools still serves the **67-tool** build, which is now 123 tools behind (190 − 67; recount before quoting). A push is a
+  deploy — `ci.yml:70` runs `peaceiris/actions-gh-pages@v4` on every push to master — so this
+  is one action, and it is the owner's. That blocks less than it first appeared:
   - **(2) Lighthouse CLS — DONE, no deploy needed.** CLS is a layout metric and measures fine
     against the built `out/`. Measured at a 375x812 mobile viewport with a full-page scroll
     (shifts below the fold count), on the real static export: home **0.0001**, a Wave-1
@@ -479,10 +507,21 @@ format-specific copy (per Wave 0 architecture decision), a registry entry in `to
     `robots` meta (so indexable), linked from the footer on every page, and `robots.txt` is
     `Allow: /`. Nothing in the configuration can stop a crawler. Whether Google HAS crawled
     it is the only part that needs the deploy.
-  - **(1) Search Console — genuinely blocked.** Doorway-style demotion signals on the 16
-    variant pages need Google to crawl the live pages and accumulate impressions, which is
-    days-to-weeks of real-world data that cannot be synthesised. Re-check after the push.
-    Rollback lever unchanged: canonicalize variants back to their engine page.
+  - **(1) Search Console — OWNER DECLINED, 2026-09-13.** Recorded as a decision rather than
+    as an open item, so nobody re-opens it as an oversight. ⚠ One correction was offered and
+    the call stood: Search Console is not a feature of this site and ships no bytes — it is a
+    free external dashboard you register a domain with, and the work was "register, then read
+    impressions weeks later". Nothing in `src/` or the built `out/` changes either way; there
+    is no verification meta tag in the tree (checked) because verification can be done by DNS.
+    **THE CONSEQUENCE, which is real and belongs with the decision:** the Wave-0 page
+    architecture decision made Search Console its feedback loop in as many words — "Search
+    Console reviewed after every wave", with "the rollback lever is canonicalizing variants
+    back to their engine page at the first doorway-style demotion signal". With no Search
+    Console there is **no signal**, so the ~30 variant pages ship as a bet that is never
+    settled: if Google treats them as doorway pages, the way that shows up is a quiet ranking
+    loss nobody can attribute. That is a defensible risk to accept — it is a monitoring gap,
+    not a defect, and the rollback lever still works if it is ever needed on other evidence —
+    but it is no longer being *watched for*, and this file should not pretend otherwise.
   *(Original wording, kept for the record:)* **(FIRST THING in the next session's preflight,
   once the owner has committed and CI has deployed Wave 1):** (1) Search Console — look for
   doorway-style demotion signals on the 16 variant pages; the rollback lever is
@@ -1233,12 +1272,12 @@ All engine work goes through `pdf-engine-core.ts` → `pdf.worker.js` (leaf-impo
 > **Two carried obligations from this cluster remain OPEN** — see the two ⚠ items at the end of
 > this Wave.
 
-- [ ] ⚠ **Owner: revisit the 2026-08-09 "no coi-serviceworker" decision.** Recorded facts have
-  changed: the only third-party script is GA4 (no ad stack), and `COEP: credentialless` +
-  self-hosted or proxied analytics covers Chrome/Firefox. BUT this repo *also* recorded real
-  `@ffmpeg/core-mt` pthread deadlocks, and Safari gets no `credentialless`. Treat as a spike
-  with exit criteria (deadlock repro suite across 3 browsers, GA data continuity), not a Wave
-  prerequisite. **Everything below ships single-threaded regardless; nothing waits on this.**
+> **The coi-serviceworker box was REMOVED on 2026-09-13 at the owner's
+> direction**, with the same question the pre-flight already answered: what
+> would it buy? One tool, unmeasured. It is in the "Do not build" table at the
+> end of this file with the four findings behind that. **Everything in this
+> Wave ships single-threaded regardless; nothing ever waited on it.**
+
 - [x] **Remux-first container tools** (`-c copy` where codecs allow — sub-second, lossless;
   surface "no re-encode needed" in the UI): `mov-to-mp4`, `mp4-to-mov`, `mkv-to-mp4`,
   `mp4-to-mkv`, `avi-to-mp4`, plus a `video-to-mp4` hub page.
@@ -1487,12 +1526,67 @@ All engine work goes through `pdf-engine-core.ts` → `pdf.worker.js` (leaf-impo
 
 ## Wave 4 — cheap-dependency categories + PWA (weeks 8–12)
 
-- [ ] **GIF/animation cluster** — enable decode via native `ImageDecoder` + `omggif` fallback
-  (~38 KB); `gifenc` already bundled for encode. Pages: `gif-maker` (images→GIF),
-  `compress-gif` (gifsicle-wasm-browser, 0.34 MB), `resize-gif`, `split-gif` (frames→ZIP),
-  `gif-speed-changer`, `gif-to-mp4` (WebCodecs), `webp-to-gif` / `gif-to-webp`,
-  `reverse-gif`. **Owner: open "Animation" as a 6th category in `categories.ts`, or file under
-  video?** (Research says 6th category; ezgif's ~250 pages prove the space.)
+- [x] **GIF/animation cluster — THE DECODER AND FOUR VERBS SHIPPED 2026-09-10 (183 → 187 tools);
+  the rest of the list is annotated below rather than left as one undone bullet.**
+  This site could not read an animation at all before today. `image-convert.ts` sniffs an
+  animated GIF or WebP and WARNS that everything past frame 0 will be lost, because the
+  `<img>`/`createImageBitmap` path keeps only the first frame — that warning was the honest
+  thing to ship without a decoder, and `gif-decode.ts` is the decoder.
+  **SHIPPED: `resize-gif`, `gif-speed-changer`, `reverse-gif`, `split-gif`** — one
+  decode → transform → encode pipeline with the verb as a prop, declared in `UI_FOR_CLIENT`
+  beside the image and audio converters. **Zero served bytes:** `omggif` (~31 KB, MIT) and
+  `gifenc` (already here for `video-to-gif`) are ordinary JavaScript inside the importing chunk,
+  so there is no origin-root artifact and no ten-surface disclosure cycle.
+  **THE DECODER IS TWO PATHS, and the second is not a nicety — measured in all three engines:**
+
+  | engine | `ImageDecoder` | frames from a 3-frame GIF |
+  |---|---|---|
+  | Chromium | yes | 3, durations exact |
+  | Firefox | yes | 3, durations exact |
+  | WebKit | **absent** | — (omggif) |
+
+  ⚠ **THREE TRAPS, each of which produced a wrong answer before it was found:**
+  1. **`ImageDecoder` is absent on a NON-SECURE origin.** The first probe reported `false` in all
+     three engines and the reason was `about:blank`, not the browsers. Feature-detect it; never
+     conclude a browser lacks it from one context.
+  2. **`await decoder.tracks.ready` IS REQUIRED.** Chromium resolves `completed` with
+     `tracks.selectedTrack` still null, so a decoder written without it reports ZERO frames in
+     Chrome and works in Firefox — the sort of split that survives a suite run on one engine.
+  3. **`decodeAndBlitFrameRGBA` COMPOSITES onto the buffer you pass**, which is how GIF disposal
+     works — most frames store only the rectangle that changed. A fresh buffer per frame gives
+     the classic bug where everything but the moving part is transparent.
+  **Reversing takes the delays WITH the frames.** A GIF's delay belongs to the frame it is stored
+  with, so flipping picture order while leaving delays in place gives an animation whose timing no
+  longer matches its own frames. Pinned: 100/200/300 in must come back 300/200/100 — with the
+  paired control that a NON-reversing verb leaves them 100/200/300, without which the first
+  assertion proves nothing.
+  ⚠ **THE SPEC FILENAME IS LOAD-BEARING.** conversion-webkit carries
+  `grepInvert: /gif|FFmpeg|MP4/i` and that pattern matches the FILE PATH. Written first as
+  `gif-verbs.spec.ts` it was collected 4x in chromium and **0x in WebKit**, silently, run still
+  green — removing exactly the coverage it exists for, since WebKit is the only engine without
+  `ImageDecoder`. It is `animation-verbs.spec.ts`, and playwright.config.ts now says why.
+  (That filter targets the FFmpeg-tagged `video-to-gif` hardening cases; nothing here touches
+  FFmpeg or WebCodecs.)
+  **`omggif` publishes no licence file**, so like `@ffmpeg/ffmpeg` and `@ffmpeg/util` it is named
+  by hand on /licenses. The notices generator caught that, not a human.
+  **NOT BUILT, with reasons rather than silence:**
+  * **`compress-gif` — does NOT belong on a "cheap dependency" list.** gifsicle-wasm is 0.34 MB
+    of served WebAssembly, i.e. the full disclosure cycle. Same misfiling as `png-to-svg`.
+    Note the verbs above already give the biggest lever: scaling down removes pixels from every
+    frame at once, which beats palette tuning on most files.
+  * **`gif-maker` (images→GIF)** — encode-only, needs no decoder, genuinely small. The obvious
+    next one.
+  * **`gif-to-mp4` / `webp-to-gif` / `gif-to-webp`** — each needs an encoder this cluster does not
+    have (WebCodecs, or animated-WebP encode which no browser exposes).
+  * ⚠ **THE SHIPPED FRAME-0 BUG IS STILL LIVE.** `image-convert.ts` still flattens an animated
+    GIF/WebP on six converter tools and warns rather than fixing it. The decoder that would fix
+    it now exists, but wiring it in changes those tools' output, so it wants its own measured
+    pass with the conversion suite as the gate — not a quiet ride-along on this one.
+  **Owner: the "Animation as a 6th category" question is NOT settled** — the four verbs are filed
+  under `image-tools`, which is defensible (a GIF is an image, and `video-to-gif` already lives in
+  video) and reversible. A 6th category is a hub page, nav, download ceiling, engine string and
+  their tests; it was not worth doing on four tools without a decision.
+  ORIGINAL ITEM: enable decode via native `ImageDecoder` + `omggif` fallback
 - [x] **Image edit verbs** (all Canvas2D, both pipelines per the dual-pipeline trap):
   `rotate-image`, `flip-image`, `watermark-image`, `pixelate-image` (region select),
   `crop-circle`, `add-border`, `social-media-image-resizer` (preset crop matrix),
@@ -1881,45 +1975,224 @@ All engine work goes through `pdf-engine-core.ts` → `pdf.worker.js` (leaf-impo
   checked without a deploy, so the static server the PWA suite uses documents its choice as an
   explicit assumption and no spec depends on the ambiguous case. `launch_handler` is deliberately
   NOT declared — which `client_mode` "auto" picks for a file launch could not be verified.)*
-- [ ] Deferred small bets (build only if a slot opens): `png-to-svg` (vtracer WASM — NOT
-  @neplex/vectorizer which is a Node addon; potrace is GPL), `font-converter`
-  (fonteditor-core, MIT — test variable fonts), `bcrypt-generator` (bcryptjs),
-  `vcf-to-csv`, `ics-to-csv`, `markdown-table-generator`, `csv-markdown-table`.
-- [ ] ⚠ **Owner: libheif-js swap** for the abandoned `heic2any` (fixes multi-image HEIC / Live
-  Photos) — **LGPL-3.0; get a licensing answer before committing.** *(2026-08-31 answer:
-  LGPL is compatible with the closed posture WITH the vendoring cure — separate replaceable
-  file at a stable `/vendor/` URL, notices on /licenses; heic2any already embeds libheif
-  today and gets the same cure in the remediation wave. Decode-only builds only — HEVC-encode
-  libheif builds pull GPL x265.)*
+- [x] **Deferred small bets — CLOSED 2026-09-12. THREE BUILT, TWO MOVED OFF THE LIST WITH
+  REASONS, TWO MERGED.** 181 → 190 tools across this and the GIF cluster; the list itself is
+  now empty, which is why the box is ticked rather than left open forever.
+  **BUILT — `vcf-to-csv`, `ics-to-csv`, `bcrypt-generator`** (plus `csv-markdown-table`, which
+  absorbed one of the listed items — see below). All add ZERO served bytes.
+  * **`vcf-to-csv` + `ics-to-csv` are ONE build.** `.vcf` (RFC 6350) and `.ics` (RFC 5545) are
+    the same content-line format underneath, so `rfc-content-lines.ts` is a zero-import leaf
+    that owns the folding and escaping and the two tools own only their columns. Chosen over the
+    others because the privacy claim is strongest exactly there: a `.vcf` is every name, number
+    and home address of everyone you know; a `.ics` says when you are not at home.
+    ⚠ **Unfolding CONSUMES the marker** — RFC 5545 §3.1 removes the CRLF *and* the whitespace
+    after it, so `hello` + ` world` is `helloworld`. Two of my own first test expectations said
+    otherwise; the implementation was right and the tests were wrong.
+    **Repeated properties get NUMBERED columns**, derived from the file — the usual joined-cell
+    approach loses every address after the first on re-import, which is the main reason to
+    prefer the tool over a five-line script. And `.ics` times are written as stored with the
+    zone in its own column, because converting means picking a zone for the reader and moving
+    appointments by hours when the pick is wrong.
+  * **`bcrypt-generator`** — bcryptjs, BSD-3-Clause, ~112 KB bundled. The work factor is capped
+    at 14 deliberately: each step DOUBLES the cost, and past that the tab freezes long enough to
+    look broken rather than busy. The checker reports THREE outcomes — match, no match, and
+    "that is not a bcrypt hash" — because collapsing the third into the second tells someone
+    their password is wrong when what is wrong is the string they pasted.
+  **MERGED:** `markdown-table-generator` and `csv-markdown-table` were two entries for one job.
+  A converter that goes both ways is the honest tool; a separate "generator" with a grid editor
+  is a different and much larger build, and shipping two near-duplicate pages is the thin-page
+  problem this plan warns about elsewhere. One page, both directions.
+  **MOVED OFF THIS LIST — neither is a "small bet", and pricing them as one is how they stayed
+  undone for months:**
+  * **`png-to-svg`** needs vtracer WASM: a new SERVED artifact, and therefore the entire
+    ten-surface disclosure cycle that `image-to-text` spent a day on. (@neplex/vectorizer is a
+    Node addon; potrace is GPL.) If it is wanted, it is an engine adoption, scoped like one.
+  * **`font-converter`** needs fonteditor-core at **1,616,836 bytes unpacked** — bundled into a
+    chunk for a single tool, which is larger than the entire qpdf engine that four PDF tools
+    share. woff2 additionally needs a Brotli path the package does not carry. Worth doing only
+    as a served-artifact adoption, not as a bullet on a list called "small".
+  ⚠ **The pattern worth carrying: a list named "small bets" quietly absorbed two items that are
+  engine adoptions.** Anything needing a new served file is never small here, because the tool
+  is the cheap half and the disclosure is the expensive one.
+
+- [x] **libheif-js swap — SHIPPED 2026-09-12. The stated motivation was WRONG IN BOTH HALVES,
+  and what replaced it is stronger.** *(2026-08-31 licensing answer, which held: LGPL is
+  compatible with the closed posture WITH the vendoring cure — separate replaceable file at a
+  stable `/vendor/` URL, notices on /licenses. Decode-only builds only — HEVC-encode libheif
+  builds pull GPL x265. **That is now an executable gate rather than a recollection:**
+  `src/__tests__/unit/data/libheif-decode-only.test.ts` re-derives it from the shipped bytes on
+  every `npm test` — 9 GPL encoder names scanned with indexOf over a Buffer, each with a
+  positive control beside it. Verified independently against the built module: exactly ONE
+  decoder plugin, `libde265 HEVC decoder, version 1.0.15`, and exactly ONE encoder, libheif's
+  own built-in `mask` format.)*
+
+  **⚠ "Fixes multi-image HEIC / Live Photos" was the wrong headline and must not be repeated.**
+  * **Live Photos: a decoder swap cannot fix them, and never could.** The motion half is a
+    separate `.MOV` that never enters the HEIC. This repo's own shipped copy already said so
+    correctly (`faqs.ts`, `heic-vs-jpg.mdx`); the plan item contradicted the product.
+  * **Multi-image: heic2any could already do it.** Its worker decodes EVERY top-level image and
+    `{ multiple: true }` resolves the whole array; `image-convert.ts` simply never passed it and
+    threw the extras away. So the multi-image defect was OURS, not the library's.
+
+  **What justified the swap instead — three measured defects in the shipped decoder, none of
+  which is fixable without replacing it:**
+  1. **Transparency was silently destroyed.** heic2any's binding hardcodes alpha to 255. A HEIC
+     whose alpha rides in its own `auxC` item decoded to `rgba(0,0,0,255)` — an OPAQUE BLACK
+     rectangle — where libheif-js returns `rgba(0,0,0,0)`. Measured in Chromium against a
+     purpose-built fixture. This was live on every HEIC page that can write PNG or WebP.
+  2. **The `multiple: true` path is deterministically broken.** Decode the same bytes twice in
+     one tab and the second call under-reports the image count (2 images → 1); decode any
+     DIFFERENT file after that and the wasm module dies with `abort(12)`, surfaced raw. 3/3
+     identical across every row of a 7-row matrix. So "just pass `multiple: true`" — the cheap
+     fix the item above implies — walks straight into a silent undercount and a hard crash.
+     **The shipped call shape never reaches it** (0 failures in 9 batch runs), so this was never
+     a live bug — it is a landmine in the path of the obvious fix.
+  3. **It took index 0, not the primary image.** The container's `pitm` box names the main
+     picture and nothing requires it to be first. libheif-js exposes `is_primary()`; heic2any
+     never called it. The shipped FAQ's promise about which image survives is only now true.
+
+  **Cost, stated plainly because it is a regression and the owner may want it back:**
+  **+152,085 B raw / +158,123 B gzipped** (1,361,547 → 1,513,632; on the wire 339,703 →
+  497,826). The homepage row moves "1.3 MB" → "1.4 MB". The one-file `libheif-bundle.mjs`
+  variant would have kept today's single-artifact shape but costs **199,164 MORE gzipped bytes
+  than the pair**, all of it base64 padding around the identical wasm — so the pair won.
+
+  **⚠ AND ONE DEFECT THIS BUILD INTRODUCED AND THEN CAUGHT, because it is the
+  kind that ships quietly:** `HeifDecoder.decode()` frees its previous
+  `heif_context` **only when called again on the SAME instance**, and
+  `decodeHeic` makes a fresh instance per file — which it must, because the
+  image handles outlive an `await`, so a shared decoder would let a concurrent
+  decode free them under live handles. The first version therefore freed
+  nothing. **Measured: 400 decodes of an 82,878-byte photo grew the wasm heap
+  16.3 MB → 48.6 MB; flat at 16.3 MB with `heif_context_free`.** About the file
+  size retained per photo, so a batch of 3 MB iPhone photos walks a browser into
+  the same out-of-memory abort this swap was partly made to escape. Found by
+  reading the minified binding, not by any test — and it is now pinned by two,
+  including the throw path. **An Emscripten binding that looks like it cleans up
+  after itself is worth reading line by line.**
+
+  **Two traps the next person will otherwise pay for:**
+  * ⚠ **The `import()` + read-the-global trick does NOT transfer.** heic2any's UMD had an
+    explicit `global.heic2any = factory()` branch. libheif-js's tail is only `module.exports` /
+    AMD `define` over a top-level `var libheif`, which in an ES module is module-scoped:
+    `import()` yields an EMPTY namespace *and* leaves `globalThis.libheif` undefined. It is
+    loaded with a classic `<script>` tag, whose sloppy-mode global is the only way in.
+  * ⚠ **The glue resolves its `.wasm` from `document.currentScript.src`,** which is null by the
+    time the module runs — it would fetch relative to the PAGE url. `loadLibheif()` fetches the
+    binary itself and passes `wasmBinary`, which skips that resolution entirely. This is why the
+    tesseract sibling-resolution trap cannot bite here.
+
+  **⚠ AND THE PREMISE THAT COST THIS REPO REAL COVERAGE: "a real `.heic` cannot be
+  synthesised" was FALSE.** Both `e2e/image/converters.spec.ts` and
+  `e2e/conversion/image-formats.spec.ts` carried that note, and both were reasoning about the
+  wrong machine: the library never encodes and sharp refuses HEVC, but **macOS writes real HEVC
+  stills through ImageIO**. `generate-test-fixtures.mjs --heic` now produces two checked-in
+  fixtures — `sample-photo.heic` (800×600) and `sample-burst.heic` (3 pictures at 3 sizes with
+  the MIDDLE one marked primary, so a decoder that takes `[0]` fails) — and the HEIC path has
+  real conversion coverage in both browser projects for the first time. Like `--avif`/sharp it
+  is excluded from the no-flag run, because it cannot work off macOS.
 
 ---
 
 ## Wave 5 — flagship builds (quarter 2; strict dependency order)
 
-- [ ] **1. `image-to-text` (OCR) — NOT BUILT. The size question this item asks to settle is now
-  SETTLED, 2026-09-10, so whoever takes it starts from numbers instead of a conflict.** Measured
-  from the registry without installing anything (`npm view … dist.unpackedSize`, and a HEAD
-  request for the language data):
-  * `tesseract.js` **7.0.0** — 1,411,341 B unpacked. This is the JS wrapper only.
-  * `tesseract.js-core` **6.1.2** — 30,606,788 B unpacked, but that is EVERY variant in one
-    package (SIMD and non-SIMD, LSTM-only and full). A build ships ONE, so this figure is an
-    upper bound on the package, not on the download.
-  * `eng.traineddata` (4.0.0_best_int) — **2,952,873 B**, fetched separately from the core.
-  So the item's "claims conflict: 2–30 MB" resolves as: the LANGUAGE DATA is ~2.95 MB and the
-  30 MB is the whole multi-variant core package. The real per-visitor download is one core
-  variant plus one traineddata, and the exact core figure needs the variant chosen first —
-  measure it from the staged artifact, the way qpdf and oxipng were, not from the package.
-  **⚠ THE EXPENSIVE PART IS NOT THE ENGINE, IT IS THE DISCLOSURE.** A new served artifact has to
-  land on SIX pinned surfaces, each with a test asserting exact bytes: the homepage `ENGINES`
-  table (key order `name, handles, size, when` — the parser regex requires it), `/privacy`'s
-  External resources with the exact `toLocaleString("en-US")` count AND the "none of the seven"
-  counter, `src/content/blog/why-browser-based-tools-are-private.mdx`'s byte counts,
-  `/licenses`, `Category.download` in categories.ts, and `CEILING` in
-  `category-hub-claims.test.tsx`. Budget for that, not just for the tool.
-  ORIGINAL ITEM: tesseract.js v7, **self-hosted** (default config hits a CDN —
-  would break the zero-third-party property and `forbidCdnCore`'s spirit; add an equivalent
-  guard). Measure real traineddata size at build (claims conflict: 2–30 MB). Lazy-load,
-  English-first, preprocessing (deskew/contrast) matters more than the engine.
+- [x] **1. `image-to-text` (OCR) — SHIPPED 2026-09-10 (179 → 180 tools). The sizing this item
+  "settled" earlier the same day was WRONG IN BOTH HALVES, and the corrected numbers are the
+  reason the build was affordable.** What was recorded: `tesseract.js-core` **6.1.2** at
+  30,606,788 B, and `eng.traineddata` from `4.0.0_best_int` at 2,952,873 B. Both are wrong.
+  * `tesseract.js@7.0.0` depends on `tesseract.js-core: ^7.0.0`, NOT 6.x — core's `latest`
+    dist-tag is still 6.1.2, which is how the wrong version got measured. Everything below is
+    measured against 7.0.0, installed.
+  * **`4.0.0_best_int` IS A 404.** `curl -sI` returns HTTP 404 and 9,379 bytes of HTML error
+    page, which is where "2,952,873" cannot have come from either. The real published English
+    models: `tessdata_fast` 4,113,088 raw / 1,984,273 gzipped, `tessdata_best` 15,400,601 /
+    12,821,300, legacy `tessdata` 23,466,654 / 10,923,060.
+  **WHAT SHIPS — five files in `public/tesseract/`, 5,088,998 B, rowed on the homepage at
+  "4.9 MB":** `tesseract.esm.min.js` 63,220 · `worker.min.js` 111,307 ·
+  `tesseract-core-simd-lstm.js` 89,271 · `tesseract-core-simd-lstm.wasm` 2,857,601 ·
+  `eng.traineddata.gz` 1,967,599. Apache-2.0 throughout (engine, wrapper and model), so nothing
+  in the licensing posture moves.
+  **THREE FINDINGS THAT WERE NOT GUESSABLE, each measured before it was relied on:**
+  1. **`corePath` pins the variant only if it ends in the two characters `js`.** The library's
+     selector is a literal `corePath.slice(-2) === "js"`; anything else is a DIRECTORY, and it
+     then appends one of six `*.wasm.js` names by feature detection — the single-file builds
+     with the binary base64'd inside, 3.9–4.7 MB each, all six of which would have to be served
+     to cover every browser. Naming the file skips detection entirely.
+  2. **The `.wasm` resolves against `worker.min.js`'s directory, not `corePath`'s.** tesseract.js
+     hands Emscripten no `locateFile`, so the glue resolves its binary against
+     `self.location.href`, which inside the worker is the worker's URL. Proven by serving the
+     glue from a different directory and watching the `.wasm` come from the worker's.
+     **All five artifacts must stay siblings**; splitting them 404s the binary and reports it as
+     `CompileError: expected 4 bytes, fell off end`, naming neither file nor cause.
+  3. **`workerBlobURL` defaults to TRUE and is not merely against this repo's rules — it does
+     not work.** In blob mode `new URL(".", "blob:…")` throws, the caught error leaves the script
+     directory empty, and the core's request for its `.wasm` becomes an unresolvable bare
+     filename. It does not reject: `createWorker` never settles at all.
+  **A FOURTH, found by the gate rather than by reading:** `dist/tesseract.esm.min.js` has ONE
+  export, the default (`export { tesseract_min as default }`). `const { createWorker } = await
+  import(…)` type-checks and yields `undefined`, surfacing three layers away as "createWorker is
+  not a function". Same shape as the heic2any UMD-in-ESM note at `image-convert.ts:179`.
+  **Variant chosen on a measurement, not a guess:** `WebAssembly.validate` of
+  wasm-feature-detect's own probe modules, run in all three Playwright engines with a positive
+  and a negative control, gives fixed SIMD true in Chromium/Firefox/WebKit and relaxed SIMD
+  **false in WebKit** — while relaxed is what the library's own auto-selection takes first in
+  Chromium. One pinned fixed-SIMD LSTM-only core runs everywhere. The conversion suite runs this
+  engine in WebKit, so the pin is stood behind rather than asserted.
+  **`cacheMethod: "none"`, deliberately.** Left alone the library writes the 4.1 MB decompressed
+  model into IndexedDB under the unnamespaced key `"./eng.traineddata"`. Nothing leaves the
+  device either way, but this site has ONE storage story — the opt-in on /offline-access where
+  every byte is named before it is written — and a second invisible cache would make that page
+  under-report what is on disk.
+  **`tesseract.js` is a devDependency, and that is load-bearing rather than tidy.** Nothing is
+  bundled; the five files are served and loaded at runtime, so the packages exist only to be
+  copied — exactly `@ffmpeg/core`'s arrangement. `generate-license-notices.mjs` walks RUNTIME
+  deps transitively, and tesseract.js drags in ~130 packages, almost all for its Node build.
+  Verified: the regenerated notices are **byte-identical** and mention tesseract zero times, so
+  the engine is named by hand on /licenses the way the FFmpeg core and qpdf already are.
+  **DISCLOSURE — the item was right that this is the expensive half, and it named eight of the
+  ten surfaces.** Landed: homepage `ENGINES` row (with the size now DERIVED from the five files
+  in `engine-disclosure.test.ts`, and `Tesseract` added to `SERVED`), /privacy (exact byte
+  counts, the counter, the when-it-arrives clause, and the CDN-override paragraph — OCR is the
+  starkest case there, it defaults to TWO different CDNs), the blog post's Network-tab
+  walkthrough, /licenses, `offline.ts` (bundle + the id union + the tool-count re-derivation
+  133/47/32/15), `sw-policy.ts`'s `ENGINE_DIRS`, and `copy:wasm`. **The two the item MISSED, both
+  in `categories.ts`:** the image hub's `download` range, which had to move from "0–1.3 MB" to
+  "0–4.9 MB" — **the first time that ceiling has moved since the hub was written**, since
+  Tesseract is 3.7× heic2any — and `CEILING["image-tools"]`, which is now anchored to the five
+  files rather than to the homepage string (`CEILING_ARTIFACT` grew from one path to many).
+  **Gates, all able to fail and proven so:** `tesseract-artifact.test.ts` pins both model hashes
+  (including gunzipping and hashing the RESULT, which is what ties it to upstream rather than to
+  our own `gzip -9 -n`), scans the core for copyleft with `tesseract`/`leptonica` as live
+  positive controls, and asserts the devDependency placement. A CI-VISIBLE smoke spec lives in
+  `e2e/image/` — outside `conversion/`, deliberately, because the default project is all CI runs
+  — and it asserts THE RECOGNISED TEXT rather than a download button. Mutations proven red:
+  the whole engine directory missing, and only the model missing (the partial-bundle case).
+  `conversion/ocr.spec.ts` adds the download round-trip and the honest-empty case, in both
+  projects. `watchTesseractRequests` fails on a foreign origin AND on the engine never being
+  fetched.
+  **THREE THINGS LEFT OPEN, none of them blocking, all recorded rather than dropped:**
+  * ⚠ **DEPLOY-GATED AND UNVERIFIABLE FROM HERE: how GitHub Pages serves a `.gz`.** The model is
+    served pre-compressed and inflated by the engine itself (zlibjs, inside `worker.min.js`), so
+    what matters is that the response does NOT carry `Content-Encoding: gzip` — with it the
+    browser would inflate too and hand the engine bytes it cannot read. `application/gzip` with
+    no Content-Encoding is what tesseract.js's own CDN sends (measured) and what the PWA suite's
+    static server now sends. `next dev` behaves the same way and OCR works end to end through
+    it in Chromium and WebKit. **Check the response headers on the first deploy.** If Pages does
+    set Content-Encoding, the fix is one line — serve the raw 4,113,088 B model with
+    `gzip: false`, at 2.1 MB more on the wire.
+  * **The workspace archetype is `text` (`["Parse", "Transform"]`), borrowed from
+    `qr-code-reader`** — the exact analogue, image in and text out, with the same imperfect fit.
+    An `ocr` archetype is a three-file change (the union, `pipelineByArchetype`, and the
+    hand-copied `ARCHETYPES` list in `workspace.test.ts`), and this file already records one
+    such case filed as a follow-up rather than shipped half-done. Same call here.
+  * **`recognizeImage` terminates its worker per call**, which is right for one image and is the
+    first thing `ocr-pdf` will have to change.
+
+  ⚠ **`4.9 MB` is now the largest download on the site outside the video core**, and the tool
+  discloses it on the canvas before it is spent. Bandwidth: ~20,000 first-uses per month against
+  GitHub Pages' soft ~100 GB, against FFmpeg's ~3,000 — comfortable, and the arithmetic is here
+  so nobody redoes it.
+
 - [x] **2. `pdf-editor` — SHIPPED 2026-09-10, v1 exactly as scoped.** The item's own framing held
   up: pdfjs renders, pdf-lib writes, **zero new dependencies**. It cost far less than its billing
   because the four stamping tools shipped earlier the same day had already built the engine —
@@ -1962,41 +2235,74 @@ All engine work goes through `pdf-engine-core.ts` → `pdf.worker.js` (leaf-impo
   side-by-side preview before download. **Do NOT ship `pdf-to-word`** (writer compiled out; a
   text dump on the biggest PDF query burns the trust everything else depends on). Skip
   `pptx-to-pdf` (slides reflow into a text river).
-- [ ] **4. `ocr-pdf`.** Only after 1 proves the pipeline: render page (existing pdf.worker) →
-  tesseract hOCR → invisible render-mode-3 text layer via pdf-lib. 2–10 s/page; page-count gate
-  + streaming progress.
-- [ ] **Go/no-go — the PAPER WORK IS DONE 2026-09-10; the decision itself is the owner's,
-  because both options commit real bandwidth and product direction.** Assessed against this
-  item's own gates, with what could be checked, checked:
-  * **`background-remover` — the licensing gate this item sets is currently FAILED by both
-    leading options, on rules this project has ALREADY SETTLED.** `@imgly/background-removal`
-    1.7.0 publishes `license: "SEE LICENSE IN LICENSE.md"` rather than an SPDX identifier — i.e.
-    a licence that has to be read before it can be relied on, which is itself a finding for a
-    dependency this repo would have to vendor and self-host. The commonly-cited RMBG models are
-    published under non-commercial terms. **AGPL is disqualifying here (settled 2026-08-31, and
-    it is why MuPDF was removed rather than licensed), and a non-commercial model is
-    disqualifying for a site carrying ads.** So the honest position is not "not yet" but
-    "not on these terms": the gate asks for a sub-100 MiB quantised model with a PERMISSIVE
-    licence, and finding one is the prerequisite, not the model size. ⚠ Verify the exact terms
-    against the source before acting on this — the npm metadata above is a pointer, not a licence
-    review.
-  * **Whisper (`audio-to-text` / `video-to-text` / SRT export as ONE build) — no licensing
-    blocker; the blocker is bandwidth and it is arithmetic.** `@huggingface/transformers` 4.2.0
-    is **Apache-2.0**, so the runtime is clean, and Whisper's own weights are permissively
-    licensed. At the item's own ~85–120 MB, GitHub Pages' soft ~100 GB/month allowance is
-    exhausted by roughly **850–1,200 downloads a month** — and this site already serves a 32 MB
-    FFmpeg core. That is the number the decision turns on, and it is a hosting decision rather
-    than an engineering one. The item's recorded trap stands and is the strongest reason to build
-    it rather than fake it: Chrome's `SpeechRecognition` streams audio to Google, so using it
-    would silently break the one promise this whole site is built on. **Whisper or nothing.**
-  ORIGINAL GATES:
-  - `background-remover` — largest raw demand in the audit. Gates: a sub-100 MiB quantized
-    model (GitHub hard file limit) with a **permissive license** (RMBG-1.4 is non-commercial;
-    @imgly is AGPL w/ CDN default), self-hosted, `navigator.gpu` gate, download size shown,
-    Cache API persistence, Pages bandwidth math.
-  - Whisper transcription (`audio-to-text`/`video-to-text`/SRT export = ONE build) — ~85–120 MB,
-    WebGPU effectively required. Trap (verified in research): Chrome's `SpeechRecognition`
-    streams audio to Google — using it would silently break the core promise. Whisper or nothing.
+- [x] **4. `ocr-pdf` — SHIPPED 2026-09-10 (180 → 181 tools), and it cost what this item said it
+  would: ZERO new engine bytes.** The 4.9 MB was already served, disclosed, bundled and guarded
+  by item 1, so this is the join and nothing else — pdfjs renders, the Tesseract session reads,
+  pdf-lib writes.
+  ⚠ **THIS ITEM'S OWN SENTENCE WAS WRONG: "render each page through the existing `pdf.worker`".**
+  That worker is pdf-lib only and cannot render anything. The rasteriser is
+  `loadPdfjsDocument` + `renderPageFromDoc` (`pdf-engine.ts:459,465`), on the main thread.
+  **WHAT THE INVISIBLE LAYER ACTUALLY TOOK — the part worth keeping:**
+  * **A hand-built GLYPHLESS Type0 / Identity-H / CIDFontType2 font, with no font program at
+    all.** Not a flourish — it is what makes the tool possible. A standard font cannot carry OCR
+    output: pdf-lib's `encodeText` THROWS on anything outside WinAnsi, including a plain
+    newline, leaving only drop (silent data loss), substitute (a lie in the text layer) or refuse
+    (one glyph kills a document). None applies here, because under `3 Tr` no glyph is ever
+    rasterised and only `/ToUnicode` decides what search and copy return. So the font legally
+    omits its `FontFile2`, every codepoint gets a CID, and Polish, Greek, Cyrillic, CJK and emoji
+    all round-trip. It costs ~1.3 KB inside the produced PDF and **zero served bytes**.
+  * ⚠ **ONE CID PER CODEPOINT, not per UTF-16 code unit.** Per code unit emits lone surrogates
+    for astral characters and extractors mangle them — measured, and pinned by a unit test that
+    compares the squeeze of a 1-codepoint string against a 2-codepoint one.
+  * ⚠ **The pre-encode pass in `addOcrTextLayer` looks redundant and is load-bearing.**
+    `registerGlyphlessFont` serialises the CMap from whatever the table holds AT THAT MOMENT,
+    while `encode()` allocates lazily. Register first and every later codepoint gets a CID with
+    no CMap entry — the document looks perfect and copies as nothing.
+  * **Tz, not a fudged font size.** `DW 1000` makes the natural advance one em per CID, so the
+    run is stretched to the box OCR measured: within 0.9% of the ink box with it, up to 48%
+    short without, which would end selection highlights mid-word.
+  **THREE ENGINE FACTS, each measured before it was relied on:**
+  1. ⚠ **`output` IS THE THIRD ARGUMENT of `recognize`, and getting it wrong fails SILENTLY.**
+     `recognize(image, options, output, jobId)`. The second argument is the Tesseract-parameter
+     passthrough, so `recognize(blob, { blocks: true })` hands `blocks` to `SetVariable`, which
+     ignores an unknown key without throwing — text comes back fine and `blocks` is `null`.
+     `blocks` is off by default twice over.
+  2. **Word bboxes are SOURCE-IMAGE pixels, origin top-left**, proven to the pixel against ink
+     extents at 1x and 2x. `getViewport({scale})` has ALREADY applied `/Rotate`, so they arrive
+     in the DISPLAYED frame and `fractionToUserSpace` un-applies it — plus a new
+     `displayedRightUnit` for the text matrix, or text on a rotated page comes out sideways.
+  3. **300 dpi (`scale` 300/72), not the repo's usual.** Every other caller renders for a human —
+     0.3 for thumbnails (21.6 dpi), 2 for `/pdf-to-jpg` (144). Tesseract degrades sharply below
+     ~200 dpi, so the default would have produced a layer full of plausible nonsense.
+  **THE PAGE GATE HAS A NUMBER NOW: 50**, and a reason rather than a round figure — an A4 page at
+  300 dpi is ~8.7 megapixels held beside the language model, and the tool REFUSES above it
+  naming the count rather than starting work it probably cannot finish.
+  **REJECTED, and worth recording so nobody re-proposes it:** Tesseract's own PDF renderer is
+  compiled into the core we already serve and would have skipped all of the above. Its
+  `AddImage` REBUILDS THE PAGE FROM THE RASTER — the output is a picture of the page at whatever
+  DPI we chose, and the original page objects are gone. That contradicts the one claim this tool
+  exists to make.
+  **HONESTY SURFACES**, on the model of `pdf-editor`: two unconditional canvas footnotes (the
+  page image is unchanged and the text is a layer, NOT a retyped document; and the sharper one —
+  *what you see is right, what you copy may not be* — because unlike `/image-to-text` the error
+  here is invisible by construction), a pre-flight warning naming pages that ALREADY carry real
+  text (overlaying doubles search results and the existing layer is the accurate one), the
+  empty-page list, and a confidence number that gates nothing.
+  **GATES:** 17 unit tests over the placement arithmetic and document structure — including a
+  rotation sweep with the positive control that all four rotations must map to DIFFERENT points,
+  because "inside the page" passes perfectly while rotation is ignored. The two claims jsdom
+  cannot check are e2e in BOTH projects: the text is recovered by real pdfjs with the input
+  asserted to contain NONE first, and the page's image XObject is compared byte-for-byte before
+  and after. Proven red by moving the language model aside.
+  ⚠ **A raw byte grep over a PDF is unsound and it caught this file on first writing** — pdf-lib
+  saves with object streams, so `Buffer.includes("GlyphLessFont")` returns false on a document
+  that contains it. The structure tests read the object graph instead.
+
+> **Wave 5's go/no-go box was REMOVED on 2026-09-13 at the owner's direction.**
+> Both candidates are now in the "Do not build" table at the end of this file
+> with the findings that decided them. The gates checklists they were assessed
+> against are preserved there rather than here, because an open checkbox reads
+> as work someone forgot rather than a decision someone made.
 
 ---
 
@@ -2110,6 +2416,173 @@ All engine work goes through `pdf-engine-core.ts` → `pdf.worker.js` (leaf-impo
     (`toolCount` per bundle) but not the slug→bundle mapping, and deriving it honestly means
     tracing each tool's reachable code path — which is how those counts were produced, by hand.
 
+- [x] **SHIPPED-BUG-TO-BE: /offline-access told visitors the wrong number, and the test named
+  after that number checked a different one — FOUND AND FIXED 2026-09-10, before it ever
+  deployed.** Found while sizing the OCR bundle against the page's own arithmetic, not by
+  looking for it.
+  **The claim.** `OfflineSettings.tsx` rendered "FFmpeg is the eighth, and on its own it is
+  30.8 MB for 32 — **a twentieth of the bytes** for a third of the tools", and the header comment
+  said storing the small half buys "most of the value for **5% of the download**".
+  Everything-except-FFmpeg is **6,125,478 B against 32,344,478** — **a FIFTH** (1/5.28), and 16%
+  of the engine total. A twentieth needs the small set under 1,617,224 B. **Wrong by ~3.8×**, in
+  the one direction that flatters the site. The tool half ("a third") was right.
+  **It did not rot — it was born false**, which matters because it changes the cure.
+  `git show 4549b77 --name-status` adds `offline.ts` and `OfflineSettings.tsx` in one commit,
+  100% insertions, already carrying all eight bundles. There is no earlier two-bundle revision.
+  The figure almost certainly came from lamejs + heic2any alone — 1,621,055 B, which really is
+  FFmpeg/19.95 — and was never re-derived against the list underneath it. ⚠ A rot hypothesis was
+  written into the brief for this and an agent REFUTED it from the history; the record is the
+  agent's, not the brief's.
+  **Why nothing caught it.** The unit test was named `"makes everything-except-FFmpeg a
+  twentieth of the bytes"` and asserted `totalBundleBytes(rest) * 5 < ffmpeg.bytes` — a FIFTH.
+  It was green, one-directional (it can only fail when the small set GROWS), and it carried the
+  false number in its own title. Nothing else pinned the sentence.
+  **The cure is not a better fraction.** AN ENGLISH FRACTION CANNOT BE CONTRADICTED BY
+  ARITHMETIC, so no computed constant helps by itself. `offline.ts` now exports
+  `SMALL_BYTE_SHARE_PCT` and `SMALL_TOOL_SHARE_PCT`, divided out of `ENGINE_BUNDLES`, and the
+  page renders "16% of the bytes covers 30% of the tools". The misnamed inequality was DELETED
+  rather than loosened — loosening the multiplier is the "widen the bound to stay green" move
+  and would have left it one-directional. It is replaced by (a) a render-and-recompute assertion
+  in `OfflineSettings.test.tsx` whose expected values are recomputed from `ENGINE_BUNDLES`, so
+  overstating and understating fail alike and there is no threshold to widen, and (b) a source
+  scan banning spelled-out fractions and engine counts in the rendered copy — **comments
+  stripped first**, because a comment quoting the retired wording to explain it is the file that
+  got it right, the same reasoning `engine-disclosure.test.ts` uses for CDN URLs in comments.
+  **A SECOND HARDCODE on the same line, which the OCR bundle would have falsified that same
+  day:** "Seven of the eight engines below … FFmpeg is the eighth" — while two paragraphs down
+  the eyebrow rendered the DERIVED `{ENGINE_BUNDLES.length} FILES THIS ORIGIN SERVES`. A ninth
+  bundle would have made the page contradict itself in adjacent blocks. Both are derived now.
+  Also fixed: `OfflineSettings.test.tsx`'s header comment, already stale at "126 need nothing /
+  13 for a twentieth / 32" against live constants of 133/14/32 — proof this page's hand-written
+  numbers rot in practice. The numerals were deleted rather than corrected.
+  **Proven red in four independent directions** before being called done: the original wording
+  restored, the cardinality hardcoded, a share hardcoded, and the comment-stripper broken so it
+  ate the prose it was meant to scan.
+  ⚠ **No user ever saw it** — it lives in unpushed `4549b77` and the live site is still the
+  67-tool build. This is a pre-publication fix, not a correction to a live claim.
+
+- [x] **GATE HYGIENE: a stale `next dev` / `playwright test` holds port 3000 and makes the
+  conversion suite report PHANTOM failures — recorded 2026-09-12 after it fooled me three
+  times.** Playwright's `reuseExistingServer: !CI` means a leftover server from a killed or
+  backgrounded run is silently adopted by the next one, and a leftover *runner* fights it for the
+  port. The symptoms are indistinguishable from a real defect: a single spec failing, or the
+  whole suite hanging with an empty log. Twice I reported a conversion failure that did not exist,
+  and once a run sat for 30 minutes behind a runner from an earlier command.
+  ⚠ **This compounds `feedback_stale_dev_server`** — that memory is about a stale server serving a
+  CACHED MODULE GRAPH after registry edits; this is the same process being stale in a second way.
+  Both are cured by the same habit and neither is cured by waiting.
+  **Before any e2e or `measure-tool-surfaces` run:**
+  `pkill -9 -f 'playwright test'; pkill -9 -f 'next dev'; lsof -ti:3000 | xargs kill -9`
+  A failure that does not reproduce on a clean machine is not a flake until it has been re-run
+  on one — which is also why the `frame-export` entry below is careful to say which of its runs
+  were clean.
+
+- [x] **THE CONVERSION-GATE FLAKE — DIAGNOSED AND FIXED 2026-09-13. It was not
+  memory pressure, not elapsed time, and not "one specific other spec". THE TEST
+  REQUIRED THE PRODUCT TO FAIL.** No bisect was needed; the table of eliminations
+  below is kept because its negative results are what made the real cause
+  findable.
+
+  | condition | failures |
+  |---|---|
+  | full conversion suite (387 tests, both projects) | **2 of 3 runs** (2026-09-10) |
+  | the spec alone, `--retries=0` | 0 of 6 |
+  | the spec alone under 10x CPU saturation (14-core machine) | 0 of 3 |
+  | the spec + `large-input.spec.ts` + `frame-walk-end.spec.ts`, both projects | 0 of 2 |
+
+  **THE CAPTURED FAILURE, which nobody had recorded before:**
+  `Expected: < 3, Received: 3` at `frame-export.spec.ts:147`, in
+  **conversion-webkit**. The assertion was
+  `expect(shortfall.length).toBeLessThan(3)` — one frame a second over a clip
+  the element reports as 2.089796 s plans three moments, and `sample-video.mp4`'s
+  VIDEO track ends at exactly 2.000000 s (the 2.09 is its AUDIO track), so the
+  third moment usually has no picture behind it. Usually. When the element DID
+  present a frame there, all three arrived and the test failed **because the
+  tool did better than the test allowed**. The comment two lines above the
+  assertion already conceded the premise — "the element does not always present
+  it" — and then asserted that it never does.
+
+  **The fix is the invariant the page actually promises**: saved + missing =
+  planned, asserted in BOTH directions, so a false "frames are missing" claim on
+  a complete run now fails too — something the old assertion could never catch.
+  Both branches were mutation-proved. ⚠ **Do not reach for the old theories:**
+  CPU contention is refuted (above), and so now is memory pressure.
+
+  **THE DEEPER CAUSE IS ALSO FIXED, 2026-09-13 — it was a PRODUCT defect, and
+  the measurement is the reason to believe the diagnosis.**
+  `video-utils.ts`'s `processFrame` was registered with
+  `video.requestVideoFrameCallback(processFrame)` and **took no parameters**, so
+  it discarded rVFC's `metadata.mediaTime` — the presented frame's own
+  presentation timestamp — and read `video.currentTime` instead, a clock sampled
+  whenever the callback happened to be dispatched.
+
+  **Measured on `sample-video.mp4` (24 fps, 41.667 ms per frame):**
+
+  | engine | `currentTime − mediaTime` |
+  |---|---|
+  | Chromium | **−28.3 ms to −10.8 ms** (the clock runs BEHIND the frame) |
+  | WebKit | **+0.9 ms to +32.0 ms** (it runs AHEAD) |
+
+  The error is the size of a whole frame period and points in OPPOSITE
+  directions per engine — which is why the same defect produced a different
+  symptom in each project. `mediaTime` is a property of the frame and does not
+  drift. `currentTime` is kept for the STOP condition, which is the question it
+  is right for.
+
+  ⚠ **That fix alone would have been a regression, and the second half is the
+  interesting part.** "Fixed count" samples the middle of each equal slice of
+  `video.duration` — the LONGER track. This clip's audio runs to 2.089796 s
+  while its last PICTURE is at 1.958333 s, so a plan of 8 puts its final moment
+  at 1.959184: **0.85 ms past the last frame**. Under an honest
+  `frameTime >= moment` that moment can never be satisfied, and asking for 8
+  frames from a 2-second clip would return 7 and a warning — correct
+  arithmetic, useless answer. It only ever "worked" because the drifting clock
+  happened to overshoot.
+
+  So the matcher now takes the frame NEAREST a planned moment, with a tolerance
+  of **half the shortest gap yet seen between presented frames** — derived from
+  the stream, not a magic number. A frame within half a frame-period before a
+  moment is the nearest one to it, so capturing it is the right answer rather
+  than a lenient one; and a moment a FULL period away still reports missing,
+  which is why the once-a-second plan still honestly says the 2.000 s frame is
+  absent. Both modes are now deterministic on both engines: 5/5 clean runs of
+  the two frame specs, 3/3 full conversion suites.
+
+- [x] **`frame-walk-end.spec.ts` carried the same assumption — re-founded
+  2026-09-13.** It pinned `entries.length` to exactly 2, which pins the ABSENCE
+  of the third frame — a fact about the fixture's duration, not about the walk.
+  ⚠ Engines already disagree about that duration (Chromium 2.089796, WebKit
+  2.041905, measured), so the number was never as fixed as it looked. What the
+  spec is FOR is unchanged and still pinned: the 0 s and 1 s pictures must both
+  arrive, at their own moments, as different pictures. What is gone is the
+  requirement that the walk cannot do BETTER than the fixture's arithmetic —
+  replaced by the same both-directions accounting assertion as its sibling, and
+  a pairwise distinctness check instead of one hardcoded pair.
+
+- [x] **`ExtractPdfImagesUI` → "revokes every preview URL it allocated" —
+  ORDERING DEPENDENCY REMOVED 2026-09-13. ⚠ NOT a proven fix, and the
+  distinction matters.** It failed twice in about seven runs, then passed **46
+  consecutive runs** (20 filtered, 20 whole-file, 6 full-suite), so the original
+  failure was never reproduced and its cause is unconfirmed. Fixing code against
+  an unreproducible failure is what this plan warns about elsewhere, so nothing
+  in the product changed.
+
+  What WAS fixed, found by reading: the test required an ordering nothing
+  enforced. The revoke timer is created by an effect CLEANUP, so it must be
+  created after `vi.useFakeTimers()` (or it belongs to the real clock) and
+  before `advanceTimersByTime` (or there is nothing to advance) — and whether
+  React had flushed that cleanup inside `fireEvent` was a scheduling detail
+  rather than a guarantee. An explicit `act(() => {})` makes the ordering
+  explicit. ⚠ Do not widen the 1500; it is not the variable.
+
+  **And a genuine scare worth recording:** the first mutation run against this
+  gate "passed" with the revoke deleted, which reads exactly like a gate that
+  cannot fail. It was not — the mutation was aimed at `useObjectUrl`, and this
+  component does its own `createObjectURL`/`revokeObjectURL` inline (it is a
+  LIST; the hook serves one URL). Mutating the component's real revoke fails the
+  test properly. **Check what the code under test actually calls before
+  believing a mutation result.**
+
 - [x] **Two gates that could not fail, both FIXED 2026-09-10.** Same disease as
   `feedback_verification_gates_must_fail`, in two new costumes.
   1. **The how-to control check covered 3 tools out of 121.** `HOW_TO_STEPS_BY_TOOL_TYPE`
@@ -2186,41 +2659,148 @@ All engine work goes through `pdf-engine-core.ts` → `pdf.worker.js` (leaf-impo
   site for everyone with no way to roll back faster than a Pages deploy. **The site has not been
   deployed in 111 tools' worth of changes**, so a CSP could not be validated against the real
   origin before shipping either. Worth doing; worth doing with a deploy in hand.
-- [ ] **Honest limits → real streaming — HALF DONE BY DESIGN, and the risky half is gated.
-  Assessed 2026-09-10.**
-  **What is done:** ceilings are declared where they exist and where they can bite. 11 tools
-  carry `maxSizeMB` and 30 carry a `practicalLimitNote`, and `size-claims.test.ts` requires a
-  declaration from exactly the tools that need one — its `readsWholeFileIntoAWorker` scan is
-  `/\.arrayBuffer\(\)/ && /@\/lib\/workers\/[a-z0-9-]+-client/`, so any UI that pulls a whole
-  file into memory and hands it to a worker MUST declare a cap or the suite goes red. The other
-  ~137 tools stream, or work on a decoded frame, and have no ceiling of their own to publish
-  beyond the tab's memory.
-  **The dangerous half is already prevented, verified:** no page claims "no size limit" or "no
-  size cap" — grep returns nothing across `src/data`, `src/app` and `src/content` (positive
-  control: `no account` returns a hit, so the search works) — and `size-claims.test.ts:481`
-  FORBIDS those phrases in page source. So the marketing line the item warns about cannot be
-  shipped before it is true.
-  **NOT done, and it is the real work:** OPFS / streaming, to RAISE the ceilings rather than
-  document them. That is a genuine engineering project (chunked reads, an OPFS scratch file, a
-  streaming muxer for the video tools) and nothing about it is started.
-- [ ] ⚠ **Owner: i18n.** The KB/exam cluster is India-driven; PDF compress skews es/pt/id.
-  Translating 60 existing tools into ~6 languages is plausibly more traffic than 200 new pages,
-  and zero engine risk. Big lift under `output: "export"` — needs a real decision, not a drift.
-- [x] **Command palette — ALREADY SHIPPED; the box was simply never ticked (confirmed
-  2026-09-10).** `src/components/layout/CommandPalette.tsx` binds ⌘K / Ctrl+K
-  (`:119`, `e.key.toLowerCase() === "k" && (e.metaKey || e.ctrlKey)`), is mounted globally from
-  `src/app/layout.tsx:135`, exports `openSearch` for `SearchTrigger.tsx`, and announces its
-  result count in a live region (`:217`). Nothing to build.
+- [x] **Honest limits → real streaming — THE HALF THAT COULD MOVE HAS MOVED,
+  2026-09-13. And the framing was wrong: OPFS is not the lever.**
 
-- [ ] ⚠ **`launch_handler` — STILL deliberately NOT declared, and it stays that way until
-  someone can test an installed PWA.** Re-examined 2026-09-10. The reasoning recorded in
-  `src/app/manifest.ts:69-74` holds: the three `client_mode` values trade an unwanted second
-  window against navigating a window that may be minutes into a conversion, and what `"auto"`
-  actually does for a FILE launch is UA-defined rather than specified. Verifying it needs the
-  app installed from a real origin and a file opened from the OS file manager — which this
-  session cannot do, because **the site has not been deployed** (see "Still open"). A unit test
-  pins its absence, so the omission is deliberate rather than forgotten. Declaring a mode on a
-  guess would be exactly the "capability claim we can't verify" this repo refuses to make.
+  **What was already done (2026-09-10):** ceilings are declared where they exist.
+  11 tools carry `maxSizeMB`, 37 carry a `practicalLimitNote`, and
+  `size-claims.test.ts` requires a declaration from exactly the tools that need
+  one.
+
+  **⚠ OPFS BUYS NOTHING HERE, and this item was named after it.** A `File` is
+  already a disk-backed, randomly-sliceable handle and `new Blob(parts)` is
+  already a disk-backed sink, so for almost every tool on this site OPFS would
+  add a copy rather than remove one. The real walls are elsewhere: a hard
+  `maximum` of 2048 MiB declared inside six of the seven shipped `.wasm`
+  binaries, which nothing can move; and the renderer's ~2 GB single allocation.
+
+  **⚠ AND THAT SECOND WALL WAS MIS-ATTRIBUTED IN OUR OWN CODE.**
+  `ffmpeg-loader.ts` said the ~2 GB ceiling "is a V8 limit, not a RAM limit".
+  It is not a V8 limit: the same V8 under Node allocates 2040, 2047, 2048 and
+  4096 MiB with the last byte of each writable (measured 2026-09-13). It is the
+  RENDERER's. Corrected in place, because "V8 caps it" is the sentence that
+  stops anyone looking for a way round it.
+
+  **WHAT SHIPPED: `/hash-generator` and `/file-checksum` have no ceiling at
+  all.** Hashing is the one tool family on this site where the ceiling was pure
+  accident — hash functions are incremental by construction, and only
+  SubtleCrypto's single whole-buffer entry point (there is no `update()`) was
+  forcing the file to be resident. Both tools now hash off `blob.stream()`, the
+  BLOB crosses the worker boundary instead of an ArrayBuffer, and the two
+  `practicalLimitNote`s are gone because the limit is gone. `@noble/hashes`
+  (MIT, pure JS, bundled — no served artifact, no ENGINES row) supplies the
+  streaming SHA trio; `js-md5` was already incremental.
+  * **Measured cost, in the browser rather than in Node:** ~39 MB/s for all
+    four digests together (32 MiB through the real page in 0.83 s, Chromium).
+    Node reports ~50 MB/s and the copy quotes the browser figure, because that
+    is the one a user experiences. Native SubtleCrypto is several times faster
+    on files that fit, and that is the real trade.
+  * Verified end to end against the built site: a 40 MiB file hashes to digests
+    byte-identical to `node:crypto`, with no page errors.
+  * ⚠ **A gate stopped being able to fail and had to be re-founded.**
+    `size-claims.test.ts`'s `readsWholeFileIntoAWorker` scan now matches ZERO
+    UIs — these two were the last — so its positive control moved off the
+    population and onto the PREDICATE (synthetic offending and innocent
+    sources). Left alone it would have passed over an empty set forever.
+
+  **Refusing to raise the rest is the honest answer**, per format: a PDF needs
+  its xref, a ZIP its central directory, and the FFmpeg tools hold ~2.1x their
+  output in the worker at one instant because `FS.readFile` allocates a
+  full-size duplicate. Those ceilings are real, and they are declared.
+
+- [x] **i18n — OWNER DECLINED 2026-09-13, after it was scoped and measured.
+  Recorded as a decision so nobody reopens it as an oversight.**
+
+  **The bet this item rested on was never verified.** Its case was geographic —
+  "the KB/exam cluster is India-driven; PDF compress skews es/pt/id" — and that
+  was an agent-sourced guess, from the same research whose search-volume figures
+  this plan already marks as unverified. The data that would settle it is
+  per-country impressions, i.e. Search Console, which the owner declined the
+  same day. With no evidence of demand and no way to acquire it, there was
+  nothing to decide *toward*.
+
+  **What it would have cost, measured rather than estimated (AST walk over
+  every non-test `.ts`/`.tsx`):** 8,350 strings / **212,734 words per locale** —
+  tools.ts 54,979 · faqs.ts 61,402 · blog MDX 31,725 · and **57,009 words across
+  250+ component files**, the bucket that makes it a refactor rather than a
+  config change. Plus **+91.4 MB of static output per locale** on a 152.3 MB
+  site, and the 160-char description cap: all 190 descriptions sit at a mean of
+  142.6 against a hard limit asserted in two places, and a typical en→de
+  expansion of 20% puts 159 of 190 over it.
+
+  **⚠ AND THE FINDING THAT SHOULD HAVE DECIDED IT ANYWAY, which is not about
+  routing:** translation silently disarms this repo's honesty machinery. **107
+  assertions across 18 unit files verify shipped claims by grepping ENGLISH
+  sentences out of `src/**`.** `size-claims.test.ts` forbids a false no-cap
+  claim with `/no size cap|no size limit/i` — a Spanish page can ship "sin
+  límite de tamaño" and the gate stays green. A second locale inherits every
+  claim this project has made and none of the checks that keep them true. That
+  is a prerequisite, not a follow-up, and it is most of the work.
+
+  **Two structural facts, kept because they are what a future attempt would
+  otherwise re-derive:** `src/app/[slug]/page.tsx` already occupies the root
+  dynamic segment with all 190 tool slugs, and Next refuses two differently
+  named dynamic segments at the same level — so `app/[locale]/` cannot coexist
+  with it, and `output: "export"` has no redirects to move 190 live URLs under
+  `/en/`. The only shape that keeps English where it is is a STATIC first
+  segment per locale (`app/es/…`). And `howto-controls.test.ts` does
+  `source.includes(label)`, so it breaks the moment a label moves into a
+  dictionary — with English as the only locale.
+
+  **WHAT WAS KEPT, because it was never i18n:** `src/lib/seo/locale.ts`, two
+  constants, fixing a live defect this scoping exposed — **212 of 222 exported
+  pages were shipping with no `og:locale` at all**, because a page's
+  `openGraph` REPLACES the root layout's rather than merging and eight files
+  declare their own. Now 221 of 222 (`offline.html` has no Open Graph block at
+  all, by design). Gated by `og-locale.test.ts`, mutation-proved both ways.
+
+  **WHAT WAS REMOVED with the decision:** the `LOCALES` tuple, the `Locale`
+  type, a `SCHEMA_LANGUAGE` map nothing ever read, and both values as
+  `Record<Locale, string>` indexed by a `DEFAULT_LOCALE` that could only be
+  `"en"`. Scaffolding for a decision made the other way makes a two-constant
+  fact look like a subsystem, and the file now says so.
+
+- [x] **`launch_handler` — DECLARED 2026-09-13 as `navigate-new`, on the owner's
+  "do what you think is best". ⚠ THE REASONING THAT KEPT IT UNDECLARED WAS
+  BACKWARDS, and that is the part worth carrying.**
+
+  `manifest.ts` argued that declaring nothing "leaves the browser's own default
+  in place, which is the honest answer to a question we cannot answer", and a
+  unit test pinned the absence. The premise was false. The default is `auto`,
+  and `auto` is not neutral: per the spec it is "the user agent decides what
+  context makes sense for the platform", with **`navigate-existing` the
+  documented typical choice on mobile** — and `navigate-existing` brings an
+  existing window into focus AND NAVIGATES IT to the launch URL.
+
+  So "declare nothing" was the ONLY option that left a window minutes into a
+  conversion exposed to being navigated away, holding the user's only copy of
+  the output — the exact harm `ServiceWorkerRegistration` refuses to risk with
+  an update. The question never needed an installed PWA to answer; it needed
+  the spec.
+
+  **Why `navigate-new` and not `focus-existing`**, which also never navigates:
+  `LaunchQueueIntake` is mounted in exactly one component, `OpenWithClient`,
+  which is `/open` — the same URL as the `file_handlers` action.
+  `focus-existing` focuses whatever window is already open without navigating
+  it, so unless that window happens to be on `/open` the consumer is never
+  mounted, `setConsumer` is never called, and **the file is silently dropped**:
+  the app pops to the front and nothing happens. A silent drop is worse than a
+  second window. `navigate-new` is the only mode that is fully specified,
+  always delivers the file to the page that can handle it, and whose worst case
+  is one extra window.
+
+  Verified in the built `out/manifest.webmanifest`:
+  `{"client_mode":"navigate-new"}`, with `file_handlers.action` and
+  `share_target.action` both `/open`. The test now pins the VALUE and, beside
+  it, that the action still matches where the intake is mounted — because those
+  two drifting apart would stop every OS file-open silently. Both
+  mutation-proved (absent, and `navigate-existing`).
+
+  ⚠ **Still unverified, and it is a smaller claim than it was:** nobody has
+  opened a file from a real OS file manager into an installed copy. What is now
+  established is which failure modes are POSSIBLE, which is what the choice
+  turned on. Worth five minutes of clicking after a deploy.
+
 - [x] **`OOM_SIGNATURES` false-positive — FIXED 2026-09-05.** `ffmpeg-loader.ts` carried the bare
   substring `"oom"` in its out-of-memory signature list and tested it with `lower.includes(sig)`,
   so any FFmpeg failure whose text contained "room", "zoom" or "bloom" was rewritten into
@@ -2284,12 +2864,48 @@ All engine work goes through `pdf-engine-core.ts` → `pdf.worker.js` (leaf-impo
   The trade-off is real and small: mono IS above the fold, in the navbar's 10.5px muted
   desktop-only status line, which will briefly show a fallback monospace. One line to revert.
   ⚠ **THE LCP NUMBER ITSELF IS NOT RE-MEASURED AND CANNOT BE FROM HERE.** Lighthouse ran
-  against the LIVE site, which is now 111 tools behind this tree; re-measuring needs a deploy.
+  against the LIVE site, which is now 123 tools behind (190 − 67; recount before quoting) this tree; re-measuring needs a deploy.
   What is measured is the byte change on the critical path, nothing more — do not report this
   as an LCP improvement until someone has run Lighthouse against a deploy.
-  The render-blocking CSS was measured at the same time and is NOT reduced: **136,085 bytes
-  raw / 21,322 gzipped across two stylesheets**, one of them 129,374 B. That is the second
-  lever, still untouched, and it is real work rather than a setting.)*
+  The render-blocking CSS was measured at the same time and was NOT reduced then:
+  **136,085 bytes raw / 21,322 gzipped across two stylesheets**, one of them 129,374 B.
+
+  ⚠ **THAT LEVER WAS PULLED ON 2026-09-13.** The shared stylesheet is now
+  **104,943 B raw / 17,170 gzipped**, down from 129,437 / 19,804 — **−24,494 raw,
+  −2,634 gzipped (−13.3%) off every page that is not a blog post.** Two changes,
+  both measured against the built `out/`:
+  * **`@tailwindcss/typography` was on the critical path of 207 pages that never
+    render a `.prose` element.** It is ~30 KB raw / ~3.7 KB gzipped and it is
+    used by the 15 blog posts plus two client-only Markdown tools. Moved into
+    `src/styles/prose.css` (`@import … source(none)` + explicit `@source`, so it
+    carries the plugin's output and no second copy of Tailwind) and imported
+    only by its three consumers. Blog pages link it as a second sheet; the two
+    `ssr: false` tool UIs pull it in at runtime, the way cropperjs's stylesheet
+    already did. Verified in a real browser: `--tw-prose-*` custom properties
+    resolve on all three, and the homepage has no `.prose` element at all.
+  * **Tailwind v4 was scanning `src/__tests__`**, so classes invented to
+    exercise `cn()` — `bg-red-500`, `bg-blue-500`, `text-red-500`,
+    `text-blue-500` — shipped in the sheet every page blocks on, used by ZERO
+    elements across all 222 pages. `@source not "../__tests__"` (−692 B raw /
+    −144 gzipped). Test files are not the product.
+  * Gated by `prose-scoping.test.ts`, mutation-proved on both regressions: the
+    plugin returning to `globals.css`, and a component using `prose` without
+    importing the sheet — which is how the FIRST version of this split shipped,
+    with the blog fixed and the two Markdown tools silently unstyled.
+
+  **⚠ ONE CLAIM FROM THE SCOPE WAS REFUTED, recorded so nobody re-pulls it:**
+  "IBM Plex Mono weight 600 is declared and never used" is FALSE. It is used —
+  `workspace.html` carries an element with `font-nocturne-mono` and
+  `font-semibold`. The scan behind that claim only looked for `font-mono` and
+  missed the `--font-nocturne-mono` alias. The weight stays.
+
+  **An unplanned consequence worth recording:** the default `npm run test:e2e`
+  went from **387 passed / 3 timed out** to **390 passed, twice**, and the suite
+  from 7.5 to 3.9 minutes. `responsive-sweep.spec.ts` walks 222 routes at three
+  viewports waiting for `networkidle`, and it was sitting at ~288 s of a 300 s
+  budget; less CSS per route put it back under. HANDOFF §2(b) described those
+  three failures as a budget problem rather than a defect — that reading was
+  right, and this is the evidence.)*
 
 ---
 
@@ -2306,6 +2922,9 @@ All engine work goes through `pdf-engine-core.ts` → `pdf.worker.js` (leaf-impo
 | Animated AVIF encode, `stabilize-video` | libaom / vidstab absent from shipped core (verified). |
 | `jpg-to-heic`, JPEG-XL encode | No client-side encoder / no browser decode support. |
 | `bip39-generator` | Wallet seeds on a page loading any third-party JS (GA4) — irresponsible. |
+| **`background-remover`** (2026-09-13) | Fails the licensing gate this repo already settled. `@imgly/background-removal` publishes `SEE LICENSE IN LICENSE.md` rather than an SPDX identifier, and the commonly-cited RMBG models are **non-commercial** — on an ad-carrying site, with a closed repo. Not "too big": wrong terms. Revisit only if a permissive sub-100 MiB model appears. |
+| **Whisper transcription** (`audio-to-text` / `video-to-text` / SRT) (2026-09-13) | The runtime is clean (`@huggingface/transformers` Apache-2.0, weights permissive) and the blocker is arithmetic. ⚠ **GitHub's hard ~100 MiB PER-FILE limit bites at PUSH**, so an 85–120 MB weight file cannot be committed at all — the tree becomes unpushable before bandwidth is even a question. Then bandwidth: ~850–1,200 downloads/month exhausts GitHub Pages' ~100 GB allowance, on a site already serving a 32 MB FFmpeg core. ⚠ **Whisper or nothing** — Chrome's `SpeechRecognition` streams audio to Google and would silently break this site's one promise. |
+| **coi-serviceworker / cross-origin isolation** (2026-09-13) | Pre-flight done, and the honest answer is that it buys **one tool**. There is no multi-threaded engine in the tree to accelerate (`@ffmpeg/core-mt`: **0 hits in `package-lock.json`**), so its own stated exit criterion — "deadlock repro across 3 browsers" — is unsatisfiable. The only adoptable candidate is oxipng's parallel build, **+71,870 served bytes** for `/compress-png`, speedup **NOT MEASURED**. Against that: two service workers cannot share scope `/` and we already own it, so the real work is header synthesis inside our own worker on the navigation path — the single highest-risk edit in this repo; and the bootstrap gap is permanent (headers are fixed at navigation time), so any threaded engine ships ALONGSIDE its single-threaded build forever. One worry IS refuted — GA sends `cross-origin-resource-policy: cross-origin`, measured — but that is a third-party promise whose failure is silent. |
 | Text-to-speech **file** output | `speechSynthesis` has no capturable stream; WASM TTS is a flagship-sized build nobody asked for. |
 | Calculators as a category | No file → no privacy wedge → pure SEO fight vs decade-old domains. File-adjacent ones only (already in Wave 4). |
 | Network/Crypto as nav categories | Fold into developer; 3 thin tools ≠ a section. |

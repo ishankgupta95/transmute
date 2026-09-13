@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { getToolBySlug } from "@/data/tools";
 import type { ToolType } from "@/data/tools";
+import { OG_LOCALE } from "@/lib/seo/locale";
 
 const BASE_URL = "https://transmute.tools";
 
@@ -140,6 +141,67 @@ const HOW_TO_STEPS_BY_TOOL_TYPE: Record<ToolType, string[]> = {
     "Drop an image onto the upload area — JPG, PNG, WebP, AVIF, BMP and GIF are accepted.",
     "Click the frames you want in the size grid, then choose Cover or Contain under FIT and, for Contain, a Pad colour.",
     "Press Resize, then use the Download … sizes (ZIP) button, or click one output to save it on its own.",
+  ],
+  "bcrypt-generator": [
+    "Type or paste the password into the field at the top of the page.",
+    "Set the work factor — each step doubles the time, for you and for an attacker.",
+    "Press Generate hash, then Copy the result.",
+  ],
+  "gif-maker": [
+    "Drop several images onto the page, or click the drop zone to pick them.",
+    "Set how long each frame is shown — the strip shows it as a frame rate too.",
+    "Press Rebuild GIF after changing the timing, then Download the animation.",
+  ],
+  "csv-markdown-table": [
+    "Paste or type CSV into the left pane — it starts with an example you can replace.",
+    "The Markdown table appears on the right as you type; set the alignment if you want it.",
+    "Press Copy to take the table, or Download to save it.",
+  ],
+  "resize-gif": [
+    "Drop an animated GIF onto the page, or click the drop zone to pick one.",
+    "Set the scale — halving the dimensions removes three quarters of the pixels in every frame.",
+    "Press Resize GIF, then Download the result.",
+  ],
+  "gif-speed-changer": [
+    "Drop an animated GIF onto the page, or click the drop zone to pick one.",
+    "Set the speed as a percentage of the original — above 100% is slower, below is faster.",
+    "Press Change speed, then Download the result.",
+  ],
+  "reverse-gif": [
+    "Drop an animated GIF onto the page, or click the drop zone to pick one.",
+    "It reverses as soon as it has read the frames — there is nothing to set.",
+    "Press Download to save the reversed animation.",
+  ],
+  "split-gif": [
+    "Drop an animated GIF onto the page, or click the drop zone to pick one.",
+    "Every frame is pulled out as a numbered PNG, in playing order.",
+    "Press Download to save them all as a ZIP.",
+  ],
+  "vcf-to-csv": [
+    "Drop a .vcf contacts export onto the page, or click the drop zone to pick one.",
+    "Check the columns — repeated emails and phone numbers each get their own, numbered.",
+    "Press Download to save the CSV, or Copy to put it on the clipboard.",
+  ],
+  "ics-to-csv": [
+    "Drop an .ics calendar export onto the page, or click the drop zone to pick one.",
+    "Check the times — they are written as the calendar stores them, with the zone beside them.",
+    "Press Download to save the CSV, or Copy to put it on the clipboard.",
+  ],
+  "ocr-pdf": [
+    "Drop a scanned PDF onto the page, or click the drop zone to pick one.",
+    // No control named in step two: the run starts on drop and there is
+    // nothing to press. howto-controls.test.ts checks every control a step
+    // names actually exists, so naming one that does not is caught here.
+    "Wait while each page is read — a long scan takes a while, and the strip says which page it is on.",
+    "Press Download to save the searchable PDF. It looks identical; the text is invisible.",
+  ],
+  "image-to-text": [
+    "Drop a photo, screenshot or scan onto the page, or click the drop zone to pick one.",
+    // No control is named in step two on purpose: the run starts on drop, and
+    // the only thing to do is wait. Naming a button that does not exist is
+    // exactly what howto-controls.test.ts was written to catch.
+    "Wait while it reads — the first image on a fresh visit also fetches the 4.9 MB OCR engine.",
+    "Press Download to save the text as a .txt file, or Copy to put it on the clipboard.",
   ],
   "compress-png": [
     "Drop a PNG onto the page, or click the drop zone to pick one.",
@@ -831,6 +893,7 @@ export function getToolMetadata(slug: string): Metadata {
       canonical: `/${tool.slug}`,
     },
     openGraph: {
+      locale: OG_LOCALE,
       title: `${tool.name} | Transmute`,
       description: tool.description,
       url: `${BASE_URL}/${tool.slug}`,

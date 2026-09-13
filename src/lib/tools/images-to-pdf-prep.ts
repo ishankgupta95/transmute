@@ -23,7 +23,7 @@ import { canvasToBlob } from "./canvas-utils";
  * pages become JPEG at quality 0.92 — a 12 MP photo repacked as PNG would
  * balloon the PDF for no visual gain.
  *
- * Main-thread only. This module reaches heic2any and utif2 through
+ * Main-thread only. This module reaches libheif and utif2 through
  * image-convert.ts; it must never be pulled into a worker bundle.
  */
 
@@ -168,7 +168,7 @@ async function prepareTiff(file: File, bytes: Uint8Array): Promise<PreparedImage
 
 /**
  * WebP, HEIC, and anything else the platform can decode. HEIC arrives as a
- * heic2any-produced PNG blob; animated GIF/WebP sources carry the frame-0
+ * libheif-produced PNG blob; animated GIF/WebP sources carry the frame-0
  * warning that `toDecodableSource` sniffed — the decode below keeps only
  * frame 0, and the notice is what keeps that honest.
  */

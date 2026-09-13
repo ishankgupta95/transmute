@@ -103,14 +103,31 @@ test.describe("the frame walk at the end of a clip", () => {
     const entries = (await assertZip(bytes, { minEntries: 1 })).sort();
 
     /*
-      TWO, exactly. One a second over a clip the element calls 2.089796 s long
-      plans three moments — 0 s, 1 s, 2 s — and the first two have pictures
-      behind them while the third does not. A walk that lost the 1 s frame as
-      well would land at one entry here and the warning would still read as a
-      well-formed sentence, which is why this number is pinned rather than
-      bounded.
+      ⚠ THIS WAS `toBe(2)` UNTIL 2026-09-13, and the reasoning behind the change
+      is worth more than the change.
+
+      One a second over a clip the element calls ~2.09 s long plans three
+      moments — 0 s, 1 s, 2 s — and the first two have pictures behind them
+      while the third does not, because the VIDEO track ends at 1.958333 s.
+      Pinning "2" therefore pinned the ABSENCE of the third, which is a fact
+      about the fixture's duration rather than about the walk. Two things make
+      that a bad thing to assert: engines already disagree about the duration
+      (Chromium reports 2.089796, WebKit 2.041905 — measured), and its sibling
+      `frame-export.spec.ts` failed roughly two runs in three on exactly this
+      shape until it was diagnosed.
+
+      What this test is FOR is unchanged and still pinned below: the 0 s and
+      1 s pictures must both arrive, at their own moments, as two different
+      pictures. A walk that lost the 1 s frame lands at one entry and fails.
+      What is no longer asserted is that the walk cannot do BETTER than the
+      fixture's arithmetic — that is the accounting assertion at the end,
+      which now closes in both directions.
     */
-    expect(entries.length, "the clip has a picture at 0 s and at 1 s, and both must arrive").toBe(2);
+    expect(
+      entries.length,
+      "the clip has a picture at 0 s and at 1 s, and both must arrive",
+    ).toBeGreaterThanOrEqual(2);
+    expect(entries.length, "a walk cannot save more frames than its own plan of three").toBeLessThanOrEqual(3);
 
     const moments = entries.map(momentOf);
     expect(moments[0], "the first moment planned is the start of the clip").toBeLessThan(0.1);
@@ -136,11 +153,15 @@ test.describe("the frame walk at the end of a clip", () => {
       which is what re-saving the last presented frame under a second name
       would produce.
     */
-    const [first, second] = await Promise.all(entries.map((name) => zipEntry(bytes, name)));
-    expect(
-      first.equals(second),
-      "two entries holding the same bytes are the same frame saved twice",
-    ).toBe(false);
+    const blobs = await Promise.all(entries.map((name) => zipEntry(bytes, name)));
+    for (let i = 0; i < blobs.length; i++) {
+      for (let j = i + 1; j < blobs.length; j++) {
+        expect(
+          blobs[i].equals(blobs[j]),
+          `${entries[i]} and ${entries[j]} hold the same bytes — one frame saved twice`,
+        ).toBe(false);
+      }
+    }
 
     /*
       The honesty mechanism itself: the page must still report BOTH numbers,
@@ -149,12 +170,18 @@ test.describe("the frame walk at the end of a clip", () => {
       the end of its plan here, and what ran out was the video track, not the
       walk.
     */
-    await expect(
-      surface,
-      "a run that saved fewer frames than it planned must say so, with both numbers",
-    ).toContainText(
-      `the last ${3 - entries.length} of the 3 planned frames are missing from this ZIP`,
-    );
+    const missing = 3 - entries.length;
+    if (missing > 0) {
+      await expect(
+        surface,
+        "a run that saved fewer frames than it planned must say so, with both numbers",
+      ).toContainText(`the last ${missing} of the 3 planned frames are missing from this ZIP`);
+    } else {
+      await expect(
+        surface,
+        "a run that saved every planned frame must not claim any are missing",
+      ).not.toContainText("missing from this ZIP");
+    }
     await expect(surface, "and the count it shows is the count in the ZIP").toContainText(
       `${entries.length} FRAMES`,
     );

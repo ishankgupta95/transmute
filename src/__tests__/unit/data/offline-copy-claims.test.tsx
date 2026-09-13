@@ -21,7 +21,7 @@ import { getWorkspaceTool } from "@/data/workspace";
  *      "none of its own" was cookies, but nothing in the sentence said so, and
  *      a cache of the site's own code turns the loose reading into a lie.
  *
- *   2. privacy/page.tsx also said "None of the four is fetched when you open
+ *   2. privacy/page.tsx also said "None of the seven is fetched when you open
  *      the page" after a list that names SEVEN fetched libraries — FFmpeg, the
  *      MP3 encoder, the HEIC decoder, qpdf, the barcode reader, the archive
  *      reader and the PNG optimiser, of which five are WebAssembly. "The four"
@@ -40,9 +40,9 @@ import { getWorkspaceTool } from "@/data/workspace";
  *
  * A NOTE FOR WHOEVER WRITES THE CACHING POLICY, recorded here because this is
  * the file that reasons about which claims a cache breaks: /vendor/lamejs.js
- * and /vendor/heic2any.js carry the LGPL argument made on /licenses — they are
- * served unbundled at a stable URL precisely so a recipient can substitute
- * their own build by replacing that one file. A cache-first entry for either
+ * and the two /vendor/libheif.* files carry the LGPL argument made on
+ * /licenses — they are served unbundled at stable URLs precisely so a
+ * recipient can substitute their own build by replacing those files. A cache-first entry for either
  * would shadow the replacement and weaken that argument. Serving them only if
  * a copy is already there, never adding one except on an explicit request, and
  * keeping the removal path working, is what preserves it.
@@ -119,7 +119,17 @@ describe("offline copy claims", () => {
   });
 
   describe("privacy policy: External resources", () => {
-    const SEVEN = [
+    /*
+      THE BUG THIS BLOCK EXISTS FOR: the sentence used to read "None of the
+      four is fetched" over a list that had quietly grown to seven. A spelled-
+      out count is the same failure mode as a spelled-out fraction — no
+      arithmetic can contradict an English word — so the word is DERIVED from
+      the list here rather than typed on both sides.
+
+      Adding an engine to the policy without adding it to this array (or the
+      reverse) now fails, in both directions.
+    */
+    const FETCHED = [
       "FFmpeg",
       "MP3 encoder",
       "HEIC decoder",
@@ -127,18 +137,33 @@ describe("offline copy claims", () => {
       "barcode reader",
       "archive reader",
       "PNG optimiser",
+      "OCR engine",
     ] as const;
 
+    const WORDS = [
+      "zero", "one", "two", "three", "four", "five", "six",
+      "seven", "eight", "nine", "ten", "eleven", "twelve",
+    ] as const;
+    const counted = `None of the ${WORDS[FETCHED.length]} is fetched when you open the page`;
+
     it("counts the libraries it actually listed", () => {
-      expect(PRIVACY).not.toContain("None of the four is fetched");
-      expect(PRIVACY).toContain("None of the seven is fetched when you open the page");
+      expect(PRIVACY, `the policy should say: "${counted}"`).toContain(counted);
+      // …and says it only once, so a stale sentence cannot survive beside a
+      // corrected one.
+      for (const word of WORDS) {
+        if (word === WORDS[FETCHED.length]) continue;
+        expect(PRIVACY, `a stale count survives: "None of the ${word}"`).not.toContain(
+          `None of the ${word} is fetched`,
+        );
+      }
     });
 
-    it("says when each of the seven arrives", () => {
+    it("says when each of them arrives", () => {
       // The paired positive: a count is only honest if the list is really
       // there. Each name must appear in the section that makes the claim.
-      const section = PRIVACY.slice(PRIVACY.indexOf("None of the seven"));
-      for (const name of SEVEN) {
+      const section = PRIVACY.slice(PRIVACY.indexOf(counted));
+      expect(section.length, "the counted sentence was not found at all").toBeGreaterThan(200);
+      for (const name of FETCHED) {
         expect(section, `the enumeration does not account for ${name}`).toContain(name);
       }
     });

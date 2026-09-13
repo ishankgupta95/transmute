@@ -442,6 +442,37 @@ export async function extractVideoFrames(
     /** Planned moments a frame already saved had passed. See the warning below. */
     let absorbed = 0;
 
+    /*
+      ── WHY A PLANNED MOMENT TAKES THE NEAREST FRAME, NOT THE NEXT ONE ────────
+
+      A plan asks for a moment; a file only has pictures. "Fixed count" samples
+      the MIDDLE of each equal slice, and those midpoints are computed off
+      `video.duration` — which is the longer of the tracks. On
+      `sample-video.mp4` the audio runs to 2.089796 s while the last PICTURE is
+      at 1.958333 s, so a plan of 8 puts its last moment at 1.959184: **0.85 ms
+      past the final frame**. Under a strict `frameTime >= moment` that moment
+      can never be satisfied, and asking for 8 frames from a 2-second clip
+      would return 7 and a warning — correct arithmetic, useless answer.
+
+      It used to "work" only because the comparison ran on `video.currentTime`,
+      which drifts up to a frame period either side of the real frame time
+      (video-utils.ts has the measurements). That is not a tolerance, it is a
+      coin flip, and it is what made this file's spec fail two runs in three.
+
+      So the tolerance is made explicit and derived from the stream: half the
+      shortest gap yet seen between presented frames. A frame within half a
+      frame-period BEFORE a planned moment is the nearest frame to it — nothing
+      later can be closer — so capturing it is the right answer rather than a
+      lenient one. A moment further away than that genuinely has no picture
+      near it, and still reports as missing: the 2.000 s moment in a
+      once-a-second plan stays unsatisfied, because 1.958333 is a full frame
+      period away.
+    */
+    let shortestGapSeconds = Infinity;
+    let previousFrameTime: number | null = null;
+    /** Half a frame period, or 0 until two frames have been seen. */
+    const moment = () => (shortestGapSeconds === Infinity ? 0 : shortestGapSeconds / 2);
+
     try {
       await playAndExtractFrames(
         video,
@@ -451,7 +482,11 @@ export async function extractVideoFrames(
           throwIfAborted(signal);
           // The walk starts at 0, so its offset IS the clip time.
           const at = timestampUs / 1_000_000;
-          if (at < plan.times[next]) return;
+          if (previousFrameTime !== null && at > previousFrameTime) {
+            shortestGapSeconds = Math.min(shortestGapSeconds, at - previousFrameTime);
+          }
+          previousFrameTime = at;
+          if (at < plan.times[next] - moment()) return;
 
           /*
             ONE canvas serves every frame in the run, and `drawImage` composites
@@ -475,7 +510,7 @@ export async function extractVideoFrames(
           // timelapse asked for a frame every 0.25 s has nothing new to give.
           // Saving the same picture four times would be a worse answer than
           // saving it once and saying so, which is what the warning below does.
-          while (next < plan.times.length && plan.times[next] <= at) {
+          while (next < plan.times.length && plan.times[next] <= at + moment()) {
             next += 1;
             absorbed += 1;
           }

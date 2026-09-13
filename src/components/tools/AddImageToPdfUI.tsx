@@ -93,7 +93,7 @@ function sniffImageType(bytes: Uint8Array): "image/png" | "image/jpeg" | null {
 /**
  * Quality for the re-encode an EXIF-tagged JPEG needs. The same 0.92 the
  * images→PDF family re-encodes at (`PDF_JPEG_QUALITY`, images-to-pdf-prep.ts) —
- * not imported, because that module reaches heic2any and utif2.
+ * not imported, because that module reaches libheif and utif2.
  */
 const REENCODE_JPEG_QUALITY = 0.92;
 

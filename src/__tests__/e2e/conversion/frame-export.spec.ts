@@ -141,16 +141,56 @@ test.describe("stills out of a clip", () => {
     }
     assertJpeg(await zipEntry(perSecond.bytes, [...shortfall].sort()[0]));
 
+    /*
+      ⚠ THIS USED TO ASSERT `toBeLessThan(3)` — that the third planned moment
+      is NEVER captured — AND THAT IS THE FLAKE plan.md carried as "a real
+      flake in the conversion gate, characterised, not fixed". It was neither
+      memory pressure nor CPU contention nor a dropped frame. The old assertion
+      REQUIRED THE PRODUCT TO FAIL: one a second over a clip the element calls
+      2.089796 s long plans 0 s, 1 s and 2 s, and this file's video track ends
+      at exactly 2.000000 s (the 2.09 is the AUDIO track), so Chromium normally
+      presents nothing at the third moment. Normally. Captured 2026-09-13 in
+      conversion-webkit: `Expected: < 3, Received: 3` — all three arrived, and
+      the test failed because the tool did BETTER than it demanded. The comment
+      two lines above the old assertion admitted the premise itself
+      ("the element does not always present it") and then asserted it never
+      does. A test cannot pin a browser's presentation timing as an invariant.
+
+      What IS invariant, and what this page actually promises, is that THE
+      ACCOUNTING CLOSES: saved + missing = planned, and the page's claim
+      matches the ZIP either way. That is asserted below in both directions —
+      which also makes this STRONGER than what it replaces, because a false
+      "frames are missing" claim on a complete run could not have failed the
+      old assertion and does fail this one.
+
+      The shortfall sentence itself keeps deterministic coverage elsewhere:
+      `video-frames.test.ts` drives it from a stubbed walk, and
+      `frame-walk-end.spec.ts` exercises it end to end.
+      ⚠ That sibling pins `entries.length` to exactly 2 and carries the SAME
+      assumption this one just lost — if it ever fails on a third frame, this
+      comment is the diagnosis; do not go looking for memory pressure.
+    */
     expect(
       shortfall.length,
-      "one a second over a 2.09 s clip plans three moments",
-    ).toBeLessThan(3);
-    await expect(
-      surface,
-      "a run that saved fewer frames than it planned must say so, with the numbers",
-    ).toContainText(
-      `the last ${3 - shortfall.length} of the 3 planned frames are missing from this ZIP`,
-    );
+      "a run cannot save more frames than its own plan of three",
+    ).toBeLessThanOrEqual(3);
+    expect(
+      shortfall.length,
+      "the clip has pictures at 0 s and 1 s, so at least two must always arrive",
+    ).toBeGreaterThanOrEqual(2);
+
+    const missing = 3 - shortfall.length;
+    if (missing > 0) {
+      await expect(
+        surface,
+        "a run that saved fewer frames than it planned must say so, with the numbers",
+      ).toContainText(`the last ${missing} of the 3 planned frames are missing from this ZIP`);
+    } else {
+      await expect(
+        surface,
+        "a run that saved every planned frame must not claim any are missing",
+      ).not.toContainText("missing from this ZIP");
+    }
 
     /*
       THE CAP, WHICH THIS FIXTURE IS FAR TOO SHORT TO REACH. It is stated

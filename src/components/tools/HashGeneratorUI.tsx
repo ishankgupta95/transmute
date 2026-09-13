@@ -19,7 +19,6 @@ import {
   TextPane,
   TextPanes,
 } from "@/components/tools/ToolCanvas";
-import { getToolBySlug } from "@/data/tools";
 import type { Hashes } from "@/lib/tools/hash-digest";
 import { computeHashesGuarded } from "@/lib/workers/hash-client";
 import { CANVAS_COLUMN } from "@/components/workspace/shared";
@@ -29,13 +28,14 @@ import { formatFileSize } from "@/lib/utils/file-helpers";
 const ALGOS = ["md5", "sha1", "sha256", "sha512"] as const;
 
 /*
-  The File arm reads the whole file into one ArrayBuffer before hashing
-  anything, so this zone may not print the absolute "NO SIZE CAP" — see the
-  block on `practicalLimitNote` in the registry entry for the measurement.
-  Read off the registry rather than retyped, so the spec row on the page and
-  the line under the zone cannot drift apart.
+  ⚠ NO `practicalLimitNote` PROP ON THE ZONE, and that is now the honest state
+  rather than an oversight. This arm used to read the whole file into one
+  ArrayBuffer, so the zone could not print the absolute "NO SIZE CAP" and took
+  its sentence off the registry instead. Since 2026-09-13 the digests come off
+  `blob.stream()` and there is no allocation to cap, so "NO SIZE CAP" is true
+  again — and the registry field it used to read is gone, which
+  `size-claims.test.ts` checks in both directions.
 */
-const PRACTICAL_LIMIT_NOTE = getToolBySlug("hash-generator")?.practicalLimitNote;
 
 export function HashGeneratorUI() {
   const [mode, setMode] = useState<"text" | "file">("text");
@@ -53,7 +53,7 @@ export function HashGeneratorUI() {
   */
   const runIdRef = useRef(0);
 
-  const run = useCallback(async (data: ArrayBuffer) => {
+  const run = useCallback(async (data: Blob) => {
     const id = ++runIdRef.current;
     setProgress(0);
     try {
@@ -77,7 +77,9 @@ export function HashGeneratorUI() {
         setProgress(null);
         return;
       }
-      await run(new TextEncoder().encode(text).buffer as ArrayBuffer);
+      // A Blob for the text box too, so the typed input and a dropped file
+      // travel the same path and are hashed by the same code.
+      await run(new Blob([text]));
     },
     [run],
   );
@@ -90,28 +92,18 @@ export function HashGeneratorUI() {
       setHashes(null);
       setError(null);
       /*
-        `f.arrayBuffer()` is one allocation of the WHOLE file, and past V8's
-        single-buffer wall it REJECTS rather than resolving short. Unhandled,
-        that rejection escaped as a page error and left the canvas showing a
-        file name with no digests, no progress and nothing to read — the
-        ceiling the registry note now discloses had no visible failure to
-        match it. The token keeps a slow read that fails from posting its
-        error over a file the user has since replaced.
+        The FILE is handed over, not its bytes. This used to be
+        `await f.arrayBuffer()` — one allocation of the WHOLE file, which past
+        the renderer's single-buffer wall REJECTS rather than resolving short,
+        and which needed a `catch` here to tell the user a large file "does not
+        load". Since 2026-09-13 the digests are computed off `blob.stream()`,
+        so nothing is materialised and that failure no longer exists. The run
+        token still guards a slow hash from writing its result over a file the
+        user has since replaced.
       */
       const id = ++runIdRef.current;
-      let data: ArrayBuffer;
-      try {
-        data = await f.arrayBuffer();
-      } catch {
-        if (runIdRef.current !== id) return;
-        setProgress(null);
-        setError(
-          `Could not read ${f.name}. Hashing needs the whole file in one buffer, and this browser would not allocate one that large — files much past 2 GB do not load.`,
-        );
-        return;
-      }
       if (runIdRef.current !== id) return;
-      await run(data);
+      await run(f);
     },
     [run],
   );
@@ -153,7 +145,6 @@ export function HashGeneratorUI() {
             <DropZone
               accept="*/*"
               onFiles={handleFiles}
-              practicalLimitNote={PRACTICAL_LIMIT_NOTE}
             />
             {error && <ErrorMessage message={error} />}
             {fileName && (

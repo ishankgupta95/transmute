@@ -15,7 +15,7 @@ interface ImageJobBase {
   bytes?: ArrayBuffer;
   /**
    * Pre-decoded pixels for formats that need main-thread help (HEIC via
-   * heic2any, TIFF via utif2). Transferred.
+   * libheif, TIFF via utif2). Transferred.
    */
   bitmap?: ImageBitmap;
 }

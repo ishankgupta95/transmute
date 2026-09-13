@@ -15,7 +15,7 @@ import { workspaceTools, getWorkspaceTool } from "@/data/workspace";
   1. DOWNLOAD.  `CategoryHubPage` hardcoded `0 KB`, in the same green the
      UPLOAD / NEVER row uses. It was true on exactly one of the five hubs.
      /video-tools and /audio-tools can pull the ~31 MB FFmpeg core, /pdf-tools
-     pulls 2.3 MB of qpdf, /image-tools 1.3 MB of heic2any — and the homepage
+     pulls 2.3 MB of qpdf, /image-tools 1.4 MB of libheif — and the homepage
      ENGINES table, framed as "what each one costs you on first use", said so
      on the same site the whole time. The figure now comes from
      `Category.download`, and this file pins it to that table so the two
@@ -60,13 +60,37 @@ function engineSizes(): Map<string, string> {
    the byte count of a file this origin serves. Bump the package and both the
    homepage row and the hub go red together.
 
-   Only ceilings whose artifact is checked out get an entry — FFmpeg's core and
-   heic2any live in gitignored copies under public/, so pinning them here would
-   go red on a clean tree for the wrong reason.
+   Only ceilings whose artifact is checked out get an entry. FFmpeg's core is
+   the case that matters: it lives in a gitignored copy under public/, so
+   pinning it here would go red on a clean tree for the wrong reason. (The HEIC
+   decoder is NOT in that position — it is pinned from node_modules by
+   engine-disclosure.test.ts and libheif-decode-only.test.ts — but it is not any
+   hub's ceiling either, so it needs no entry here.)
 */
-const CEILING_ARTIFACT: Record<string, { path: string; render: (bytes: number) => string }> = {
+const CEILING_ARTIFACT: Record<string, { paths: string[]; render: (bytes: number) => string }> = {
   "zxing-wasm": {
-    path: "node_modules/zxing-wasm/dist/reader/zxing_reader.wasm",
+    paths: ["node_modules/zxing-wasm/dist/reader/zxing_reader.wasm"],
+    render: (bytes) => `${(bytes / 1024 / 1024).toFixed(1)} MB`,
+  },
+  /*
+     FIVE paths, because the ceiling is what a browser is made to FETCH and
+     these five arrive together or not at all: the page loads the library, it
+     spawns the worker, the worker pulls the core, the core pulls its binary
+     and the model. Pinning any one of them would anchor /image-tools to
+     between 1/80th and 1/2 of its real cost.
+
+     Four come from node_modules and the model from vendor/ — it has no npm
+     package, which is why it is checked in — so all five can be stat'ed on a
+     clean checkout before any build, the same property the zxing path has.
+  */
+  Tesseract: {
+    paths: [
+      "node_modules/tesseract.js/dist/tesseract.esm.min.js",
+      "node_modules/tesseract.js/dist/worker.min.js",
+      "node_modules/tesseract.js-core/tesseract-core-simd-lstm.js",
+      "node_modules/tesseract.js-core/tesseract-core-simd-lstm.wasm",
+      "vendor/tessdata/eng.traineddata.gz",
+    ],
     render: (bytes) => `${(bytes / 1024 / 1024).toFixed(1)} MB`,
   },
 };
@@ -76,7 +100,7 @@ const CEILING_ARTIFACT: Record<string, { path: string; render: (bytes: number) =
 
    CEILING_ARTIFACT is only ever reached through `CEILING[slug]`, so it can
    pin an engine only while that engine is the heaviest thing some hub fetches.
-   Its exclusion note is about a different problem — FFmpeg's core and heic2any
+   Its exclusion note is about a different problem — FFmpeg's core and libheif
    are gitignored copies under public/, so there is no checked-out file to
    stat.
 
@@ -84,7 +108,7 @@ const CEILING_ARTIFACT: Record<string, { path: string; render: (bytes: number) =
    artifact IS checked out: `npm run copy:wasm` stages
    node_modules/@jsquash/oxipng/codec/pkg/squoosh_oxipng_bg.wasm into public/,
    exactly the way it stages zxing_reader.wasm one table up. It is simply
-   small — 160 KB against heic2any's 1.3 MB — so it is not the image hub's
+   small — 160 KB against libheif's 1.4 MB — so it is not the image hub's
    ceiling and no `CEILING` entry names it. The homepage printed "160 KB" and
    nothing on the site or on disk checked that: bump the package past 168,960
    bytes and the row is false with `npm test`, `npm run lint` and
@@ -95,9 +119,9 @@ const CEILING_ARTIFACT: Record<string, { path: string; render: (bytes: number) =
    rowed "599 KB" and not "598.9 KB" — while MB rows carry one, which is what
    CEILING_ARTIFACT renders above.
 */
-const ENGINE_ARTIFACT: Record<string, { path: string; render: (bytes: number) => string }> = {
+const ENGINE_ARTIFACT: Record<string, { paths: string[]; render: (bytes: number) => string }> = {
   oxipng: {
-    path: "node_modules/@jsquash/oxipng/codec/pkg/squoosh_oxipng_bg.wasm",
+    paths: ["node_modules/@jsquash/oxipng/codec/pkg/squoosh_oxipng_bg.wasm"],
     render: (bytes) => `${(bytes / 1024).toFixed(0)} KB`,
   },
 };
@@ -111,16 +135,16 @@ const CEILING: Record<string, string | null> = {
   /*
      Re-checked on 2026-09-06, and UNCHANGED — which is the answer, not a
      skipped step. /compress-png added the first new image engine since
-     heic2any: oxipng, 164,172 bytes of served WebAssembly, rowed at "160 KB"
-     on the homepage. That is an eighth of heic2any's 1.3 MB, so the ceiling
-     does not move and /image-tools still reads "0–1.3 MB". A ceiling is the
+     the HEIC decoder: oxipng, 164,172 bytes of served WebAssembly, rowed at
+     "160 KB" on the homepage. That is a ninth of libheif's 1.4 MB, so the
+     ceiling does not move. A ceiling is the
      heaviest engine a hub can make a browser fetch, so a new engine only
      rewrites this line when it is the new heaviest; ratcheting it to whatever
      landed most recently would understate the hub on the day a small engine
      ships and overstate it forever after.
   */
-  "image-tools": "heic2any",
-  "pdf-tools": "qpdf",
+  "image-tools": "Tesseract",
+  "pdf-tools": "Tesseract",
   "audio-tools": "FFmpeg WASM",
   "video-tools": "FFmpeg WASM",
   /*
@@ -163,7 +187,7 @@ describe("the homepage ENGINES table is readable", () => {
     expect(sizes.size).toBeGreaterThan(5);
     expect(sizes.get("qpdf")).toBeDefined();
     expect(sizes.get("FFmpeg WASM")).toBeDefined();
-    expect(sizes.get("heic2any")).toBeDefined();
+    expect(sizes.get("libheif")).toBeDefined();
     expect(sizes.get("oxipng")).toBeDefined();
   });
 
@@ -173,15 +197,17 @@ describe("the homepage ENGINES table is readable", () => {
       const size = engineSizes().get(name);
       expect(size, `the ENGINES table has no row named ${name}`).toBeDefined();
 
-      const bytes = statSync(resolve(process.cwd(), artifact.path)).size;
-      expect(
-        bytes,
-        `${artifact.path} is missing — copy:wasm stages this file into public/`,
-      ).toBeGreaterThan(0);
+      const bytes = artifact.paths.reduce((sum, path) => {
+        const size = statSync(resolve(process.cwd(), path)).size;
+        expect(size, `${path} is missing — copy:wasm stages this file into public/`).toBeGreaterThan(
+          0,
+        );
+        return sum + size;
+      }, 0);
 
       expect(
         size,
-        `the ENGINES row for ${name} says ${size}, but ${artifact.path} is ${bytes} bytes, which is ${artifact.render(bytes)}`,
+        `the ENGINES row for ${name} says ${size}, but ${artifact.paths.join(" + ")} is ${bytes} bytes, which is ${artifact.render(bytes)}`,
       ).toBe(artifact.render(bytes));
     },
   );
@@ -225,12 +251,15 @@ describe("Category.download", () => {
       // homepage string, so the two surfaces cannot agree on a wrong number.
       const artifact = CEILING_ARTIFACT[ceiling];
       if (!artifact) return;
-      const bytes = statSync(resolve(process.cwd(), artifact.path)).size;
-      expect(bytes, `${artifact.path} is missing — copy:wasm stages this file`).toBeGreaterThan(0);
+      const bytes = artifact.paths.reduce((sum, path) => {
+        const size = statSync(resolve(process.cwd(), path)).size;
+        expect(size, `${path} is missing — copy:wasm stages this file`).toBeGreaterThan(0);
+        return sum + size;
+      }, 0);
       const fromFile = artifact.render(bytes);
       expect(
         size,
-        `the ENGINES row for ${ceiling} says ${size}, but ${artifact.path} is ${bytes} bytes, which is ${fromFile}`,
+        `the ENGINES row for ${ceiling} says ${size}, but ${artifact.paths.join(" + ")} is ${bytes} bytes, which is ${fromFile}`,
       ).toBe(fromFile);
       expect(
         category.download,
@@ -511,6 +540,53 @@ describe("no bundled library out-weighs its hub's stated ceiling", () => {
 });
 
 describe("Category.engine names every engine the category runs", () => {
+  /*
+    THE GAP THIS CLOSES. Until 2026-09-10 the only assertions in this describe
+    were the three audio ones below, so four hubs could name any engines they
+    liked — and one did: /image-tools went on reading "CANVAS 2D" after
+    /image-to-text made Tesseract the heaviest thing it fetches. The `download`
+    range and the CEILING map were both updated in the same change; this line
+    was not, and nothing looked at it.
+
+    The rule is derivable, so it is derived: whatever `CEILING` says is the
+    heaviest engine a hub can pull, the hub's own ENGINE label has to name.
+    A hub that fetches a 4.9 MB engine and credits only the free built-in one
+    is understating itself in the one place a visitor reads first.
+
+    Normalised because the two surfaces spell engines differently on purpose —
+    CEILING uses the homepage ENGINES row's name ("FFmpeg WASM", "zxing-wasm"),
+    the hub uses a short uppercase display label ("FFMPEG · WEBCODECS").
+  */
+  const engineToken = (ceiling: string) =>
+    ceiling
+      .toUpperCase()
+      .replace(/[-\s]?WASM$/, "")
+      .trim();
+
+  it.each(categories.map((c) => [c.slug, c] as const))(
+    "%s names the heaviest engine it can fetch",
+    (slug, category) => {
+      const ceiling = CEILING[slug];
+      // A hub that fetches nothing has nothing to name. None do today, and the
+      // case below is the positive control that keeps that from going unnoticed.
+      if (ceiling === null || ceiling === undefined) return;
+      expect(
+        category.engine.toUpperCase(),
+        `${slug} fetches ${ceiling} but its ENGINE label does not name it`,
+      ).toContain(engineToken(ceiling));
+    },
+  );
+
+  it("has a ceiling to check for every hub — the case above is not vacuous", () => {
+    // Without this, emptying CEILING would make every case take the early
+    // return and the sweep would pass while checking nothing.
+    const withCeilings = categories.filter((c) => CEILING[c.slug]);
+    expect(withCeilings).toHaveLength(categories.length);
+    expect(engineToken("FFmpeg WASM")).toBe("FFMPEG");
+    expect(engineToken("zxing-wasm")).toBe("ZXING");
+    expect(engineToken("Tesseract")).toBe("TESSERACT");
+  });
+
   it("credits lamejs and FFmpeg on the audio hub", () => {
     const audio = categories.find((c) => c.slug === "audio-tools")!;
     // Both are reachable from every audio tool: lamejs writes the MP3s, and

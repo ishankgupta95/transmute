@@ -11,7 +11,7 @@ export interface Category {
    * What the hub's DOWNLOAD stat says. This used to be a hardcoded "0 KB" in
    * `CategoryHubPage`, which was false on three of the five hubs: the FFmpeg
    * core is a ~31 MB first-use fetch on /audio-tools and /video-tools, qpdf is
-   * 2.3 MB on /pdf-tools, and heic2any is 1.3 MB on /image-tools.
+   * 2.3 MB on /pdf-tools, and libheif is 1.4 MB on /image-tools.
    *
    * The range is min–max over the engines the homepage table enumerates
    * (`ENGINES` in `src/app/page.tsx`, whose ruler is "a file this origin
@@ -41,18 +41,28 @@ export const categories: Category[] = [
     description: "Convert, compress, and resize images in your browser.",
     icon: "Image",
     shortName: "Image",
-    engine: "CANVAS 2D",
-    // Canvas is built in, so most of these tools cost nothing; heic2any is the
-    // ceiling at 1.3 MB. It is no longer the only image engine this origin
-    // serves as its own file: /compress-png fetches oxipng, 164,172 bytes,
-    // rowed on the homepage at "160 KB". That is an eighth of heic2any, so it
-    // is a second row rather than a new ceiling and this range is UNCHANGED —
-    // re-checked against the ENGINES table on 2026-09-06 rather than assumed.
+    /*
+      Canvas draws almost everything here, but it is no longer the only answer
+      and saying so alone understated the hub: /image-to-text pulls Tesseract,
+      which is now the heaviest engine this category can fetch (see `download`
+      below). That went out of step for exactly as long as it took someone to
+      notice — the ceiling comment underneath was updated and this line was
+      not, because until 2026-09-10 the only `Category.engine` assertion in the
+      suite was the audio hub's. There is now a general one.
+    */
+    engine: "CANVAS 2D · TESSERACT",
+    // Canvas is built in, so most of these tools cost nothing. THE CEILING
+    // MOVED on 2026-09-10, for the first time since this hub was written:
+    // /image-to-text fetches the Tesseract OCR engine and its English language
+    // model, 5,088,998 bytes across five files, rowed on the homepage at
+    // "4.9 MB". That is 3.4x libheif's 1,513,632 bytes, so it is the new
+    // heaviest thing this hub can make a browser fetch and the range moves
+    // with it — unlike oxipng (164,172 bytes, a ninth of libheif), which
+    // got a homepage row in 2026-09 and correctly left this line alone.
     // pica (resizing) and utif2 (TIFF) are bundled into the importing tool's
-    // chunk instead — about 36 KB and 60 KB, both far under the ceiling — so
-    // they are disclosed under the homepage table rather than rowed in it, and
-    // they do not move this range either.
-    download: "0–1.3 MB",
+    // chunk instead — about 36 KB and 60 KB — so they are disclosed under the
+    // homepage table rather than rowed in it, and they do not move this range.
+    download: "0–4.9 MB",
     // The chip strip is headed "I HAVE A…", so every chip has to be a format
     // some image page's DropZone ACCEPTS. ICO was not one — png-to-ico writes
     // .ico, nothing on the site read it — and GIF was missing even though
@@ -71,10 +81,17 @@ export const categories: Category[] = [
     shortName: "PDF",
     // Three real engines now: pdf-lib does the document surgery, pdfjs renders
     // and reads, and qpdf (WebAssembly) does encryption, decryption and repair.
-    engine: "PDF-LIB · PDFJS · QPDF",
-    // qpdf is the ceiling at 2.3 MB (pdf.js 1.6 MB, pdf-lib 320 KB); the floor
-    // is markdown-to-pdf, which pulls none of the three.
-    download: "0–2.3 MB",
+    engine: "PDF-LIB · PDFJS · QPDF · TESSERACT",
+    /*
+      THE CEILING MOVED on 2026-09-10: /ocr-pdf pulls the Tesseract OCR engine
+      and its English model, 5,088,998 bytes, rowed on the homepage at
+      "4.9 MB" — 2.1x qpdf's 2.3 MB, which had been the ceiling. The floor is
+      still markdown-to-pdf, which pulls none of them. The engine itself is
+      shared with /image-to-text, so a visitor who has used that one pays
+      nothing here; the range states what a browser CAN be made to fetch, not
+      what it always will.
+    */
+    download: "0–4.9 MB",
     formats: ["PDF", "JPG", "PNG", "WEBP", "MD"],
   },
   {

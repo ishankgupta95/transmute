@@ -463,42 +463,165 @@ test.describe("registry-only format fills — real output", () => {
     expect(clear[3], "WebP output must keep the AVIF's alpha channel").toBe(0);
   });
 
-  test("heic-to-webp loads its decoder from this origin and refuses a file that isn't HEIC", async ({
+  /*
+    HEIC USED TO BE THE ONE INPUT THIS FILE COULD NOT SYNTHESISE, and the note
+    that stood here said so: the decoder decodes but never encodes, and sharp's
+    HEIF support refuses HEVC in this build. Both halves were true, and both
+    were about the wrong machine. macOS has an HEVC still-image encoder behind
+    ImageIO, so `generate-test-fixtures.mjs --heic` writes two REAL `.heic`
+    files — brand `heic`, `hvc1` items — and they are checked in. What follows
+    is a real decode of real HEVC, which this suite has never had.
+  */
+  test("heic-to-jpg really decodes HEVC, from a decoder served by this origin", async ({
     page,
   }) => {
     /*
-      HEIC is the one input in this batch that genuinely cannot be synthesised:
-      `heic2any` decodes but never encodes, and sharp's HEIF encoder refuses
-      HEVC in this build — so there is no real `.heic` to feed this page and no
-      honest way to assert a conversion. `e2e/image/converters.spec.ts:43-49`
-      says the same thing about `heic-to-jpg`, and this stays on that tier.
+      Two claims in one pass, because the fetch only happens once:
 
-      What IS assertable without the fixture is the part of this page that has
-      nothing to do with HEIC pixels, and it is not nothing:
-
-        1. The 1.3 MB decoder must come from OUR origin. heic2any ships libheif
-           and libde265 compiled in, both LGPL, and the licensing posture rests
-           on it being a replaceable same-origin file under /vendor/ rather
-           than something bundled or pulled off a CDN (image-convert.ts's
-           `loadHeic2Any`). Nothing else in the E2E tree watches that fetch.
-        2. Bytes that are not HEIC must be refused, with no download offered.
-           This page cannot sniff its way out of it — the decoder is the only
-           thing that can say no — so the failure has to survive the dynamic
-           import, the UMD-on-globalThis dance, and the batch processor.
+        1. The 1.4 MB decoder must come from OUR origin. libheif-js ships
+           libheif and libde265, both LGPL, and the licensing posture rests on
+           them being replaceable same-origin files under /vendor/ rather than
+           something bundled or pulled off a CDN (image-convert.ts's
+           `loadLibheif`). Nothing else in the E2E tree watches that fetch.
+        2. The pixels are really decoded. A solid fill is the right shape for
+           this: HEVC's own losses cannot move a flat field far, so a tight
+           tolerance here still fails loudly on a decoder that returned noise,
+           an empty canvas, or the wrong plane order.
     */
-    const heic2any = watchEngineRequests(page, {
-      label: "heic2any",
-      isEngine: (url) => /\/vendor\/heic2any\.js(\?|#|$)/.test(url),
+    const glue = watchEngineRequests(page, {
+      label: "libheif.js",
+      isEngine: (url) => /\/vendor\/libheif\.js(\?|#|$)/.test(url),
+    });
+    const binary = watchEngineRequests(page, {
+      label: "libheif.wasm",
+      isEngine: (url) => /\/vendor\/libheif\.wasm(\?|#|$)/.test(url),
     });
 
-    await page.goto("/heic-to-webp");
-    // The accept list is registry data, and it is what routes a phone photo to
-    // this page at all.
+    const fixture = await sample("sample-photo.heic", "image/heic");
+
+    await page.goto("/heic-to-jpg");
     await expect(page.locator('input[type="file"]').first()).toHaveAttribute(
       "accept",
       ".heic,.heif",
     );
 
+    await uploadFixture(page, fixture);
+    await primaryAction(page, /^Convert$/).click();
+
+    const dl = downloadAffordance(page);
+    await expect(dl, `conversion failed: ${await toolError(page)}`).toBeVisible();
+    const { name, bytes } = await captureDownload(page, dl);
+
+    expect(name).toBe("sample-photo.jpg");
+    expect(await probeImageInPage(page, bytes, "image/jpeg")).toEqual({
+      width: 800,
+      height: 600,
+    });
+
+    const [centre] = await pixelsInPage(page, bytes, "image/jpeg", [[400, 300]]);
+    expectRgb(centre, [48, 133, 198], 12, "HEIC fill colour");
+
+    // Both halves of the engine were fetched — so the assertion means
+    // something — and every fetch of each came from this origin.
+    glue.assertSelfHostedAndUsed();
+    binary.assertSelfHostedAndUsed();
+  });
+
+  test("heic-to-jpg keeps the primary image of a burst and says the others were dropped", async ({
+    page,
+  }) => {
+    /*
+      `sample-burst.heic` holds three pictures at three sizes, and the PRIMARY
+      one is the MIDDLE entry — 64x48, green — precisely so that a decoder
+      which takes index 0 hands back the 120x90 red one and fails here. The
+      decoder this page used until 2026-09-12 did exactly that.
+
+      The warning is the other half. A HEIC that loses two of its three
+      pictures in silence is the same defect Wave 0 purged for animated
+      GIF/WebP and multi-page TIFF; this is that class closed on the last
+      format that still had it.
+    */
+    const fixture = await sample("sample-burst.heic", "image/heic");
+
+    await page.goto("/heic-to-jpg");
+    await uploadFixture(page, fixture);
+    await primaryAction(page, /^Convert$/).click();
+
+    const dl = downloadAffordance(page);
+    await expect(dl, `conversion failed: ${await toolError(page)}`).toBeVisible();
+    const { bytes } = await captureDownload(page, dl);
+
+    expect(
+      await probeImageInPage(page, bytes, "image/jpeg"),
+      "the primary image is the 64x48 middle entry, not the 120x90 at index 0",
+    ).toEqual({ width: 64, height: 48 });
+
+    const [centre] = await pixelsInPage(page, bytes, "image/jpeg", [[32, 24]]);
+    expectRgb(centre, [0, 166, 66], 12, "primary (green) burst frame");
+
+    await expect(
+      page.locator("[data-tool-surface]").getByText(/This HEIC holds 3 images/),
+      "a burst that lost two pictures must say so",
+    ).toBeVisible();
+  });
+
+  test("heic-to-jpg turns a sideways phone photo the right way up", async ({ page }) => {
+    /*
+      The single most common real complaint about HEIC conversion is a portrait
+      photo arriving on its side, and HEIF does not store that the way JPEG
+      does: the rotation is an `irot` PROPERTY on the item, not an EXIF tag a
+      canvas pipeline would trip over.
+
+      `sample-rotated.heic` is a 120x60 LANDSCAPE raster carrying orientation 6,
+      so a decoder that ignores `irot` hands back 120x60 and the test fails on
+      the dimensions alone. The three colour bands run red-green-blue along the
+      long axis in either reading, which is what separates a real rotation from
+      a transposed width/height — the bands are checked too, so a decoder that
+      merely swapped the numbers cannot pass.
+    */
+    const fixture = await sample("sample-rotated.heic", "image/heic");
+
+    await page.goto("/heic-to-jpg");
+    await uploadFixture(page, fixture);
+    await primaryAction(page, /^Convert$/).click();
+
+    const dl = downloadAffordance(page);
+    await expect(dl, `conversion failed: ${await toolError(page)}`).toBeVisible();
+    const { bytes } = await captureDownload(page, dl);
+
+    expect(
+      await probeImageInPage(page, bytes, "image/jpeg"),
+      "orientation 6 must be applied: a 120x60 raster becomes a 60x120 picture",
+    ).toEqual({ width: 60, height: 120 });
+
+    const [first, middle, last] = await pixelsInPage(page, bytes, "image/jpeg", [
+      [30, 20],
+      [30, 60],
+      [30, 100],
+    ]);
+    /*
+      DOMINANT CHANNEL, not a tolerance on the exact RGB. Saturated primaries
+      are the worst case for this chain — HEVC stores chroma at 4:2:0 and JPEG
+      subsamples it again — so pure blue comes back as rgb(4,51,255) and a
+      tolerance loose enough to admit that (>=51) would be loose enough to stop
+      distinguishing the bands, which is the only thing this assertion is for.
+      Which channel WINS is unambiguous and cannot survive a wrong band order.
+    */
+    const dominant = (px: number[]) => ["r", "g", "b"][px.indexOf(Math.max(px[0], px[1], px[2]))];
+    expect(
+      [dominant(first), dominant(middle), dominant(last)],
+      "the bands must read red-green-blue down the rotated picture",
+    ).toEqual(["r", "g", "b"]);
+  });
+
+  test("heic-to-webp refuses a file that isn't HEIC", async ({ page }) => {
+    /*
+      Bytes that are not HEIC must be refused, with no download offered. This
+      page cannot sniff its way out of it — the decoder is the only thing that
+      can say no — so the failure has to survive the script-tag load, the wasm
+      fetch and the batch processor.
+    */
+    await page.goto("/heic-to-webp");
     await uploadFixture(page, {
       name: "not-really.heic",
       mimeType: "image/heic",
@@ -512,9 +635,5 @@ test.describe("registry-only format fills — real output", () => {
       downloadAffordance(page),
       "a file the decoder rejected must not produce a download",
     ).toHaveCount(0);
-
-    // The decoder was fetched (so the assertion means something) and every
-    // fetch of it came from this origin.
-    heic2any.assertSelfHostedAndUsed();
   });
 });

@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { getToolsByCategory, splitByJob } from "@/data/tools";
 import { CategoryHubPage } from "@/components/layout/CategoryHubPage";
+import { OG_LOCALE } from "@/lib/seo/locale";
 
 export const metadata: Metadata = {
   title: "PDF Tools — Merge, Split & Manipulate PDFs",
@@ -33,6 +34,7 @@ export const metadata: Metadata = {
   ],
   alternates: { canonical: "/pdf-tools" },
   openGraph: {
+    locale: OG_LOCALE,
     title: "PDF Tools — Merge, Split & Manipulate PDFs | Transmute",
     description: "Free browser-based PDF tools. Merge, split, compress, convert, rotate, protect, unlock and repair — no uploads needed.",
     url: "/pdf-tools",

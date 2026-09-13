@@ -6,6 +6,8 @@ import { getToolBySlug } from "@/data/tools";
 import { getWorkspaceTool } from "@/data/workspace";
 import { ArticleRail } from "@/components/blog/ArticleRail";
 import { BreadcrumbSchema } from "@/components/seo/BreadcrumbSchema";
+import "@/styles/prose.css";
+import { OG_LOCALE } from "@/lib/seo/locale";
 
 const BASE_URL = "https://transmute.tools";
 
@@ -30,6 +32,7 @@ export async function generateMetadata({
     keywords: post.keywords,
     alternates: { canonical: `/blog/${post.slug}` },
     openGraph: {
+      locale: OG_LOCALE,
       title: post.title,
       description: post.description,
       url: `${BASE_URL}/blog/${post.slug}`,

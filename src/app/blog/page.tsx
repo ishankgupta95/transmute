@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { posts, postTag } from "@/data/posts";
 import { BreadcrumbSchema } from "@/components/seo/BreadcrumbSchema";
+import { OG_LOCALE } from "@/lib/seo/locale";
 
 const BASE_URL = "https://transmute.tools";
 
@@ -11,6 +12,7 @@ export const metadata: Metadata = {
     "Practical guides on file conversion, image formats, PDFs, and developer tooling — written for the long-tail of how-to questions our tools quietly answer.",
   alternates: { canonical: "/blog" },
   openGraph: {
+    locale: OG_LOCALE,
     title: "Transmute Blog",
     description:
       "Practical guides on file conversion, image formats, PDFs, and developer tooling.",

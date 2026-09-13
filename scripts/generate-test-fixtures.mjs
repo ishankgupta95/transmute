@@ -30,6 +30,7 @@
  *   node scripts/generate-test-fixtures.mjs --engine-inputs  only the QR PNG
  *                                                            and the two archives
  *   node scripts/generate-test-fixtures.mjs --avif           only sample.avif
+ *   node scripts/generate-test-fixtures.mjs --heic           only the two HEICs
  *
  * The narrow ones exist because a full run REPLACES every fixture, and several
  * specs pin exact bytes of one — `pdf-recompress.spec.ts` asserts
@@ -1219,6 +1220,125 @@ async function silenceGapsOnly() {
 }
 
 /**
+ * `--heic`: write the two HEIC fixtures and nothing else.
+ *
+ * HEIC USED TO BE THE ONE INPUT THIS REPO COULD NOT SYNTHESISE, and both
+ * e2e/image/converters.spec.ts and e2e/conversion/image-formats.spec.ts said
+ * so in as many words: the decoder decodes but never encodes, and sharp's
+ * HEIF support refuses HEVC in this build. That was true of every route those
+ * notes considered. It is not true of the machine: macOS has an HEVC encoder
+ * behind ImageIO, and `CGImageDestination` will write a real `.heic` — brand
+ * `heic`, `hvc1` items, the genuine article.
+ *
+ * So this one is encoded by a tiny Swift program compiled at call time with
+ * the Swift that ships with the Xcode command line tools. Like `--avif` and
+ * its `sharp`, it is deliberately absent from the no-flag full run: it is the
+ * only fixture here that cannot be built off macOS, and a Linux CI box must
+ * still be able to rebuild everything else.
+ *
+ * THREE fixtures, because they prove different things:
+ *   - `sample-photo.heic` is one 800x600 picture, the ordinary case, and it is
+ *     what makes a real HEIC conversion assertable at all.
+ *   - `sample-burst.heic` holds THREE pictures at three distinct sizes, which
+ *     is what an iPhone burst looks like from the decoder's side. The sizes
+ *     differ so a test can tell WHICH one survived, and the middle one is
+ *     marked primary so a decoder that simply takes index 0 fails.
+ *   - `sample-rotated.heic` is a 120x60 landscape raster carrying orientation
+ *     6, which HEIF stores as an `irot` property. A decoder that ignores it
+ *     hands back the stored 120x60 and every phone photo shot in portrait
+ *     comes out on its side — the single most common real complaint about
+ *     HEIC conversion. Measured 2026-09-12: libheif APPLIES it and returns
+ *     60x120. The three colour bands run red-green-blue along the long axis
+ *     either way, so the test can tell a real rotation from a transposed
+ *     width/height.
+ */
+async function heicOnly() {
+  console.log("• encoding the HEIC fixtures with macOS ImageIO…");
+  const count = await writeFixtures(await buildHeicSamples());
+  console.log(`\nWrote ${count} HEIC fixtures to ${path.relative(ROOT, OUT_DIR)}`);
+}
+
+/**
+ * The Swift source is inline rather than checked in beside this file because
+ * it is not a program anyone runs — it is an argument to `swift`, the way the
+ * FFmpeg argv lists elsewhere in this file are arguments to the core.
+ *
+ * `CGImageDestinationCreateWithURL(..., count)` with count > 1 is the whole
+ * trick: ImageIO writes each added image as its own top-level item, and
+ * `kCGImagePropertyPrimaryImage` on one of them sets the container's `pitm`.
+ */
+async function buildHeicSamples() {
+  if (process.platform !== "darwin") {
+    throw new Error(
+      "The HEIC fixtures need macOS ImageIO — it is the only HEVC still-image\n" +
+        "encoder on this machine. Skip --heic on other platforms; the checked-in\n" +
+        "fixtures are what the suite reads.",
+    );
+  }
+  const dir = await mkdtemp(path.join(os.tmpdir(), "transmute-heic-"));
+  try {
+    const swift = path.join(dir, "heic.swift");
+    await writeFile(
+      swift,
+      `import Foundation
+import ImageIO
+import CoreGraphics
+import UniformTypeIdentifiers
+
+func solid(_ w: Int, _ h: Int, _ r: CGFloat, _ g: CGFloat, _ b: CGFloat) -> CGImage {
+    let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: 0,
+                        space: CGColorSpaceCreateDeviceRGB(),
+                        bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue)!
+    ctx.setFillColor(CGColor(red: r, green: g, blue: b, alpha: 1))
+    ctx.fill(CGRect(x: 0, y: 0, width: w, height: h))
+    return ctx.makeImage()!
+}
+func write(_ path: String, _ images: [(Int, Int, CGFloat, CGFloat, CGFloat)], primary: Int) {
+    let url = URL(fileURLWithPath: path)
+    guard let dest = CGImageDestinationCreateWithURL(
+        url as CFURL, UTType.heic.identifier as CFString, images.count, nil) else { exit(2) }
+    for (i, s) in images.enumerated() {
+        let props: CFDictionary? = i == primary
+            ? [kCGImagePropertyPrimaryImage: true] as CFDictionary : nil
+        CGImageDestinationAddImage(dest, solid(s.0, s.1, s.2, s.3, s.4), props)
+    }
+    if !CGImageDestinationFinalize(dest) { exit(3) }
+}
+func writeBanded(_ path: String, _ w: Int, _ h: Int, orientation: Int) {
+    let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: 0,
+                        space: CGColorSpaceCreateDeviceRGB(),
+                        bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue)!
+    let bands: [(CGFloat, CGFloat, CGFloat)] = [(1, 0, 0), (0, 1, 0), (0, 0, 1)]
+    for (i, c) in bands.enumerated() {
+        ctx.setFillColor(CGColor(red: c.0, green: c.1, blue: c.2, alpha: 1))
+        ctx.fill(CGRect(x: i * w / 3, y: 0, width: w / 3, height: h))
+    }
+    guard let dest = CGImageDestinationCreateWithURL(
+        URL(fileURLWithPath: path) as CFURL, UTType.heic.identifier as CFString, 1, nil) else { exit(2) }
+    CGImageDestinationAddImage(dest, ctx.makeImage()!,
+                               [kCGImagePropertyOrientation: orientation] as CFDictionary)
+    if !CGImageDestinationFinalize(dest) { exit(3) }
+}
+write(CommandLine.arguments[1], [(800, 600, 0.15, 0.44, 0.73)], primary: 0)
+write(CommandLine.arguments[2], [(120, 90, 1, 0, 0), (64, 48, 0, 0.6, 0.2), (200, 150, 0, 0, 1)], primary: 1)
+writeBanded(CommandLine.arguments[3], 120, 60, orientation: 6)
+`,
+    );
+    const single = path.join(dir, "single.heic");
+    const burst = path.join(dir, "burst.heic");
+    const rotated = path.join(dir, "rotated.heic");
+    await promisify(execFile)("swift", [swift, single, burst, rotated]);
+    return {
+      "sample-photo.heic": await readFile(single),
+      "sample-burst.heic": await readFile(burst),
+      "sample-rotated.heic": await readFile(rotated),
+    };
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+}
+
+/**
  * `--avif`: write `sample.avif` and nothing else.
  *
  * Every other still-image fixture in this file is encoded by Chromium, and
@@ -1392,6 +1512,9 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   } else if (process.argv.includes("--engine-inputs")) {
     await mkdir(OUT_DIR, { recursive: true });
     await engineInputsOnly();
+  } else if (process.argv.includes("--heic")) {
+    await mkdir(OUT_DIR, { recursive: true });
+    await heicOnly();
   } else if (process.argv.includes("--avif")) {
     await mkdir(OUT_DIR, { recursive: true });
     await avifOnly();

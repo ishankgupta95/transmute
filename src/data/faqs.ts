@@ -1064,6 +1064,308 @@ export const faqs: ToolFAQs = {
     IS the product claim and a rounded-off version of it would be a promise
     the run cannot keep.
   */
+  "bcrypt-generator": [
+    {
+      question: "Is my password sent anywhere?",
+      answer:
+        "No, and that is the reason to use this one rather than the first result on a search. Hashing happens in your tab — there is no request carrying the password, no server-side hashing, and no log. Every online bcrypt tool that hashes on its server has, by definition, seen the plaintext of whatever you typed. If the password is one you actually use somewhere, that distinction is the whole thing.",
+    },
+    {
+      question: "What work factor should I use?",
+      answer:
+        "Ten is what most frameworks default to and twelve is the common current advice, but the number that should decide it is the one this page shows you: how long the hash actually took on your own machine. Each step DOUBLES the work, so twelve is roughly four times ten, not twenty per cent more. Pick the highest cost your server can afford at your login rate — the same multiple falls on anyone attacking a stolen database.",
+    },
+    {
+      question: "Why does the same password give a different hash every time?",
+      answer:
+        "Because bcrypt generates a fresh random salt for each hash, and the salt is stored inside the result. That is the property that makes bcrypt worth using: two people with the same password get different hashes, so an attacker cannot precompute a lookup table or spot that two accounts share a password. Both hashes still verify against the original password — the checker on this page will confirm it.",
+    },
+    {
+      question: "Why does the page freeze at high cost settings?",
+      answer:
+        "Because bcrypt is deliberately expensive and the work happens on the page's own thread. That is the algorithm doing exactly what it is for, not a hang, and the page says so before it starts. The slider stops at 14 for this reason: each further step doubles the wait, and past that point a browser tab looks broken rather than busy.",
+    },
+    {
+      question: "Can I check a password against a hash I already have?",
+      answer:
+        "Yes — paste the hash into the checker in the sidebar and it will compare it against the password in the field above. It reports three outcomes, not two: match, no match, and 'that is not a bcrypt hash'. The third exists because collapsing it into 'no match' tells you your password is wrong when what is actually wrong is the string you pasted, which wastes a great deal of time.",
+    },
+    {
+      question: "Is bcrypt still the right choice?",
+      answer:
+        "For most applications, yes — it is well understood, available everywhere, and correctly used it is a sound default. Argon2id is the current recommendation where you can choose freely, because it resists GPU and custom-hardware attacks better, and scrypt sits between them. What matters far more than the choice between them is not using a fast general-purpose hash: SHA-256 and MD5 are designed to be quick, which is exactly the wrong property for a stored password.",
+    },
+  ],
+  "gif-maker": [
+    {
+      question: "What order do my images end up in?",
+      answer:
+        "Sorted by filename, using a numeric comparison rather than a plain alphabetical one — so frame-2 comes before frame-10, which is what you meant and not what a naive sort does. Files dropped onto a page arrive in whatever order the operating system hands them over, which is rarely the order you intended, so leaving it to chance would make the tool unpredictable. If your pictures are named in sequence, you get that sequence.",
+    },
+    {
+      question: "My photos are different shapes. What happens?",
+      answer:
+        "Each one is fitted inside the canvas with its proportions kept, and the spare space is left transparent. Every frame of a GIF has to be the same size — the format has one screen and places frames on it — so something has to give when the inputs differ. The alternative is stretching each picture to fill the frame, which distorts faces and is what makes a home-made GIF look subtly wrong. The canvas is sized from the largest picture, capped, so nothing is ever enlarged.",
+    },
+    {
+      question: "How fast can it go?",
+      answer:
+        "Down to about twenty milliseconds a frame, which is roughly fifty frames a second. That is not an arbitrary cap: a GIF stores each frame's delay in hundredths of a second, so shorter delays cannot be described by the format at all, and browsers substitute their own timing for anything they consider implausible. The slider shows the delay and the equivalent frame rate together so you can see both.",
+    },
+    {
+      question: "Why is the file so large?",
+      answer:
+        "Because GIF is an old format with no interframe compression worth the name — every frame is stored close to whole, so the size is roughly the pixel count multiplied by the frame count. Fewer frames and smaller dimensions are the two levers that matter, and dimensions matter most because they reduce every frame at once. If the result is for the web and it does not have to be a GIF, a short video file will be a fraction of the size.",
+    },
+    {
+      question: "Is anything uploaded?",
+      answer:
+        "No. The pictures are decoded in your tab and the animation is built there with gifenc, the encoder this site already carries for its video-to-GIF tool. Nothing is sent anywhere and no engine is downloaded for this.",
+    },
+  ],
+  "csv-markdown-table": [
+    {
+      question: "Why does it escape pipes?",
+      answer:
+        "Because a pipe ends a cell in Markdown, so one unescaped pipe silently changes the shape of your table. A single URL with a query string in it turns a two-column table into a three-column one — and the output is still a valid Markdown table, just not the one your data describes, which is why it is easy to miss. Backslashes are escaped too, since otherwise they would consume the escape character.",
+    },
+    {
+      question: "What happens to a cell with a line break in it?",
+      answer:
+        "It becomes a break tag. A Markdown table row cannot contain a real newline at all — the row ends there — so the choice is between a break tag, dropping the break, or refusing the file. The break tag is what every Markdown renderer understands, and it survives a round trip back to CSV, which the other two options do not.",
+    },
+    {
+      question: "Can it go the other way?",
+      answer:
+        "Yes, and the swap button feeds the current result back in, so a round trip is one click. That is worth doing on anything important: if a table comes back out as the CSV you put in, nothing was lost in between. Going from Markdown to CSV, the alignment row is recognised as structure rather than read as data — which is the mistake that inserts a row of dashes into your spreadsheet.",
+    },
+    {
+      question: "What does 'line the columns up' actually change?",
+      answer:
+        "Only the source. It pads each cell with spaces so the table is readable as plain text and in a diff, which is where you will actually look at it. Every Markdown renderer ignores that padding entirely, so the rendered table is identical either way. It is on by default because an unpadded table is unpleasant to read in a pull request, and it can be turned off when you want the smallest possible output.",
+    },
+    {
+      question: "What if some rows have fewer columns than others?",
+      answer:
+        "They are padded out to the widest row rather than rejected. A ragged CSV is common — a trailing comma, an export that omits empty trailing fields — and a table with a couple of empty cells is far more useful than an error message. The row count and column count are shown so you can see what it decided.",
+    },
+  ],
+  "resize-gif": [
+    {
+      question: "Will this turn my animation into a still?",
+      answer:
+        "No, and that is the main reason this page exists. The ordinary way a browser reads an image keeps only the first frame, which is why so many tools that claim to resize a GIF quietly hand back a single picture. This decodes the whole animation first, scales every frame, and writes them back with the delays the original stored.",
+    },
+    {
+      question: "How much smaller will the file get?",
+      answer:
+        "It depends on the picture, but scaling down is by far the most effective lever available. A GIF's size is roughly its pixel count multiplied by its frame count, so halving the dimensions removes three quarters of the pixels in every frame at once — that usually does more than any amount of palette tuning. The page shows the resulting file size so you can judge it against the original rather than take a promise.",
+    },
+    {
+      question: "Why can I only scale down, not up?",
+      answer:
+        "Because scaling up cannot add detail that is not there. Enlarging a GIF gives you a bigger, softer version of the same picture and a considerably larger file, which is almost never what someone wants from a tool called 'resize'. If you genuinely need a larger canvas, that is a different job.",
+    },
+    {
+      question: "Does re-encoding lose quality?",
+      answer:
+        "Re-encoding a GIF is not lossless, and it is worth knowing why. A GIF holds at most 256 colours per frame, so rebuilding the file means choosing that palette again from the decoded pixels. Flat colour, line art, screenshots and text come through cleanly. Photographic frames and fine gradients can band slightly, because the second palette is not guaranteed to be the first one. Your original file is untouched either way, so you can always compare.",
+    },
+    {
+      question: "Is my GIF uploaded?",
+      answer:
+        "The animation is decoded frame by frame in your tab and written back with gifenc, which this site already carries for its video-to-GIF tool — so nothing is uploaded and no extra engine is downloaded. Two decoders are used depending on your browser: Chrome, Edge and Firefox have a built-in image decoder that returns frames directly, and Safari does not, so a small bundled JavaScript reader handles it there. Both produce the same frames; the difference is only in who does the work.",
+    },
+  ],
+  "gif-speed-changer": [
+    {
+      question: "Does speeding it up drop frames?",
+      answer:
+        "No. Changing speed here means rescaling how long each frame is displayed, not adding or removing frames. That distinction matters: a tool that speeds things up by dropping frames makes the result visibly choppier while appearing to do what you asked. Every frame in your file survives, at every speed setting.",
+    },
+    {
+      question: "Why does it stop getting faster past a point?",
+      answer:
+        "Because the format runs out of room to describe it. A GIF stores each frame's delay in hundredths of a second, so around twenty milliseconds per frame is as fast as the file can honestly say — and browsers substitute their own timing for anything shorter, which means different people would see different speeds. The page states the floor rather than letting you drag a slider that has quietly stopped doing anything. Slowing down has no such limit.",
+    },
+    {
+      question: "Can I set a specific frame rate instead?",
+      answer:
+        "Not directly. GIF has no frame rate — it has a delay per frame, and those delays do not have to be equal. Many real GIFs hold one frame much longer than the rest, and imposing a single frame rate would flatten that deliberate pause. Working in percentages keeps the original rhythm and just stretches or compresses it.",
+    },
+    {
+      question: "Does re-encoding lose quality?",
+      answer:
+        "Re-encoding a GIF is not lossless, and it is worth knowing why. A GIF holds at most 256 colours per frame, so rebuilding the file means choosing that palette again from the decoded pixels. Flat colour, line art, screenshots and text come through cleanly. Photographic frames and fine gradients can band slightly, because the second palette is not guaranteed to be the first one. Your original file is untouched either way, so you can always compare.",
+    },
+    {
+      question: "Is my GIF uploaded?",
+      answer:
+        "The animation is decoded frame by frame in your tab and written back with gifenc, which this site already carries for its video-to-GIF tool — so nothing is uploaded and no extra engine is downloaded. Two decoders are used depending on your browser: Chrome, Edge and Firefox have a built-in image decoder that returns frames directly, and Safari does not, so a small bundled JavaScript reader handles it there. Both produce the same frames; the difference is only in who does the work.",
+    },
+  ],
+  "reverse-gif": [
+    {
+      question: "Does it reverse the timing too?",
+      answer:
+        "Yes, and this is the part most implementations get subtly wrong. A GIF's delay belongs to the frame it is stored with — it means 'show this picture for this long' — so flipping the picture order while leaving the delays in place produces an animation whose timing no longer matches its own frames. If the original paused on its last frame, a naively reversed copy pauses on whatever is now last. Here the pairs are reversed together, so a GIF that lingered at the end lingers at the beginning.",
+    },
+    {
+      question: "Can I make it play forwards then backwards?",
+      answer:
+        "Not from this page — it produces a straight reversal. A boomerang effect means appending the reversed frames to the originals, which doubles the frame count and therefore roughly doubles the file size, and it needs a decision about whether the first and last frames are repeated at the turn. That is a different tool rather than a checkbox on this one.",
+    },
+    {
+      question: "There is nothing to configure. Is that right?",
+      answer:
+        "Yes. Reversing has no settings — the frames come back in the opposite order with their delays attached, and there is no meaningful option to offer. The file starts converting as soon as it has been read.",
+    },
+    {
+      question: "Does re-encoding lose quality?",
+      answer:
+        "Re-encoding a GIF is not lossless, and it is worth knowing why. A GIF holds at most 256 colours per frame, so rebuilding the file means choosing that palette again from the decoded pixels. Flat colour, line art, screenshots and text come through cleanly. Photographic frames and fine gradients can band slightly, because the second palette is not guaranteed to be the first one. Your original file is untouched either way, so you can always compare.",
+    },
+    {
+      question: "Is my GIF uploaded?",
+      answer:
+        "The animation is decoded frame by frame in your tab and written back with gifenc, which this site already carries for its video-to-GIF tool — so nothing is uploaded and no extra engine is downloaded. Two decoders are used depending on your browser: Chrome, Edge and Firefox have a built-in image decoder that returns frames directly, and Safari does not, so a small bundled JavaScript reader handles it there. Both produce the same frames; the difference is only in who does the work.",
+    },
+  ],
+  "split-gif": [
+    {
+      question: "Why are the frames PNG and not GIF?",
+      answer:
+        "Because decoding an animation composites each frame into a complete picture — most GIF frames store only the rectangle that changed since the last one, so the decoder has to rebuild the whole image before it can hand it over. Writing those complete frames back through a 256-colour palette would throw away exactly what the decode just recovered, for no benefit. PNG keeps them as they were reconstructed.",
+    },
+    {
+      question: "What order are the files in?",
+      answer:
+        "Playing order, numbered from one and zero-padded to the length of the frame count — frame-001.png, frame-002.png and so on. The padding is what makes a two-hundred-frame archive unzip and sort in the right sequence instead of putting frame-10 before frame-2.",
+    },
+    {
+      question: "Do I get the frame timings as well?",
+      answer:
+        "Not as a separate file. Each frame is exported as a picture, and PNG has nowhere to record how long it was displayed. If you need the timings, the speed-changer page reads and shows them; for reassembling an animation, the video-to-GIF tool builds one from frames at a rate you choose.",
+    },
+    {
+      question: "Is there a limit on how many frames?",
+      answer:
+        "Nothing is enforced, but there is a real ceiling: every frame is held decoded in memory at once while the archive is built, and a long animation at full size can exhaust the tab before it finishes. A few hundred frames is comfortable; several thousand at full resolution may not be.",
+    },
+    {
+      question: "Is my GIF uploaded?",
+      answer:
+        "The animation is decoded frame by frame in your tab and written back with gifenc, which this site already carries for its video-to-GIF tool — so nothing is uploaded and no extra engine is downloaded. Two decoders are used depending on your browser: Chrome, Edge and Firefox have a built-in image decoder that returns frames directly, and Safari does not, so a small bundled JavaScript reader handles it there. Both produce the same frames; the difference is only in who does the work.",
+    },
+  ],
+  "vcf-to-csv": [
+    {
+      question: "Are my contacts uploaded?",
+      answer:
+        "No. The file is read in this tab and nothing is sent anywhere — no upload, no temporary copy on a server, no request carrying any part of it. That matters more for this file than for almost anything else on the site: a .vcf is every name, phone number, email address and home address of everyone you know, in one plain-text file. Every free VCF-to-CSV converter that asks you to upload it has taken a copy of exactly that.",
+    },
+    {
+      question: "What happens to contacts with several emails or phone numbers?",
+      answer:
+        "Each one gets its own numbered column — Email 1, Email 2, and so on — and the number of columns is worked out from your file, so a list whose busiest contact has two emails gets two columns rather than a fixed ten mostly empty ones. This is deliberate and it is the main reason to prefer this over a quick script. The common alternative is to cram them into one cell separated by semicolons, which looks fine and then loses every address after the first when you import the sheet somewhere else, because that cell is a single string to every importer.",
+    },
+    {
+      question: "Why are some properties listed as left out?",
+      answer:
+        "Because they were in your file and there is no column for them, and telling you is better than dropping them in silence. vCard allows arbitrary extensions — X-SOCIALPROFILE, X-ABRELATEDNAMES and whatever an exporter felt like inventing — and no fixed set of columns can cover them. Photos are left out on purpose too: a portrait is stored as base64 inside the card, and putting a few hundred kilobytes of it into a spreadsheet cell helps nobody.",
+    },
+    {
+      question: "My file has one long note that came out mangled elsewhere. Will it work here?",
+      answer:
+        "It should. vCard splits any line longer than 75 characters across several lines, continuing each with a leading space, so long notes and addresses routinely arrive in pieces. A converter that reads line by line does not crash on this — it silently truncates the field and can invent extra rows, which is worse than an error because the output still looks like a contact list. This unfolds those lines before parsing anything, and there is a test for the three-line case specifically.",
+    },
+  ],
+  "ics-to-csv": [
+    {
+      question: "Is my calendar uploaded?",
+      answer:
+        "No. The file is read in this tab and nothing leaves it. A calendar export is a diary — who you meet, where you go, and by implication when you are not at home — so it is worth being explicit that no part of it is sent anywhere at any point.",
+    },
+    {
+      question: "Why are the times not converted to my time zone?",
+      answer:
+        "Because converting them means guessing, and a wrong guess is invisible. An iCalendar time can be UTC, it can be floating with no zone at all, or it can name a zone whose rules are defined elsewhere in the same file. Rewriting all three into one zone would move some appointments by hours with nothing on screen to say it had happened. So the wall-clock time is written exactly as your calendar stores it and the zone goes in its own column, where you can see which is which and convert deliberately if you need to.",
+    },
+    {
+      question: "A weekly meeting only appears once. Is that a bug?",
+      answer:
+        "No, that is what the file says. A repeating event is stored once with a rule describing how it repeats — it is not stored as fifty-two events — and the rule is written into the Repeats column. Expanding it here would turn one row into hundreds and would mean resolving counts, end dates, cancelled occurrences and the calendar's own time zone, each of which is a chance to put an appointment in your spreadsheet that does not exist in your calendar. If you want the individual occurrences, a calendar application is the right thing to ask.",
+    },
+    {
+      question: "What about reminders, to-dos and free/busy blocks?",
+      answer:
+        "Only events become rows. A reminder is stored inside its event, and its own summary is deliberately kept out of the event's columns — otherwise the text of an alert ends up where the meeting title should be. To-dos and journal entries are different block types and are not listed, so a calendar containing only those will come back empty and say so. Anything present on an event with no column of its own is named on the page rather than dropped quietly.",
+    },
+  ],
+  "ocr-pdf": [
+    {
+      question: "Does this change how my PDF looks?",
+      answer:
+        "No, and that is the point of doing it this way. The recognised words are written into the file as text in rendering mode 3 — the PDF instruction for 'lay this text out and draw none of it' — so a viewer runs the whole text machinery and rasterises nothing. Your pages are not rebuilt or re-encoded: the scan's own images, their compression and any vector artwork are exactly the bytes you gave us, and the text is appended alongside them. Rendered side by side, a page before and after is pixel-for-pixel identical. That is measured, not assumed — in two independent renderers, at every page rotation.",
+    },
+    {
+      question: "How accurate is the searchable text?",
+      answer:
+        "It is OCR, so it is a guess, and here the mistakes are harder to catch than usual. On a page of ordinary text you can see when a word has been misread. Here you cannot: what you see is the original scan, which is right, and what you search or copy is the recognition, which may not be. A misread digit in an invoice total does not announce itself. Clean, high-contrast, straight scans of printed text do very well; photographs of pages, low-resolution scans, heavy skew and text over busy backgrounds all do noticeably worse. The page shows Tesseract's own mean confidence, but treat it as a hint — a confident wrong answer is entirely possible.",
+    },
+    {
+      question: "Can I edit the text now?",
+      answer:
+        "No. This makes a document searchable, not editable, and the difference is the whole design. The words are an invisible layer positioned over a picture of the page — they are not a retyping of it, and the picture underneath is still a picture. Nothing on this site can turn a scan into an editable document, and anything that claims to is really rebuilding the page from its own guess, which is how a signature or a figure quietly changes. If you want to add text, white something out or sign a page, PDF Editor does that on top of the page as it stands.",
+    },
+    {
+      question: "My PDF already has selectable text — should I use this?",
+      answer:
+        "No, and the page will warn you if it spots that. A PDF that was exported rather than scanned already carries the real characters the file stores, which are exact rather than recognised. Adding OCR on top means search and copy return everything twice, and the less accurate copy is the one you just added. PDF to Text will give you that existing text as a .txt file with no guessing involved. The one case where this tool still makes sense is a mixed document — a scan bound into a digital report — where some pages have text and some do not; the warning names which pages already have it.",
+    },
+    {
+      question: "Why did my file get bigger?",
+      answer:
+        "Because a text layer is new content. It is usually small — the words themselves plus a font dictionary of about 1.3 KB for the whole document, since the font carries no glyph outlines at all (nothing is ever drawn, so none are needed). Growth of a few kilobytes per page is normal. Nothing is removed to make room, and the original page content is untouched, so the increase is close to the size of the text you gained.",
+    },
+    {
+      question: "Is my document uploaded?",
+      answer:
+        "No. Tesseract is compiled to WebAssembly and served from this site as a file — about 4.9 MB, fetched the first time you run OCR and not before — and it reads pages your browser has already rendered in the tab. The PDF never leaves your device at any point, which matters more here than almost anywhere else on this site: the documents people run OCR over are contracts, invoices, medical records and identity papers. It is the same engine Image to Text uses, so if you have used that already, this costs no extra download.",
+    },
+  ],
+  "image-to-text": [
+    {
+      question: "Is my image uploaded anywhere?",
+      answer:
+        "No, and this is the tool where that matters most. The engine is what travels: Tesseract is compiled to WebAssembly and fetched from this site as a file, then it reads a picture your browser already has in memory. Nothing about the image is sent anywhere at any point, and the page makes no network request at all until you actually drop something. That is worth stating plainly here because of what people run OCR over — receipts, invoices, passports, prescriptions, contracts, screenshots of private conversations. Every free OCR site that asks you to upload one of those has taken a copy of it.",
+    },
+    {
+      question: "How accurate is it, really?",
+      answer:
+        "Very good on clean printed text, and noticeably worse on everything else. A screenshot, a PDF page rendered to an image, or a flatbed scan of a printed document is close to the ideal case. A photograph taken at an angle, a low-resolution image, text over a busy background, or a decorative typeface will all produce mistakes, and the mistakes look like ordinary words rather than obvious garbage — a misread digit in an invoice total does not announce itself. The page shows Tesseract's own mean confidence, but treat that as a hint rather than a verdict: a confident wrong answer is entirely possible. Check anything that matters against the picture.",
+    },
+    {
+      question: "Can it read handwriting?",
+      answer:
+        "No. Not badly — not at all. Handwriting recognition is a different class of model from printed-text OCR, not a setting you can turn on, and the English model here is trained on printed type. A page of handwriting will come back as empty or as nonsense. The same goes for heavily stylised display lettering and most handwriting-imitation fonts.",
+    },
+    {
+      question: "Why does the first image take so long?",
+      answer:
+        "Because the first one also downloads the engine. Tesseract plus its English language model is about 4.9 MB, and none of it is fetched when you open the page — only when you give it something to read. After that first fetch the browser has it cached, and later images pay only for the recognition itself, which is usually a second or two for a screenshot and longer for a full-page scan. If you want it available with no network at all, the offline-access page will store it for you, by name and with the size in front of you.",
+    },
+    {
+      question: "What happens to columns and tables?",
+      answer:
+        "They lose their shape. Tesseract reads down the page, so a two-column article comes back as the whole left column followed by the whole right column rather than in reading order. A table is worse: the cells arrive as separate lines with nothing recording which row or column each came from, so you get the contents without the structure. If the text is in a PDF that was exported rather than scanned, PDF to Text will give you the characters the file already stores, exactly as it stores them, with no guessing at all — that is the better tool whenever it applies.",
+    },
+    {
+      question: "Which languages does it handle?",
+      answer:
+        "English, in the Latin alphabet. Tesseract supports over a hundred languages, but each one needs its own model file of a few megabytes, and serving all of them would mean asking every visitor to think about which to download. Only English is served here. Text in another language that uses the Latin alphabet will often partly work — the letter shapes are the same — but the accuracy comes from the language model as much as the shapes, so expect mistakes on accented characters and on words English does not contain.",
+    },
+  ],
   "compress-png": [
     {
       question: "How much smaller will my PNG actually get?",
@@ -1365,7 +1667,7 @@ export const faqs: ToolFAQs = {
     {
       question: "Why does the first conversion take a moment to start?",
       answer:
-        "Because no browser can decode HEIC on its own, so the page fetches a decoder — heic2any, about 1.3 MB, served from this site rather than a content delivery network. It downloads once and your browser caches it; every conversion after that starts immediately. That download is the whole reason a HEIC page feels slower on its first run than any other image page here.",
+        "Because no browser can decode HEIC on its own, so the page fetches a decoder — libheif, about 1.4 MB across its loader and its WebAssembly binary, served from this site rather than a content delivery network. It downloads once and your browser caches it; every conversion after that starts immediately. That download is the whole reason a HEIC page feels slower on its first run than any other image page here.",
     },
     {
       question: "Will the WebP be smaller than the HEIC?",
@@ -1704,7 +2006,7 @@ export const faqs: ToolFAQs = {
     {
       question: "Can I hash large files?",
       answer:
-        "Yes — the file is handed to a background worker, so the page stays responsive and a progress bar tracks the work (MD5 is the slow part; the SHA family uses the browser's native crypto). The practical limit is your device's memory, since the whole file is loaded at once.",
+        "Yes, and there is no size at which it stops working. The file is handed to a background worker and hashed as it is read, in chunks off the file stream, so it is never held in memory whole — the page stays responsive and a progress bar tracks the work. What a large file costs is time: all four digests are computed in JavaScript at roughly 40 MB a second together, measured in the browser. That is slower than the browser's own crypto, which this page used until September 2026, and it is the trade that removed the ceiling — the native digest has one entry point and it takes the entire file at once, so it cannot be streamed.",
     },
     {
       question: "Why doesn't my hash match the one from my terminal?",
@@ -1738,7 +2040,7 @@ export const faqs: ToolFAQs = {
     {
       question: "Can I check a 4 GB ISO?",
       answer:
-        "Probably not, and the drop zone says so rather than failing halfway through. Each file is read into one ArrayBuffer and that buffer is handed whole to the hashing worker; the hash is not streamed off disk in chunks. Browsers hand out roughly 2 GB in a single allocation and refuse past it, so a large ISO cannot be read at all — you get a message saying exactly that, not a wrong digest. Below that ceiling size is only a matter of time: SHA-1, SHA-256 and SHA-512 run on the browser's native crypto, and MD5, which is pure JavaScript, is the slow one.",
+        "Yes. Each file is hashed as it is read — the digests are fed in chunks off the file stream, so nothing is ever held in memory whole and there is no size at which the read fails. This was not true before September 2026: the file used to be read into one allocation first, browsers hand out roughly 2 GB in a single piece, and a 4 GB ISO could not be opened at all. What a very large file costs now is time rather than failure. All four digests are computed in JavaScript at roughly 40 MB a second together, measured in the browser, so a 4 GB image takes a couple of minutes with a progress bar, and the tab stays responsive because the work happens in a worker."
     },
   ],
   "regex-tester": [
@@ -2305,7 +2607,7 @@ export const faqs: ToolFAQs = {
     {
       question: "Does HEIC to PDF lose quality?",
       answer:
-        "Slightly. HEIC cannot be embedded in a PDF directly, so each photo is decoded with heic2any and re-encoded as JPEG at quality 0.92 — usually indistinguishable from the original. An image with transparency is saved as lossless PNG instead.",
+        "Slightly. HEIC cannot be embedded in a PDF directly, so each photo is decoded with libheif and re-encoded as JPEG at quality 0.92 — usually indistinguishable from the original. An image with transparency is saved as lossless PNG instead.",
     },
     {
       question: "Can I convert several HEIC photos at once?",

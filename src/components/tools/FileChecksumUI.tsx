@@ -19,7 +19,6 @@ import {
   StatStrip,
 } from "@/components/tools/ToolCanvas";
 import { CANVAS_COLUMN } from "@/components/workspace/shared";
-import { getToolBySlug } from "@/data/tools";
 import { useCopied } from "@/hooks/useCopied";
 import {
   formatSumsFile,
@@ -44,7 +43,10 @@ import { computeHashesGuarded } from "@/lib/workers/hash-client";
   registry rather than retyped, so the spec row on the page and the line under
   the drop zone cannot drift apart.
 */
-const PRACTICAL_LIMIT_NOTE = getToolBySlug("file-checksum")?.practicalLimitNote;
+/*
+  No `practicalLimitNote` since 2026-09-13: hashing streams, so this zone's
+  "NO SIZE CAP" is true. See the note on the registry entry.
+*/
 
 interface FileRow {
   id: number;
@@ -135,25 +137,17 @@ export function FileChecksumUI() {
     for (let i = 0; i < files.length; i++) {
       if (runIdRef.current !== id) return;
       setProgress({ index: i, percent: 0 });
-      let data: ArrayBuffer;
-      try {
-        /*
-          One allocation of the WHOLE file, per file — and past V8's
-          single-buffer wall it REJECTS rather than resolving short. A fresh
-          buffer every time is not an optimisation: `computeHashesGuarded`
-          TRANSFERS what it is given, so a reused buffer would arrive detached.
-        */
-        data = await files[i].arrayBuffer();
-      } catch {
-        if (runIdRef.current !== id) continue;
-        patch(i, {
-          error: `Could not read ${files[i].name}. Hashing needs the whole file in one buffer, and this browser would not allocate one that large — files much past 2 GB do not load.`,
-        });
-        continue;
-      }
+      /*
+        The FILE goes across, not its bytes. Until 2026-09-13 this read the
+        whole file into one ArrayBuffer first, which inherited the renderer's
+        ~2 GB single-allocation ceiling and needed a `catch` here to explain
+        that a large file "does not load" at all. Nothing is materialised now —
+        the worker opens a stream on the far side — so that failure, and the
+        sentence describing it, are both gone.
+      */
       if (runIdRef.current !== id) return;
       try {
-        const hashes = await computeHashesGuarded(data, (pct) => {
+        const hashes = await computeHashesGuarded(files[i], (pct) => {
           if (runIdRef.current === id) setProgress({ index: i, percent: pct });
         });
         if (runIdRef.current !== id) return;
@@ -260,7 +254,6 @@ export function FileChecksumUI() {
           disabled={busy}
           label="Drop a download to check it"
           acceptLabel="ANY FILE"
-          practicalLimitNote={PRACTICAL_LIMIT_NOTE}
         />
 
         {summary && <Verdict {...summary} />}

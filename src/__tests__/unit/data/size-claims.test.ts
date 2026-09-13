@@ -222,37 +222,106 @@ describe("size claims — the absolute claim and the known ceilings stay disjoin
     expect(offenders).toEqual([]);
   });
 
-  it("the whole-file-buffer scan actually fires on the UI it is supposed to catch", () => {
-    // A scan that matches nothing is a gate that cannot fail.
-    const bound = toolUIs
-      .filter((ui) => readsWholeFileIntoAWorker(ui.source))
-      .map((ui) => ui.file)
-      .sort();
-    expect(bound).toContain("HashGeneratorUI.tsx");
-    /*
-      …and it stays narrow. These read the whole file too and are the
-      unmeasured pdf-lib / text-decode ceiling the scope note excludes — if
-      one of them starts matching, the scan has widened past what anyone
-      measured and the sixteen sentences it would demand are not written yet.
-    */
-    expect(bound).not.toContain("MergePdfUI.tsx");
-    expect(bound).not.toContain("SubtitleConverterUI.tsx");
+  /*
+    ⚠ THIS POSITIVE CONTROL USED TO ANCHOR ON A REAL FILE, AND ON 2026-09-13 IT
+    RAN OUT OF ONE.
+
+    It asserted `bound).toContain("HashGeneratorUI.tsx")` — the scan proving
+    itself by matching an actual offender. Then /hash-generator and
+    /file-checksum were changed to hash off `blob.stream()` instead of reading
+    the file into one transferred ArrayBuffer, and they were the LAST two UIs
+    with that shape. `readsWholeFileIntoAWorker` now matches ZERO of the tool
+    UIs, which is the good outcome for the product and the worst one for a
+    gate: the population check below passes over an empty set, forever, no
+    matter what anyone writes.
+
+    So the control moved off the population and onto the PREDICATE. Two
+    synthetic sources, one of each kind, prove the scan can still tell them
+    apart — which is the property that was actually being guarded. If a future
+    UI reintroduces the shape, the population check catches it; if someone
+    breaks the regex, these do.
+  */
+  it("the whole-file-buffer scan can still tell the two shapes apart", () => {
+    const offending = `
+      import { computeHashesGuarded } from "@/lib/workers/hash-client";
+      const data = await file.arrayBuffer();
+      await computeHashesGuarded(data);
+    `;
+    const innocent = `
+      import { computeHashesGuarded } from "@/lib/workers/hash-client";
+      await computeHashesGuarded(file);
+    `;
+    const inThreadOnly = `const bytes = await file.arrayBuffer(); PDFDocument.load(bytes);`;
+
+    expect(readsWholeFileIntoAWorker(offending), "the scan no longer matches the shape it exists for").toBe(true);
+    expect(readsWholeFileIntoAWorker(innocent), "streaming to a worker is not a whole-file read").toBe(false);
+    // The in-thread pdf-lib read is the unmeasured ceiling this gate
+    // deliberately does not model; matching it would demand sentences nobody
+    // has measured.
+    expect(readsWholeFileIntoAWorker(inThreadOnly)).toBe(false);
   });
 
-  it("hash-generator's note names the allocation that actually binds", () => {
+  it("no tool UI reads a whole file into a worker any more", () => {
     /*
-      The mechanism, not a number: the File arm is not a stream. The buffer is
-      built whole and then TRANSFERRED (hash-client.ts), so V8's
-      single-allocation wall is the ceiling and the FAQ on the same page has
-      always said so.
+      The fact the control above now rests on, asserted rather than assumed —
+      so that if it changes, it changes LOUDLY and with a pointer to why the
+      control is synthetic. The two that used to be here now stream.
     */
-    const t = getToolBySlug("hash-generator");
-    expect(t?.maxSizeMB).toBeUndefined();
-    expect(t?.practicalLimitNote, "hash-generator prints NO SIZE CAP again").toBeTruthy();
-    expect(t!.practicalLimitNote).toMatch(/one piece|single (array)?buffer/i);
-    expect(readSrc(`${TOOL_UI_DIR}/HashGeneratorUI.tsx`)).toContain(
-      'getToolBySlug("hash-generator")?.practicalLimitNote',
+    const bound = toolUIs.filter((ui) => readsWholeFileIntoAWorker(ui.source)).map((ui) => ui.file);
+    expect(
+      bound,
+      "a UI reintroduced the whole-file-into-a-worker shape; the synthetic " +
+        "positive control above can go back to anchoring on a real file",
+    ).toEqual([]);
+  });
+
+  it("the hash tools claim no ceiling, because they no longer have one", () => {
+    /*
+      ⚠ THIS ASSERTION IS THE REVERSE OF WHAT IT USED TO BE, and the reversal is
+      the record. It required hash-generator to CARRY a note naming "one piece"
+      or "a single buffer", because the File arm read the whole file into one
+      ArrayBuffer and transferred it, so the renderer's single-allocation wall
+      was a real ceiling on a page with no engine anywhere near it.
+
+      Since 2026-09-13 both tools hash off `blob.stream()`. Nothing is
+      materialised, so "NO SIZE CAP" is TRUE and a note would be the false
+      claim. Both halves are checked: the registry must carry no note, and the
+      UI must no longer read one — because the prop is what renders the
+      sentence, and leaving it wired would have made the zone print the falsy
+      branch for a reason nobody could see.
+    */
+    for (const slug of ["hash-generator", "file-checksum"]) {
+      const t = getToolBySlug(slug);
+      expect(t?.maxSizeMB, `${slug} enforces no cap`).toBeUndefined();
+      expect(
+        t?.practicalLimitNote,
+        `${slug} streams now, so a practical-limit note would be a false claim`,
+      ).toBeUndefined();
+    }
+    for (const file of ["HashGeneratorUI.tsx", "FileChecksumUI.tsx"]) {
+      // codeOnly: the comment explaining WHY the prop is gone names it, and a
+      // raw scan would read that explanation as the offence it documents.
+      expect(
+        codeOnly(readSrc(`${TOOL_UI_DIR}/${file}`)),
+        `${file} still reads a note that no longer exists`,
+      ).not.toContain("practicalLimitNote");
+    }
+  });
+
+  it("the hash tools really do stream — the claim above rests on it", () => {
+    // Without this the assertion above is just "we deleted a sentence". The
+    // sentence is only safe to delete while the code streams.
+    const digest = codeOnly(readSrc("lib/tools/hash-digest.ts"));
+    expect(digest).toContain("blob.stream()");
+    expect(digest, "a whole-file read would restore the ceiling silently").not.toContain(
+      "arrayBuffer()",
     );
+    for (const file of ["HashGeneratorUI.tsx", "FileChecksumUI.tsx"]) {
+      expect(
+        codeOnly(readSrc(`${TOOL_UI_DIR}/${file}`)),
+        `${file} materialises the file again`,
+      ).not.toMatch(/\.arrayBuffer\(\)/);
+    }
   });
 
   it("every enforced cap carries its reason", () => {

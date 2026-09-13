@@ -416,7 +416,14 @@ async function isWebpBytes(blob: Blob): Promise<boolean> {
  * old toBlob, whose null result — canvas too large for the browser encoder
  * (big page × high scale) — still surfaces as the sized error message.
  */
-async function encodePageCanvas(
+/*
+  Exported for `ocr-pdf.ts` as well as `pdfToImages` above. Handing a canvas
+  straight to tesseract.js is the alternative and it is worse: its own
+  `loadImage` calls `canvas.toBlob()` with no type and no quality — a default
+  PNG encode, on the MAIN THREAD, once per page. This routes the pixels to the
+  image worker pool instead, which is the whole reason it exists.
+*/
+export async function encodePageCanvas(
   canvas: HTMLCanvasElement,
   pageNumber: number,
   mimeType: string,

@@ -25,7 +25,7 @@ test.describe("first-frame and first-page warnings", () => {
     // The rest of this file leans on these fixtures — prove they parse with
     // the same decoders/sniffers the app ships before trusting a green run.
     expect(firstFrameWarning(new Uint8Array(animatedGif().buffer))).toBe(
-      "This GIF is animated — only its first frame was kept.",
+      "This GIF is animated — only its first frame was kept. To keep every frame, use Split GIF into Frames.",
     );
     expect(firstFrameWarning(new Uint8Array(animatedWebp().buffer))).toBe(
       "This WebP is animated — only its first frame was kept.",
@@ -116,7 +116,7 @@ test.describe("first-frame and first-page warnings", () => {
     // Byte-level proof the noisy build is still genuinely animated, so a green
     // run can never mean "the builder quietly dropped to one frame".
     expect(firstFrameWarning(new Uint8Array(fixture.buffer))).toBe(
-      "This GIF is animated — only its first frame was kept.",
+      "This GIF is animated — only its first frame was kept. To keep every frame, use Split GIF into Frames.",
     );
 
     const { bytes } = await convert(page, {
@@ -132,7 +132,7 @@ test.describe("first-frame and first-page warnings", () => {
     // never-grow original (which would carry no warning and both frames).
     expect(bytes.length).toBeLessThan(fixture.buffer.length);
     await expect(
-      page.getByText("This GIF is animated — only its first frame was kept.", { exact: true }),
+      page.getByText("This GIF is animated — only its first frame was kept. To keep every frame, use Split GIF into Frames.", { exact: true }),
     ).toBeVisible();
   });
 
@@ -150,7 +150,7 @@ test.describe("first-frame and first-page warnings", () => {
     });
 
     await expect(
-      page.getByText("This GIF is animated — only its first frame was kept.", { exact: true }),
+      page.getByText("This GIF is animated — only its first frame was kept. To keep every frame, use Split GIF into Frames.", { exact: true }),
     ).toBeVisible();
 
     // GIF sources resize to alpha-capable PNG (resizeOutputFormat).

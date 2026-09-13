@@ -3,6 +3,9 @@
 import dynamic from "next/dynamic";
 
 // Text/Data Formatters
+const BcryptGeneratorUI = dynamic(() => import("./BcryptGeneratorUI").then((m) => ({ default: m.BcryptGeneratorUI })), { ssr: false });
+const CsvMarkdownTableUI = dynamic(() => import("./CsvMarkdownTableUI").then((m) => ({ default: m.CsvMarkdownTableUI })), { ssr: false });
+const ContactsCalendarCsvUI = dynamic(() => import("./ContactsCalendarCsvUI").then((m) => ({ default: m.ContactsCalendarCsvUI })), { ssr: false });
 const JsonFormatterUI = dynamic(() => import("./JsonFormatterUI").then((m) => ({ default: m.JsonFormatterUI })), { ssr: false });
 const JsonToCsvUI = dynamic(() => import("./JsonToCsvUI").then((m) => ({ default: m.JsonToCsvUI })), { ssr: false });
 const CsvToJsonUI = dynamic(() => import("./CsvToJsonUI").then((m) => ({ default: m.CsvToJsonUI })), { ssr: false });
@@ -90,6 +93,22 @@ const QrCodeReaderUI = dynamic(() => import("./QrCodeReaderUI").then((m) => ({ d
 // of pasted text.
 const SvgOptimizerUI = dynamic(() => import("./SvgOptimizerUI").then((m) => ({ default: m.SvgOptimizerUI })), { ssr: false });
 const DocxToMarkdownUI = dynamic(() => import("./DocxToMarkdownUI").then((m) => ({ default: m.DocxToMarkdownUI })), { ssr: false });
+
+export function BcryptGeneratorClient() {
+  return <BcryptGeneratorUI />;
+}
+
+export function CsvMarkdownTableClient() {
+  return <CsvMarkdownTableUI />;
+}
+
+export function VcfToCsvClient() {
+  return <ContactsCalendarCsvUI kind="vcf" />;
+}
+
+export function IcsToCsvClient() {
+  return <ContactsCalendarCsvUI kind="ics" />;
+}
 
 export function JsonFormatterClient() { return <JsonFormatterUI />; }
 export function JsonToCsvClient() { return <JsonToCsvUI />; }

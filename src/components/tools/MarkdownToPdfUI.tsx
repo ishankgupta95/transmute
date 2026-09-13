@@ -24,6 +24,7 @@ import {
 import { ToolControl, ToolControlGroup, ToolProgress } from "@/components/tools/ToolControls";
 import { chipClass, CANVAS_COLUMN } from "@/components/workspace/shared";
 import { formatFileSize } from "@/lib/utils/file-helpers";
+import "@/styles/prose.css";
 
 const MAX_FILE_BYTES = 10 * 1024 * 1024; // 10 MB
 

@@ -4,6 +4,10 @@ import { basename, resolve } from "node:path";
 
 import {
   ENGINE_BUNDLES,
+  SMALL_BUNDLES,
+  SMALL_BYTE_SHARE_PCT,
+  SMALL_ENGINE_BYTES,
+  SMALL_TOOL_SHARE_PCT,
   TOOLS_NEEDING_FFMPEG,
   TOOLS_NEEDING_ONLY_SMALL_ENGINES,
   TOOLS_WHERE_FFMPEG_IS_A_FALLBACK,
@@ -162,7 +166,7 @@ describe("the shape of the choice", () => {
   */
   it("accounts for every registered tool exactly once", () => {
     expect(TOOLS_WITHOUT_ENGINES + TOOLS_WITH_ENGINES).toBe(tools.length);
-    expect(tools.length).toBe(179);
+    expect(tools.length).toBe(190);
   });
 
   it("splits the engine-needing tools into FFmpeg and everything else", () => {
@@ -178,12 +182,91 @@ describe("the shape of the choice", () => {
     expect(TOOLS_WHERE_FFMPEG_IS_A_FALLBACK).toBeGreaterThan(0);
   });
 
-  it("makes everything-except-FFmpeg a twentieth of the bytes", () => {
+  it("splits the engine bytes into FFmpeg and everything else, with nothing lost", () => {
     const ffmpeg = ENGINE_BUNDLES.find((b) => b.id === "ffmpeg");
-    const rest = ENGINE_BUNDLES.filter((b) => b.id !== "ffmpeg");
     expect(ffmpeg).toBeDefined();
-    expect(totalBundleBytes(rest) * 5).toBeLessThan(ffmpeg!.bytes);
-    expect(totalBundleBytes()).toBe(ffmpeg!.bytes + totalBundleBytes(rest));
+    expect(SMALL_BUNDLES).toHaveLength(ENGINE_BUNDLES.length - 1);
+    expect(SMALL_ENGINE_BYTES).toBe(totalBundleBytes(SMALL_BUNDLES));
+    expect(totalBundleBytes()).toBe(ffmpeg!.bytes + SMALL_ENGINE_BYTES);
+  });
+
+  /*
+    ⚠ THE TEST THIS REPLACES WAS NAMED FOR A NUMBER IT DID NOT CHECK.
+
+    It was called "makes everything-except-FFmpeg a twentieth of the bytes"
+    and asserted `totalBundleBytes(rest) * 5 < ffmpeg.bytes` — a FIFTH. The
+    prose it was named for really did say "a twentieth", and really was false
+    (6,125,478 / 32,344,478 = 1/5.28), so the one test that looked like its
+    guard was green over a false sentence for as long as both existed.
+
+    Two failure modes, and the shares fix only the first:
+
+      1. A HAND-WRITTEN FIGURE. Now impossible for these two: they are divided
+         out of ENGINE_BUNDLES in offline.ts and rendered.
+      2. A HAND-WRITTEN WORD. "a twentieth", "a third", "seven of the eight" —
+         arithmetic cannot contradict English, so no computed constant helps.
+         That is what the source scan below is for.
+
+    It bans the SHAPES, not the particular wrong values, so a future "a sixth"
+    that happens to be true today still fails: the point is that nobody should
+    be able to write a share or a count into this prose by hand again. The
+    `of a second` escape keeps RemoveSilenceUI's unrelated wording legal.
+
+    ⚠ COMMENTS ARE STRIPPED FIRST, and that is not a loophole — it is the whole
+    scope. What shipped false was RENDERED COPY; a comment that quotes the
+    retired wording in order to explain why it was wrong is the file that got
+    it RIGHT, and a scan over raw text would fail exactly that file. Same
+    reasoning as engine-disclosure.test.ts, which strips comments before
+    looking for CDN URLs because the correct loader is the one that quotes the
+    CDN URL to say why it overrides it.
+  */
+  it("states no share or engine count in copy that arithmetic cannot contradict", () => {
+    const FRACTION =
+      /\ba (twentieth|tenth|ninth|eighth|seventh|sixth|fifth|quarter|third|half)\b(?!\s+of a second)/i;
+    const SPELLED_COUNT = /\b(six|seven|eight|nine|ten) of the\b/i;
+
+    const file = "src/components/pwa/OfflineSettings.tsx";
+    const source = readFileSync(resolve(root, file), "utf8");
+    const copy = source
+      .replace(/\/\*[\s\S]*?\*\//g, " ")
+      .replace(/^\s*\/\/.*$/gm, " ")
+      // JSX wraps a sentence across lines, so "…% of\n  the bytes covers…"
+      // would hide both the control and the pattern from a raw scan.
+      .replace(/\s+/g, " ");
+
+    /*
+      POSITIVE CONTROLS. A negative match over a file that was misread, or
+      over one the stripper emptied, is indistinguishable from a clean pass —
+      and stripping is exactly the step that could empty it. So: the file was
+      read, the stripper left the live sentence behind, and it left a phrase
+      the retired wording sat inside.
+    */
+    expect(source.length, `${file} read as empty`).toBeGreaterThan(1000);
+    expect(copy, `the stripper ate the sentence under test`).toContain("of the bytes covers");
+    expect(copy, `the stripper ate the engine-count clause`).toContain("engines below add up to");
+    expect(copy.length, `the stripper removed nearly everything`).toBeGreaterThan(source.length / 3);
+    // …and it really did remove the comment that legitimately says "a fifth".
+    expect(source).toMatch(FRACTION);
+    expect(copy, `comments should have been stripped`).not.toContain("unfalsifiable by arithmetic");
+
+    expect(copy, `${file}: an English fraction cannot be held to a number`).not.toMatch(FRACTION);
+    expect(copy, `${file}: spell the engine count with ENGINE_BUNDLES.length`).not.toMatch(
+      SPELLED_COUNT,
+    );
+  });
+
+  it("derives both shares from the bundles rather than from a literal", () => {
+    expect(SMALL_BYTE_SHARE_PCT).toBe(
+      Math.round((SMALL_ENGINE_BYTES / totalBundleBytes()) * 100),
+    );
+    expect(SMALL_TOOL_SHARE_PCT).toBe(
+      Math.round((TOOLS_NEEDING_ONLY_SMALL_ENGINES / TOOLS_WITH_ENGINES) * 100),
+    );
+    // Both are percentages of something, so both must be sayable out loud.
+    for (const pct of [SMALL_BYTE_SHARE_PCT, SMALL_TOOL_SHARE_PCT]) {
+      expect(pct).toBeGreaterThan(0);
+      expect(pct).toBeLessThan(100);
+    }
   });
 });
 
@@ -192,13 +275,15 @@ describe("formatEngineBytes uses the ruler the homepage already uses", () => {
     Binary prefixes printed with the decimal spelling — not a taste, a
     constraint. These four figures are already on the homepage's DOWNLOAD
     column beside the same artifacts, and they were arrived at that way
-    (heic2any: 1.30 MiB reads "1.3 MB"; decimal would be 1.4). A second ruler
+    (libheif: 1.44 MiB reads "1.4 MB"; decimal would be 1.5). A second ruler
     would put two pages of this site in disagreement about one file.
   */
   const bytesOf = (url: string) => statSync(resolve(root, SERVED.get(url)!)).size;
 
   it("reproduces the existing homepage figures from the artifacts on disk", () => {
-    expect(formatEngineBytes(bytesOf("/vendor/heic2any.js"))).toBe("1.3 MB");
+    expect(
+      formatEngineBytes(bytesOf("/vendor/libheif.js") + bytesOf("/vendor/libheif.wasm")),
+    ).toBe("1.4 MB");
     expect(formatEngineBytes(bytesOf("/libarchive.wasm"))).toBe("599 KB");
     expect(formatEngineBytes(bytesOf("/squoosh_oxipng_bg.wasm"))).toBe("160 KB");
     expect(formatEngineBytes(bytesOf("/zxing_reader.wasm"))).toBe("1.0 MB");

@@ -34,8 +34,14 @@ import { abortError, throwIfAborted } from "@/lib/utils/abort";
  *      about 2 GiB. Measured in-tab, each size in its own allocation:
  *      2040 MiB succeeds, 2047 MiB throws
  *      `RangeError: Array buffer allocation failed`. This is the wall MEMFS
- *      runs into, and no device has more of it — it is a V8 limit, not a RAM
- *      limit.
+ *      runs into, and no device has more of it.
+ *      ⚠ IN-TAB is load-bearing in that sentence, and this comment used to get
+ *      it wrong: it said "it is a V8 limit, not a RAM limit". It is not a V8
+ *      limit. The SAME V8 under Node allocates 2040, 2047, 2048 and 4096 MiB
+ *      without complaint and the last byte of each is writable (re-measured
+ *      2026-09-13). The ceiling is the renderer's, so it is a property of
+ *      where this code runs rather than of the language — which matters the
+ *      day someone reasons "V8 caps it, so nothing can be done".
  *   3. MEMFS growth. emscripten's `expandFileStorage` grows a file's array by
  *      `capacity * 1.125` and holds the old and the new array at the same time
  *      while it copies, so a file dies well below (2). Measured: trimming a
@@ -239,7 +245,7 @@ export function describeFFmpegFailure(err: unknown): Error {
  *
  * `@ffmpeg/core` is a devDependency; `npm run copy:wasm` copies
  * `ffmpeg-core.js` + `ffmpeg-core.wasm` into `public/` on dev and build (the
- * same step that vendors lamejs and heic2any into `public/vendor/`), and the
+ * same step that vendors lamejs and libheif into `public/vendor/`), and the
  * copies are gitignored so the ~31 MB binary never enters git history.
  *
  * Why not unpkg: the product promises "nothing leaves this tab", but a CDN

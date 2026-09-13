@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { getToolsByCategory } from "@/data/tools";
 import { CategoryHubPage } from "@/components/layout/CategoryHubPage";
+import { OG_LOCALE } from "@/lib/seo/locale";
 
 /*
   Hand-written and read by no test, so it rots the moment the category grows
@@ -38,6 +39,7 @@ export const metadata: Metadata = {
   ],
   alternates: { canonical: "/developer-tools" },
   openGraph: {
+    locale: OG_LOCALE,
     title: "Developer Tools — JSON, YAML, ZIP, Base64 & More | Transmute",
     description: "Free browser-based developer tools. Convert, format, encode, generate, unpack, and test — no sign-up required.",
     url: "/developer-tools",

@@ -65,8 +65,8 @@ const wasmBytes = statSync(QPDF_WASM).size;
 
 /*
  * The homepage DOWNLOAD column is binary-prefix and one decimal place —
- * measured against the rows that were already there: heic2any is 1,361,547 B
- * and reads "1.3 MB" (1.30 MiB; decimal would be 1.4), lamejs is 259,508 B and
+ * measured against the rows that were already there: the HEIC decoder is
+ * 1,513,632 B and reads "1.4 MB" (1.44 MiB; decimal would be 1.5), lamejs is 259,508 B and
  * reads "253 KB" (253.4 KiB; decimal would be 260). A new row has to use the
  * same ruler or the column stops being comparable.
  *
@@ -93,11 +93,45 @@ const libarchiveBytes = statSync(LIBARCHIVE_WASM).size;
  * them to, so the assertion holds on a clean checkout before any build.
  */
 const LAMEJS_VENDOR = resolve(root, "node_modules/@breezystack/lamejs/dist/lamejs.js");
-const HEIC2ANY_VENDOR = resolve(root, "node_modules/heic2any/dist/heic2any.js");
+/*
+ * The HEIC decoder is TWO files and the disclosed figure is their sum, for the
+ * same reason the OCR bundle below is five: image-convert.ts's loadLibheif()
+ * fetches the glue and then hands it the binary itself, so a browser that
+ * fetches one fetches both. Quoting the glue alone would understate the
+ * download by 16x.
+ */
+const LIBHEIF_FILES = [
+  "node_modules/libheif-js/libheif-wasm/libheif.js",
+  "node_modules/libheif-js/libheif-wasm/libheif.wasm",
+];
 const lamejsBytes = statSync(LAMEJS_VENDOR).size;
-const heic2anyBytes = statSync(HEIC2ANY_VENDOR).size;
+
+/*
+ * The OCR bundle is FIVE files, and the disclosed figure is their sum, because
+ * a browser that fetches one fetches all five: the page loads the library, the
+ * library spawns the worker, the worker pulls the core, the core pulls its
+ * binary and the model. Quoting any one of them would understate the download
+ * by between 2 and 80 times.
+ *
+ * The model is measured in vendor/ rather than node_modules — it has no npm
+ * package, which is why it is checked in — and the other four where copy:wasm
+ * reads them from, so all five hold on a clean checkout before any build.
+ */
+const TESSERACT_FILES = [
+  "node_modules/tesseract.js/dist/tesseract.esm.min.js",
+  "node_modules/tesseract.js/dist/worker.min.js",
+  "node_modules/tesseract.js-core/tesseract-core-simd-lstm.js",
+  "node_modules/tesseract.js-core/tesseract-core-simd-lstm.wasm",
+  "vendor/tessdata/eng.traineddata.gz",
+];
+const tesseractBytes = TESSERACT_FILES.reduce(
+  (sum, f) => sum + statSync(resolve(root, f)).size,
+  0,
+);
+const expectedTesseractSize = `${(tesseractBytes / 1024 / 1024).toFixed(1)} MB`;
+const libheifBytes = LIBHEIF_FILES.reduce((sum, f) => sum + statSync(resolve(root, f)).size, 0);
 const expectedLamejsSize = `${Math.round(lamejsBytes / 1024)} KB`;
-const expectedHeic2anySize = `${(heic2anyBytes / 1024 / 1024).toFixed(1)} MB`;
+const expectedLibheifSize = `${(libheifBytes / 1024 / 1024).toFixed(1)} MB`;
 
 /*
  * Same ruler, one artifact each.
@@ -237,7 +271,8 @@ describe("engine disclosure", () => {
       ["zxing-wasm", () => expectedZxingSize, zxingBytes, /qr|barcode|scan/i, "SCAN"],
       ["libarchive", () => expectedLibarchiveSize, libarchiveBytes, /archive|tar|7z|rar/i, "ARCHIVE"],
       ["lamejs", () => expectedLamejsSize, lamejsBytes, /mp3/i, "MP3"],
-      ["heic2any", () => expectedHeic2anySize, heic2anyBytes, /heic/i, "HEIC"],
+      ["libheif", () => expectedLibheifSize, libheifBytes, /heic/i, "HEIC"],
+      ["Tesseract", () => expectedTesseractSize, tesseractBytes, /text|ocr|scan/i, "OCR"],
     ] as const)("carries a %s row that quotes the artifact", (name, size, bytes, topic, when) => {
       const row = engineRow(name);
       expect(
@@ -336,6 +371,20 @@ describe("engine disclosure", () => {
     it.each([
       ["zxing-wasm", "zxing_reader.wasm"],
       ["libarchive-wasm", "libarchive.wasm"],
+      /*
+         tesseract.js is the strongest case for this scan and the one most
+         able to regress quietly. It is the only engine here that defaults to
+         TWO different public CDNs — one for the WebAssembly core, one for the
+         language model — and dropping any of the four overrides does not
+         throw: it silently starts fetching from someone else's server and the
+         tool goes on working. There is nothing to notice.
+
+         The artifact named is worker.min.js rather than the .wasm on purpose.
+         `ocr.ts` never writes the .wasm's filename at all — the core glue
+         resolves that itself, against worker.min.js's URL — so requiring the
+         binary here would fail the loader that is written correctly.
+      */
+      ["tesseract", "worker.min.js"],
     ])("loads %s from this origin's own %s", (pkg, artifact) => {
       const users = sources.filter(([, text]) => text.includes(pkg));
       expect(
@@ -407,7 +456,7 @@ describe("engine disclosure", () => {
      the positive that the served engines are all still rowed.
   */
   describe("only served artifacts get a row", () => {
-    const SERVED = ["qpdf", "zxing-wasm", "libarchive", "heic2any", "lamejs", "FFmpeg WASM"];
+    const SERVED = ["qpdf", "zxing-wasm", "libarchive", "libheif", "lamejs", "FFmpeg WASM", "Tesseract"];
     const BUNDLED_NAMES = ["pica", "utif2", "bwip-js", "svgo", "mammoth", "jszip"];
 
     it("rows every engine served as its own file", () => {

@@ -244,6 +244,42 @@ export function watchZxingRequests(page: Page): EngineWatch {
 }
 
 /**
+ * The OCR engine behind `/image-to-text`.
+ *
+ * The engine with the WORST default on the site, and therefore the one most
+ * worth guarding. tesseract.js resolves FOUR paths, and left alone two of them
+ * go to public CDNs — jsDelivr for the WebAssembly core, tessdata.projectnaptha
+ * .com for the language model. Dropping any override does not break the tool:
+ * it keeps working and quietly hands a third party the visitor's IP and the
+ * fact that they opened the OCR page, on a page whose entire claim is that the
+ * picture never leaves the tab. Nothing would surface that but this.
+ *
+ * The matcher deliberately recognises the FILENAMES rather than our directory,
+ * because the origin is what the assertion judges: a matcher written as
+ * `/^\/tesseract\//` would see none of jsDelivr's URLs and would therefore
+ * report a clean run precisely when the engine had gone to a CDN.
+ *
+ * `worker.min.js` is excluded from the pattern by requiring the tesseract
+ * prefix on it — several unrelated worker bundles in this app end in
+ * `.worker.js`, and a matcher loose enough to catch those would make the
+ * "was it fetched" arm pass on the wrong file.
+ *
+ * Both listeners matter and neither is redundant: the library and its worker
+ * script are fetched by the PAGE, while the core, its binary and the model are
+ * fetched from INSIDE the worker. A blob: worker would report to neither,
+ * which is one of the reasons `ocr.ts` sets `workerBlobURL: false`.
+ */
+export function watchTesseractRequests(page: Page): EngineWatch {
+  return watchEngineRequests(page, {
+    label: "tesseract",
+    isEngine: (url) =>
+      /\/(tesseract\.esm\.min\.js|tesseract-core[\w-]*\.(js|wasm)|worker\.min\.js)(\?|#|$)/.test(
+        url,
+      ) || /\.traineddata(\.gz)?(\?|#|$)/.test(url),
+  });
+}
+
+/**
  * The archive engine behind `/extract-archive`.
  *
  * `libarchive-wasm`'s glue locates `libarchive.wasm` relative to the script

@@ -87,6 +87,14 @@ export default defineConfig({
             FFmpeg fallback exists for. Excluded: the WebCodecs video specs,
             the screen recorder (both lean on Chromium launch flags), and the
             GIF/FFmpeg-tagged hardening cases pending a WebKit-tuned pass.
+
+            ⚠ `grepInvert` matches the FILE PATH as well as the test title, so
+            a spec merely NAMED for GIF vanishes from this project with the run
+            still green. The gifenc/omggif animation verbs must run here —
+            WebKit is the only engine without `ImageDecoder`, so it is the only
+            place the fallback decoder is exercised at all — and their spec is
+            called `animation-verbs.spec.ts` for exactly that reason. Do not
+            rename it back.
           */
           name: "conversion-webkit",
           testDir: "./src/__tests__/e2e/conversion",

@@ -255,9 +255,37 @@ export async function playAndExtractFrames(
       };
       signal?.addEventListener("abort", abortRun);
 
-      const processFrame = async () => {
+      /*
+        ⚠ THE PARAMETERS ARE LOAD-BEARING, AND THEY WERE MISSING UNTIL 2026-09-13.
+
+        `requestVideoFrameCallback` hands its callback `(now, metadata)`, and
+        `metadata.mediaTime` is the PRESENTATION TIMESTAMP of the frame being
+        handed over. This callback used to take no parameters at all and read
+        `video.currentTime` instead — the playhead, sampled whenever the
+        callback happened to be dispatched, which is not the same number and is
+        not even biased the same way between engines.
+
+        Measured on `sample-video.mp4` (24 fps, 41.667 ms per frame):
+          · Chromium: `currentTime - mediaTime` ranges −28.3 ms to −10.8 ms
+          · WebKit  : the same quantity ranges  +0.9 ms to +32.0 ms
+        So the error is comparable to a whole frame period and points in
+        OPPOSITE directions depending on the engine. Any consumer comparing a
+        frame's time against a planned moment was therefore deciding on a
+        drifting clock — which is exactly how `frame-export.spec.ts` came to
+        fail about two runs in three, with a different symptom per project.
+
+        `mediaTime` is a property of the frame. It does not drift.
+      */
+      const processFrame = async (_now?: number, metadata?: { mediaTime?: number }) => {
         if (stopped) return;
 
+        /*
+          The playhead still decides when to STOP: `endTime` bounds the window
+          playback is walking, and `currentTime` is what walks it. `mediaTime`
+          lags it by up to a frame, so ending on `mediaTime` would run the walk
+          fractionally past its window. The two numbers answer two questions
+          and this is the one `currentTime` is right for.
+        */
         const currentTime = video.currentTime;
         if (currentTime >= endTime) {
           stopped = true;
@@ -269,7 +297,16 @@ export async function playAndExtractFrames(
         // Pause to apply backpressure while we process this frame
         video.pause();
 
-        const timestampUs = Math.round((currentTime - startTime) * 1_000_000);
+        /*
+          …and the frame's own timestamp is what identifies the PICTURE. The
+          fallback exists because `metadata` is typed optional here (the
+          callback signature is not in TypeScript's DOM lib and is declared by
+          hand); every engine that implements rVFC supplies it — verified in
+          Chromium and WebKit — so the fallback is a type guard rather than a
+          supported path.
+        */
+        const frameTime = typeof metadata?.mediaTime === "number" ? metadata.mediaTime : currentTime;
+        const timestampUs = Math.round((frameTime - startTime) * 1_000_000);
         try {
           await onFrame(video, timestampUs);
         } catch (err) {

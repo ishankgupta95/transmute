@@ -4,6 +4,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
   ENGINE_BUNDLES,
+  SMALL_BYTE_SHARE_PCT,
+  SMALL_ENGINE_BYTES,
+  SMALL_TOOL_SHARE_PCT,
   TOOLS_NEEDING_FFMPEG,
   TOOLS_NEEDING_ONLY_SMALL_ENGINES,
   TOOLS_WHERE_FFMPEG_IS_A_FALLBACK,
@@ -16,7 +19,6 @@ import {
   removeBundle,
   storageEstimate,
   supportsOffline,
-  totalBundleBytes,
   type EngineBundle,
 } from "@/lib/pwa/offline";
 import { cn } from "@/lib/utils/cn";
@@ -32,13 +34,28 @@ import { cn } from "@/lib/utils/cn";
   column uses, and the page leads with the SHAPE of the choice rather than with
   a list of switches:
 
-    133 of the 179 tools need no engine at all. Of the 46 that do, 14 are
-    covered by everything-except-FFmpeg together — a twentieth of the bytes —
-    and the other 32 need the 32 MB core.
+    Most of the registered tools need no engine at all. Of the ones that do,
+    everything-except-FFmpeg covers a good share between them, and the rest
+    need the FFmpeg core on its own.
 
-  Someone who reads that and stores the small half has bought most of the
-  value for 5% of the download, and they can only make that trade if they are
+  ⚠ THE NUMBERS ARE NOT REPEATED IN THIS COMMENT, deliberately. An earlier
+  version wrote them out as "133 of the 179 … 46 … 14 … 32" and they were
+  stale within a fortnight — every one of them is an exported constant
+  (`TOOLS_WITHOUT_ENGINES` and friends) that `offline.test.ts` already pins to
+  `tools.length`. A comment that restates a derived value has no gate behind
+  it and will drift; the constants are the record.
+
+  Someone who reads that and stores the small half buys most of the value for
+  a small share of the download, and they can only make that trade if they are
   told the shape before they are shown the buttons.
+
+  ⚠ NO FIGURE IN THAT PARAGRAPH IS TYPED HERE. It used to say "a twentieth of
+  the bytes" and "5% of the download", and both were false when written — see
+  the dated note over SMALL_BYTE_SHARE_PCT in `offline.ts`, which deliberately
+  does not state a CURRENT ratio because the one it originally quoted went
+  stale within two days of being written. An English fraction is unfalsifiable
+  by arithmetic, so the shares are divided out of ENGINE_BUNDLES and the engine
+  COUNT is `ENGINE_BUNDLES.length`; a new engine rewrites the sentence itself.
 
   EVERY STATE WORD ON THIS PAGE IS DERIVED. "Stored" comes from
   `cachedBundleIds()`, which re-reads the Cache API on every call because
@@ -61,8 +78,6 @@ const exact = (bytes: number) => bytes.toLocaleString("en-US");
 
 const TOTAL_TOOLS = TOOLS_WITHOUT_ENGINES + TOOLS_WITH_ENGINES;
 const FFMPEG = ENGINE_BUNDLES.find((b) => b.id === "ffmpeg") as EngineBundle;
-const SMALL_BUNDLES = ENGINE_BUNDLES.filter((b) => b.id !== "ffmpeg");
-const SMALL_BYTES = totalBundleBytes(SMALL_BUNDLES);
 
 type RowState =
   | { kind: "idle" }
@@ -194,7 +209,7 @@ export function OfflineSettings() {
         <Stat
           label="EVERYTHING EXCEPT FFMPEG"
           value={`${TOOLS_NEEDING_ONLY_SMALL_ENGINES} tools`}
-          meta={`${formatEngineBytes(SMALL_BYTES)} · ${exact(SMALL_BYTES)} bytes`}
+          meta={`${formatEngineBytes(SMALL_ENGINE_BYTES)} · ${exact(SMALL_ENGINE_BYTES)} bytes`}
         />
         <Stat
           label="FFMPEG ALONE"
@@ -204,10 +219,12 @@ export function OfflineSettings() {
       </div>
 
       <p className={BODY}>
-        Seven of the eight engines below add up to {formatEngineBytes(SMALL_BYTES)} between them
-        and cover {TOOLS_NEEDING_ONLY_SMALL_ENGINES} tools. FFmpeg is the eighth, and on its own it
-        is {formatEngineBytes(FFMPEG.bytes)} for {TOOLS_NEEDING_FFMPEG} — a twentieth of the bytes
-        for a third of the tools, which is worth knowing before you choose.
+        {ENGINE_BUNDLES.length - 1} of the {ENGINE_BUNDLES.length} engines below add up to{" "}
+        {formatEngineBytes(SMALL_ENGINE_BYTES)} between them and cover{" "}
+        {TOOLS_NEEDING_ONLY_SMALL_ENGINES} tools. FFmpeg is the last one, and on its own it is{" "}
+        {formatEngineBytes(FFMPEG.bytes)} for {TOOLS_NEEDING_FFMPEG}: {SMALL_BYTE_SHARE_PCT}% of
+        the bytes covers {SMALL_TOOL_SHARE_PCT}% of the tools that need an engine, which is worth
+        knowing before you choose.
       </p>
 
       {supported === false && (

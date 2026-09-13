@@ -10,13 +10,46 @@
  * worker's own URL hangs the production build.
  */
 
-export const ANIMATED_GIF_WARNING = "This GIF is animated — only its first frame was kept.";
+/*
+  ⚠ THE GIF SENTENCE NOW POINTS SOMEWHERE, and the WebP one deliberately does
+  not. Until 2026-09-10 neither could: this site had no animation decoder, so
+  "only its first frame was kept" was the whole truth and there was nothing to
+  suggest. `/split-gif` changed that for GIF — it reads every frame in every
+  browser, because it falls back to a bundled reader where `ImageDecoder` is
+  missing.
+
+  Animated WebP has no such answer. The native decoder handles it in Chromium
+  and Firefox but WebKit has no `ImageDecoder` at all and the fallback reads
+  GIF only, so a WebP tool would work for two visitors in three. Naming a tool
+  that fails for Safari users would be worse than saying nothing, so the WebP
+  sentence stays exactly as it was.
+*/
+export const ANIMATED_GIF_WARNING =
+  "This GIF is animated — only its first frame was kept. To keep every frame, use Split GIF into Frames.";
 export const ANIMATED_WEBP_WARNING = "This WebP is animated — only its first frame was kept.";
 
 /** The TIFF counterpart, built where the page count is known (utif2 decode). */
 export function tiffPageWarning(pageCount: number): string | null {
   if (!Number.isFinite(pageCount) || pageCount <= 1) return null;
   return `This TIFF has ${pageCount} pages — only the first page was kept.`;
+}
+
+/**
+ * The HEIC counterpart, built where the image count is known (libheif decode).
+ *
+ * "Images", not "frames" or "pages", because that is what the container calls
+ * them and what the user sees: a HEIC holding a burst has several equal
+ * top-level pictures, none of them a frame of an animation.
+ *
+ * The count is libheif's list of top-level images, which deliberately excludes
+ * the alpha plane, thumbnails and auxiliary pictures — a depth map or an HDR
+ * gain map is not a second photo, and a warning that said so would be a false
+ * alarm on an ordinary iPhone photo. Measured 2026-09-12 against a HEIC whose
+ * alpha rides in its own `auxC` item: libheif reports ONE image for it.
+ */
+export function heicImageWarning(imageCount: number): string | null {
+  if (!Number.isFinite(imageCount) || imageCount <= 1) return null;
+  return `This HEIC holds ${imageCount} images — only the main one was kept.`;
 }
 
 /**

@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { act, render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 import type {
@@ -587,13 +587,36 @@ describe("ExtractPdfImagesUI — failures and limits", () => {
 
     expect(objectUrls.created).toHaveLength(2);
 
-    // Fake timers only for the teardown: the revoke is deferred by a second,
-    // for the reason `useObjectUrl` gives — revoking synchronously aborts an
-    // <img> that is still loading the URL when the list swaps under it.
+    /*
+      Fake timers only for the teardown: the revoke is deferred by a second,
+      for the reason `useObjectUrl` gives — revoking synchronously aborts an
+      <img> that is still loading the URL when the list swaps under it.
+
+      ⚠ THE `act(() => {})` IS NOT DECORATION. This block depends on an
+      ORDERING that nothing else enforces: the timer must be created AFTER
+      `useFakeTimers()` (or it belongs to the real clock and advancing does
+      nothing) and BEFORE `advanceTimersByTime` (or there is nothing to
+      advance). The timer is created by `useObjectUrl`'s effect CLEANUP, which
+      React runs as a passive effect — so the assertion below was relying on
+      React having flushed that cleanup inside `fireEvent`, which is a
+      scheduling detail rather than a guarantee. The empty `act` flushes
+      pending passive effects synchronously and makes the ordering explicit.
+
+      ⚠ HONESTLY: this is not a proven fix for anything. This test failed twice
+      in about seven runs on 2026-09-13 and then passed **40 consecutive runs**
+      (20 filtered, 20 whole-file) plus every full-suite run after, so the
+      original failure was never reproduced and its cause was never confirmed.
+      What is fixed is a real ordering dependency found by READING. If it fails
+      again, this comment is the first place to look — and do not widen the
+      1500, which is not the variable.
+    */
     vi.useFakeTimers();
     try {
       fireEvent.click(screen.getByText("CHANGE FILE"));
-      vi.advanceTimersByTime(1500);
+      act(() => {});
+      act(() => {
+        vi.advanceTimersByTime(1500);
+      });
     } finally {
       vi.useRealTimers();
     }

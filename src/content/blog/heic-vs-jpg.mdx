@@ -88,17 +88,17 @@ Don't convert when:
 
 Most online converters upload your photos to a server. Beyond the privacy tradeoff, that's also slow — for a typical 30-photo batch, you'll wait for upload, queue time, processing, and download. A browser-based converter avoids all of this.
 
-The [HEIC to JPG converter](/heic-to-jpg) on Transmute decodes HEIC in your browser using the [`heic2any`](https://github.com/alexcorvi/heic2any) library, then re-encodes as JPG using the Canvas API. Drop in a folder of photos, choose a quality, click download. The files never leave your device.
+The [HEIC to JPG converter](/heic-to-jpg) on Transmute decodes HEIC in your browser using [`libheif`](https://github.com/strukturag/libheif) — the reference open-source HEIF decoder — then re-encodes as JPG using the Canvas API. Drop in a folder of photos, choose a quality, click download. The files never leave your device. If a file holds more than one picture, the converter keeps the one the file marks as its main image and tells you the others were left behind.
 
 A few things to know about the conversion itself:
 
 **Quality 92 is the sweet spot.** JPG quality is logarithmic, not linear. The difference between 100 and 92 is invisible to the human eye but cuts file size by ~30%. The difference between 92 and 85 is visible only on inspection but cuts another ~25%. Below 85, you start seeing artifacts on skin and sky.
 
-**You're going from 16-bit to 8-bit.** HEIC stores 16-bit color; JPG only supports 8-bit. The converter has to dither smooth gradients to the 8-bit palette. Most photos don't suffer visibly, but if you have one with a clean blue sky or an out-of-focus background, you may see faint banding in the converted JPG. There's nothing the converter can do about this — it's a fundamental limit of JPG.
+**A 10-bit HEIC becomes an 8-bit JPG.** iPhones write HEIC at 8 or 10 bits per channel; JPG only supports 8. Where the source was 10-bit that extra precision is discarded on the way through the canvas, and a clean blue sky or an out-of-focus background is where you might see faint banding for it. There is nothing the converter can do about that — it is a limit of JPG, not of the decoder.
 
 **Live Photos lose their motion component.** A Live Photo is a HEIC still + a 3-second .MOV companion. JPG has no equivalent of this, so converting to JPG keeps only the still frame. If the motion matters, [convert the .MOV separately](/mp4-to-mp3) (extract audio) or [trim it as video](/video-trimmer).
 
-**EXIF metadata is preserved.** Camera, lens, GPS, exposure settings, and timestamps all carry over. If you specifically want to inspect what's in your HEIC files before deciding to convert, the [EXIF viewer](/exif-viewer) shows everything.
+**EXIF metadata is NOT preserved.** The photo is decoded to pixels and re-encoded through the Canvas API, so camera, lens, GPS, exposure settings and timestamps are all dropped — which is often exactly what you want before posting one. If you need to read them first, the [EXIF viewer](/exif-viewer) shows everything that is in the original.
 
 ## What about WebP and AVIF?
 

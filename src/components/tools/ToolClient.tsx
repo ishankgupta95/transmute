@@ -19,9 +19,15 @@ import {
   ImageSplitterClient,
   SocialMediaImageResizerClient,
   CompressPngClient,
+  ImageToTextClient,
   IcoToPngClient,
   Base64ToImageClient,
   ChangeImageDpiClient,
+  ResizeGifClient,
+  GifSpeedChangerClient,
+  ReverseGifClient,
+  SplitGifClient,
+  GifMakerClient,
 } from "@/components/tools/ImageToolClients";
 import {
   MergePdfClient,
@@ -52,6 +58,7 @@ import {
   FlattenPdfClient,
   RemoveMetadataClient,
   PdfEditorClient,
+  OcrPdfClient,
 } from "@/components/tools/PdfToolClients";
 import { MarkdownToPdfClient } from "@/components/tools/MarkdownToPdfClient";
 import {
@@ -134,6 +141,10 @@ import {
   QrCodeReaderClient,
   SvgOptimizerClient,
   DocxToMarkdownClient,
+  VcfToCsvClient,
+  IcsToCsvClient,
+  CsvMarkdownTableClient,
+  BcryptGeneratorClient,
 } from "@/components/tools/DevToolClients";
 
 /**
@@ -199,6 +210,28 @@ export function ToolClient({ tool }: { tool: Tool }) {
       return <SocialMediaImageResizerClient tool={tool} />;
     case "compress-png":
       return <CompressPngClient tool={tool} />;
+    case "image-to-text":
+      return <ImageToTextClient tool={tool} />;
+    case "ocr-pdf":
+      return <OcrPdfClient />;
+    case "vcf-to-csv":
+      return <VcfToCsvClient />;
+    case "ics-to-csv":
+      return <IcsToCsvClient />;
+    case "resize-gif":
+      return <ResizeGifClient />;
+    case "gif-speed-changer":
+      return <GifSpeedChangerClient />;
+    case "reverse-gif":
+      return <ReverseGifClient />;
+    case "split-gif":
+      return <SplitGifClient />;
+    case "gif-maker":
+      return <GifMakerClient tool={tool} />;
+    case "csv-markdown-table":
+      return <CsvMarkdownTableClient />;
+    case "bcrypt-generator":
+      return <BcryptGeneratorClient />;
     case "ico-to-png":
       return <IcoToPngClient tool={tool} />;
     // The one tool here that takes no file, so the only one whose client

@@ -33,11 +33,41 @@ function makeFile(text: string, name: string): File {
   return file;
 }
 
+/*
+  WAITS FOR THE RESULT PANE, NOT THE SOURCE PANE — and the difference is a race.
+
+  "Source lines" is the wrong signal. `handleFiles` sets the file and CLEARS the
+  text before it awaits `picked.arrayBuffer()`:
+
+      setFile(picked); setFileText("");   // ← React can commit here
+      const buffer = await picked.arrayBuffer();
+      setFileText(read.text);             // ← and again here
+
+  At that first commit `showDropZone` is already false, so the source pane is on
+  screen with nothing in it, while the result pane — gated on `output` being
+  non-empty — is not rendered at all. Awaiting "Source lines" is satisfied by
+  that intermediate commit, and every caller below then reads "Sorted lines"
+  SYNCHRONOUSLY. When the read has not landed yet, that throws "unable to find",
+  pointing at an assertion about sorting rather than at this helper.
+
+  React's async `act()` inside `findBy*` normally drains the pending read before
+  returning, which is why the window is narrow rather than permanent — 0 hits in
+  400 local iterations. It is not zero: the full suite runs 216 files across
+  every core, and a starved worker is exactly the condition that widens it.
+
+  The result pane is the signal that the tool has actually finished. The
+  explicit timeout replaces RTL's 1s default, which the 5,000-line truncation
+  case below can plausibly exceed under that same load.
+
+  ⚠ This helper therefore requires `text` to produce a NON-EMPTY result. Every
+  caller does. A future test that drops content sorting to nothing needs to wait
+  on something else, or it will sit here until the timeout.
+*/
 async function dropFile(text: string, name = "hosts.txt") {
   (globalThis as { __nextFile?: File }).__nextFile = makeFile(text, name);
   render(<SortDedupeLinesUI />);
   fireEvent.click(screen.getByText("drop"));
-  await screen.findByLabelText("Source lines");
+  await screen.findByLabelText("Sorted lines", undefined, { timeout: 5_000 });
 }
 
 const warnings = () =>

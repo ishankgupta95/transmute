@@ -4,7 +4,6 @@ import type { FAQ } from "@/data/faqs";
 import type { Tool } from "@/data/tools";
 import { getToolBySlug, getToolsByCategory, tools } from "@/data/tools";
 import { getCategoryBySlug } from "@/data/categories";
-import { getPostsLinkingToTool } from "@/data/posts";
 import { getWorkspaceTool, pipelineByArchetype } from "@/data/workspace";
 import { ToolSchema } from "@/components/seo/ToolSchema";
 import { BreadcrumbSchema } from "@/components/seo/BreadcrumbSchema";
@@ -45,8 +44,6 @@ const SPEC_ROW =
 const SPEC_KEY = "flex-none text-text-muted";
 const SPEC_VALUE = "min-w-0 truncate text-right text-neutral-300";
 const H2 = "m-0 font-display text-xl leading-[1.2] font-medium text-text-primary";
-const ROW =
-  "flex items-center gap-3.5 border-b border-border py-[13px] transition-[padding-left] duration-200 hover:pl-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent";
 
 /**
  * The Nocturne signature rule: a hairline that fades to transparent over
@@ -80,7 +77,6 @@ export function ToolPageLayout({
   const relatedTools = tool.relatedTools
     .map((slug) => getToolBySlug(slug))
     .filter((t): t is Tool => t !== undefined);
-  const blogPosts = getPostsLinkingToTool(tool.slug);
 
   const breadcrumbs = [
     { name: "Home", href: "/" },
@@ -484,7 +480,7 @@ export function ToolPageLayout({
           </>
         )}
 
-        {(aboutText || faqs.length > 0 || blogPosts.length > 0 || relatedTools.length > 0) && (
+        {(aboutText || faqs.length > 0 || relatedTools.length > 0) && (
           <div aria-hidden="true" className={RULE} />
         )}
 
@@ -516,29 +512,6 @@ export function ToolPageLayout({
                     {faq.answer}
                   </p>
                 </details>
-              ))}
-            </div>
-          </section>
-        )}
-
-        {blogPosts.length > 0 && (
-          <section className={DOC_SECTION}>
-            <h2 className={H2}>From the blog</h2>
-            <div className="flex flex-col">
-              {blogPosts.map((post) => (
-                <Link key={post.slug} href={`/blog/${post.slug}`} className={ROW}>
-                  <span className="flex min-w-0 flex-1 flex-col gap-1">
-                    <span className="font-body text-[13.5px] leading-[1.3] font-medium text-text-primary">
-                      {post.title}
-                    </span>
-                    <span className="line-clamp-1 font-body text-[11.5px] text-text-muted">
-                      {post.description}
-                    </span>
-                  </span>
-                  <span className="flex-none font-mono text-[10px] whitespace-nowrap text-text-muted">
-                    {post.readingTime} MIN
-                  </span>
-                </Link>
               ))}
             </div>
           </section>

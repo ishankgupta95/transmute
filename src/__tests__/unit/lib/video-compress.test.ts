@@ -155,6 +155,23 @@ import type { CompressionPreset } from "@/lib/tools/video-compress";
 describe("compressVideo", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    /*
+      `clearAllMocks` clears CALLS, not IMPLEMENTATIONS — which is why every
+      mock whose behaviour a test overrides has to be re-established here by
+      hand, the way the five below are.
+
+      `mockVideoEncoderEncode` was the one missing from that list, and it is
+      the most dangerous omission in the file: the muxer-metadata tests hand it
+      an `emitChunk()` implementation that drives the encoder's `output`
+      callback with no `decoderConfig`, which is precisely the state the engine
+      refuses to mux. Left installed it fails every later test with
+      WEBCODECS_MP4_METADATA_MESSAGE — "This browser can't write the compressed
+      MP4" — a message about a browser capability, for a test that never
+      mentioned encoders. It stayed invisible only because those tests are
+      declared near the bottom of the file; `--sequence.shuffle` moves them up
+      and 18-21 preset tests go red at once.
+    */
+    mockVideoEncoderEncode.mockReset();
     videoEncoderInits.length = 0;
     mockAudioEncoderIsConfigSupported.mockResolvedValue({ supported: true });
     mockResolveDuration.mockImplementation((video: { duration: number }) =>

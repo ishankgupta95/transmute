@@ -341,7 +341,8 @@ adoptions**.
 `tools.ts` (ToolType + entry, and `CONVERTER_TOOL_TYPES`) →
 `HOW_TO_STEPS_BY_TOOL_TYPE` → the category client barrel → `ToolClient.tsx` →
 `EXPECTED_CLIENT` in `ToolClient.test.tsx` (plus `UI_FOR_CLIENT`) → `faqs.ts`
-(≥3) → `posts.ts` relatedTools (≥1) → `workspace.ts` → restart dev, then
+(≥3) → ~~`posts.ts` relatedTools (≥1)~~ (blog removed 2026-09-18; `posts.ts` is
+gone) → `workspace.ts` → restart dev, then
 `node scripts/measure-tool-surfaces.mjs` → `offline.ts` counts +
 `offline.test.ts` `tools.length`. Plus `ConversionMatrix.tsx` `ROUTES` for any
 format→format tool, and **the licence notices for ANY new npm dependency**
@@ -359,7 +360,8 @@ session walked all of it — 35 files.** Beyond the above:
 `name, handles, size, when`) · the prose *under* that table · `/privacy` ·
 `categories.ts` `engine` + `download` + its ceiling comments · `CategoryHubPage`
 · `sw-policy.ts` `ENGINE_DIRS` · `offline.ts` bundle (`bytes`, `urls`, and the
-ruler derivation comment) · `/licenses` · the blog · and the tests that pin each
+ruler derivation comment) · `/licenses` · ~~the blog~~ (blog removed 2026-09-18 —
+drop this bullet for future engine swaps) · and the tests that pin each
 one: `engine-disclosure.test.ts`, `offline.test.ts`, `category-hub-claims.test.tsx`
 (`CEILING` / `CEILING_ARTIFACT`), `offline-copy-claims.test.tsx`,
 `sw-policy.test.ts`, `vendor-loader-retry.test.ts`.

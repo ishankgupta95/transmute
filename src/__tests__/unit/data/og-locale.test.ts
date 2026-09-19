@@ -12,14 +12,19 @@ import { HTML_LANG, OG_LOCALE } from "@/lib/seo/locale";
  * category hub — carried none. `og:title` was present on 221, so the pages
  * were not missing their Open Graph block; they were missing one FIELD of it.
  *
+ * Those counts are that 2026-09-13 measurement and have not been re-taken. The
+ * blog was removed on 2026-09-18 and its posts are no longer among the pages
+ * described above; the two blog files that declared their own `openGraph` went
+ * with it, taking the source-side count from nine files to seven.
+ *
  * The cause is a Next.js rule that is easy to be wrong about: a page's
  * `openGraph` REPLACES the root layout's, it does not merge with it. So the
  * root declaring `locale: "en_US"` bought nothing for any page that declared
- * an `openGraph` block of its own, and eight files do.
+ * an `openGraph` block of its own, and seven files do.
  *
- * A literal in nine separate metadata blocks is a thing you forget in the
- * tenth. They now all read `OG_LOCALE`, and this checks that they do — over
- * SOURCE, so it holds on a clean checkout with no build.
+ * A literal repeated across that many separate metadata blocks is a thing you
+ * forget in the next one. They now all read `OG_LOCALE`, and this checks that
+ * they do — over SOURCE, so it holds on a clean checkout with no build.
  */
 
 const root = resolve(__dirname, "../../../..");
@@ -47,7 +52,7 @@ describe("every page declares its locale, from one source", () => {
   it("finds the openGraph blocks at all", () => {
     // The scan is the gate. If this glob ever breaks, everything below passes
     // over an empty list and reports success for a site with no locale at all.
-    expect(openGraphFiles.length).toBeGreaterThanOrEqual(8);
+    expect(openGraphFiles.length).toBeGreaterThanOrEqual(7);
     expect(openGraphFiles).toContain("src/lib/seo/tool-metadata.ts");
     expect(openGraphFiles).toContain("src/app/layout.tsx");
   });

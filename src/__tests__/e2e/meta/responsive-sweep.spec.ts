@@ -1,7 +1,8 @@
 import { test, expect, type Page, type ConsoleMessage } from "@playwright/test";
+import { existsSync, readdirSync } from "node:fs";
+import { join, resolve } from "node:path";
 import { tools } from "../../../data/tools";
 import { categories } from "../../../data/categories";
-import { posts } from "../../../data/posts";
 
 /**
  * The systematic surface sweep (plan.md Phase 1): every route, at every
@@ -28,8 +29,8 @@ const ROUTES: string[] = [
   ...tools.map((t) => `/${t.slug}`),
   "/all-tools",
   "/workspace",
-  "/blog",
-  ...posts.map((p) => `/blog/${p.slug}`),
+  "/open",
+  "/offline-access",
   "/about",
   "/privacy",
   "/licenses",
@@ -80,12 +81,51 @@ async function overflowWidth(page: Page): Promise<number> {
 test("the sweep covers the whole route table", () => {
   expect(tools.length).toBeGreaterThan(60);
   expect(categories.length).toBe(5);
-  expect(posts.length).toBeGreaterThan(0);
   expect(ROUTES.length).toBe(
-    // home + categories + tools + /all-tools + /workspace + /blog + posts
-    // + about/privacy/licenses
-    1 + categories.length + tools.length + 1 + 1 + 1 + posts.length + 3,
+    // home + categories + tools + /all-tools + /workspace + /open
+    // + /offline-access + about/privacy/licenses
+    1 + categories.length + tools.length + 1 + 1 + 1 + 1 + 3,
   );
+});
+
+/*
+ * THE ARITHMETIC ABOVE COUNTS THE ARRAY, NOT THE SITE — WHICH IS HOW TWO
+ * ROUTES WENT UNSWEPT.
+ *
+ * `/open` (the share-target landing route) and `/offline-access` are both real
+ * static pages `npm run build` emits, and neither was in ROUTES. The guard did
+ * not catch it, because its expected value was derived from the literal it was
+ * checking: someone writing the array and the sum in the same edit gets a green
+ * test for whatever they happened to list. Every tool and category route is
+ * safe from that — those come from a registry — but the hand-written tail is
+ * exactly where the omission was, and hand-counting is exactly what could not
+ * see it.
+ *
+ * So the tail is checked against the filesystem instead. A `page.tsx` inside a
+ * `src/app` directory IS the route table for these pages: one directory per
+ * static route, plus the root `page.tsx` for "/" and `[slug]` for the
+ * registry-driven tool pages, both excluded here. A new page directory is
+ * swept the moment it lands, and until someone adds it to ROUTES this goes red
+ * naming it.
+ */
+test("every static page directory in src/app is swept", () => {
+  const appDir = resolve(__dirname, "../../../app");
+  const routeDirs = readdirSync(appDir, { withFileTypes: true })
+    .filter((e) => e.isDirectory() && e.name !== "[slug]")
+    .filter((e) => existsSync(join(appDir, e.name, "page.tsx")))
+    .map((e) => `/${e.name}`);
+
+  // Positive control: if the scan ever stops finding directories, the
+  // assertion below passes over an empty list and proves nothing.
+  expect(routeDirs.length, "no page directories found under src/app").toBeGreaterThan(5);
+  expect(existsSync(join(appDir, "page.tsx")), 'the root "/" page').toBe(true);
+
+  const unswept = routeDirs.filter((r) => !ROUTES.includes(r));
+  expect(
+    unswept,
+    "these are real static routes the build emits but the sweep never visits — " +
+      "add them to ROUTES and update the count above",
+  ).toEqual([]);
 });
 
 for (const viewport of VIEWPORTS) {

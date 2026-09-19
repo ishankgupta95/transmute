@@ -4,7 +4,6 @@ import { dirname, join } from "node:path";
 import { tools, getToolBySlug } from "@/data/tools";
 import { categories } from "@/data/categories";
 import { faqs, PRIVACY_FAQ } from "@/data/faqs";
-import { posts, getPostsLinkingToTool } from "@/data/posts";
 import { workspaceTools } from "@/data/workspace";
 import { svgFallbackSize } from "@/lib/tools/image-convert";
 
@@ -198,40 +197,6 @@ describe("FAQ count (§1.2: ≥4 rendered per tool, including PRIVACY_FAQ)", () 
     (slug) => {
       const rendered = [...(faqs[slug] ?? []), PRIVACY_FAQ];
       expect(rendered.length).toBeGreaterThanOrEqual(FAQ_MIN_RENDERED);
-    },
-  );
-});
-
-describe("blog post invariants (§1.1, §1.4)", () => {
-  it("every blog post links to ≥3 tools", () => {
-    for (const post of posts) {
-      expect(
-        post.relatedTools.length,
-        `${post.slug} only links to ${post.relatedTools.length} tools`,
-      ).toBeGreaterThanOrEqual(3);
-    }
-  });
-
-  it("every relatedTools slug in a blog post resolves to a real tool", () => {
-    for (const post of posts) {
-      for (const slug of post.relatedTools) {
-        expect(getToolBySlug(slug), `${post.slug} → ${slug}`).toBeDefined();
-      }
-    }
-  });
-
-  it("every blog post slug is unique", () => {
-    const slugs = new Set(posts.map((p) => p.slug));
-    expect(slugs.size).toBe(posts.length);
-  });
-
-  it.each(tools.map((t) => [t.slug]))(
-    "%s has ≥1 companion blog post",
-    (slug) => {
-      expect(
-        getPostsLinkingToTool(slug).length,
-        `tool "${slug}" is not referenced by any post`,
-      ).toBeGreaterThanOrEqual(1);
     },
   );
 });

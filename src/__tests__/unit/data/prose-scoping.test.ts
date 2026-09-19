@@ -9,8 +9,16 @@ import { resolve, join } from "node:path";
  * rules. Declared in `globals.css` it landed in the ONE stylesheet every page
  * render-blocks on — including the 207 of 222 pages that never render a
  * `.prose` element. Moving the `@plugin` into `src/styles/prose.css`, imported
- * only by the three files that use it, took the shared sheet from 129,437 B
- * raw / 19,804 gzipped to 104,943 / 17,170 (measured 2026-09-13).
+ * only by the files that use it, took the shared sheet from 129,437 B raw /
+ * 19,804 gzipped to 104,943 / 17,170 (measured 2026-09-13).
+ *
+ * Every figure above is that 2026-09-13 measurement and none has been re-taken.
+ * The blog was removed on 2026-09-18 and took all 15 of those `.prose` pages
+ * with it — they were the blog posts; the two Markdown tools render their prose
+ * from an `ssr: false` chunk, which is why the built HTML never counted them.
+ * So the consumer list below is two files where it was three, and the export is
+ * 210 pages where it was 226 (measured 2026-09-18). The split is what this file
+ * guards, and that is unchanged.
  *
  * Two ways that silently comes undone, and this file fails on both:
  *   1. Someone adds `@plugin "@tailwindcss/typography"` back to globals.css —
@@ -75,10 +83,12 @@ describe("the typography plugin stays off the critical path", () => {
     expect(
       globals.includes("@tailwindcss/typography"),
       "globals.css is the sheet every page render-blocks on; the typography " +
-        "plugin costs ~3.7 KB gzipped there and is used by 15 of 222 pages",
+        "plugin costs ~3.7 KB gzipped there and is used only by " +
+        "MarkdownToHtmlUI and MarkdownToPdfUI",
     ).toBe(false);
-    // Positive control: the plugin has to be declared SOMEWHERE, or the blog
-    // is unstyled and the assertion above passes for the wrong reason.
+    // Positive control: the plugin has to be declared SOMEWHERE, or the two
+    // Markdown tools are unstyled and the assertion above passes for the
+    // wrong reason.
     expect(scoped).toContain('@plugin "@tailwindcss/typography"');
   });
 
@@ -118,7 +128,6 @@ describe("the typography plugin stays off the critical path", () => {
     );
     expect(consumers.length, "the prose-class scan matched nothing at all").toBeGreaterThan(0);
     expect(consumers.sort()).toEqual([
-      "src/app/blog/[slug]/page.tsx",
       "src/components/tools/MarkdownToHtmlUI.tsx",
       "src/components/tools/MarkdownToPdfUI.tsx",
     ]);

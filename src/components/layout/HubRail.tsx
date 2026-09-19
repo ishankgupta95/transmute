@@ -15,8 +15,7 @@ export interface HubRailSection {
  *
  * It used to hardcode the first section as active, which on a `lg:sticky` rail
  * meant it advertised a position it never updated for the entire scroll. The
- * ≤120px rule is the one `ArticleRail` uses, so both rails now mark the
- * heading the reader is actually under.
+ * ≤120px rule now marks the heading the reader is actually under.
  */
 export function HubRail({ sections }: { sections: HubRailSection[] }) {
   const [activeId, setActiveId] = useState(sections[0]?.id ?? "");

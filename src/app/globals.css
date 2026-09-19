@@ -5,7 +5,8 @@
   `src/__tests__`. That is not harmless: classes that exist only to exercise
   `cn()` — `bg-red-500`, `bg-blue-500`, `text-red-500`, `text-blue-500` — were
   emitted into the one stylesheet every page render-blocks on, and are used by
-  ZERO elements across all 222 built pages (measured 2026-09-13). Test files
+  ZERO elements across all 222 built pages (measured 2026-09-13; the
+  export is 210 pages since the blog was removed on 2026-09-18). Test files
   are not the product; they do not get to add bytes to it.
 */
 @source not "../__tests__";

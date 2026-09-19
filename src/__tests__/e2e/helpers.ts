@@ -84,7 +84,7 @@ export async function assertSeoBasics(
     /**
      * When set, the meta description length must fall in this range.
      * Defaults to a generous 50-200 cap. Tool pages should pass [120, 160]
-     * to mirror the unit-test contract; homepage/category/blog pages have
+     * to mirror the unit-test contract; homepage/category pages have
      * longer copy and only need to be present + non-trivial.
      */
     descriptionRange?: [number, number];
@@ -117,7 +117,7 @@ export async function assertSeoBasics(
   expect(canonical, "canonical link must be set").toBeTruthy();
 
   // Open Graph + Twitter tags. og:title is set by the root layout and is
-  // expected on every page. og:image is overridden by some category/blog
+  // expected on every page. og:image is overridden by some category
   // page metadata blocks that don't declare images, so it's checked
   // separately when callers opt-in via `requireOgImage: true`.
   await expect(page.locator('meta[property="og:title"]')).toHaveCount(1);

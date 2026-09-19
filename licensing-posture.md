@@ -302,7 +302,10 @@ the two attribution lines on `/licenses`.
   (`app/page.tsx:107–118`, incl. the MuPDF row and pdf-lib row scope),
   `LiveEngine.tsx:34`, `CompressPdfUI.tsx` MUPDF badge, `about/page.tsx:76`,
   `privacy/page.tsx:31`, six `workspace.ts` rows labeled `MUPDF WASM`,
-  `src/content/blog/how-to-merge-pdfs-in-browser.mdx:23`, `CLAUDE.md`.
+  `src/data/tools.ts:1535` (merge-pdf `aboutText`: "runs on pdf-lib, a pure-JavaScript
+  PDF library" — repointed here 2026-09-18 from the now-deleted
+  `src/content/blog/how-to-merge-pdfs-in-browser.mdx:23`, which made the identical claim),
+  `CLAUDE.md`.
 - The privacy page's "no third-party requests" claim survives ONLY with same-origin
   `/vendor/` cures — never a CDN.
 - `pdf-engine.test.ts` is a mupdf-mock harness — rewrite against real pdf-lib (runs in

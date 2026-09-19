@@ -58,7 +58,6 @@ test.describe("navigation", () => {
     }
 
     // And the static pages.
-    await expect(footer.locator('a[href="/blog"]')).toBeVisible();
     await expect(footer.locator('a[href="/about"]')).toBeVisible();
     await expect(footer.locator('a[href="/privacy"]')).toBeVisible();
 
@@ -79,15 +78,6 @@ test.describe("navigation", () => {
     await expect(toolCrumbs.locator('a[href="/"]')).toHaveText(/^Home$/i);
     // Tool breadcrumb should link back to the category hub.
     await expect(toolCrumbs.locator('a[href="/image-tools"]')).toBeVisible();
-  });
-
-  test("blog index loads and lists posts", async ({ page }) => {
-    await page.goto("/blog");
-    await expect(page.locator("h1")).toHaveCount(1);
-    // Each post links via /blog/<slug>; expect at least one card.
-    const postLinks = page.locator('a[href^="/blog/"]');
-    await expect(postLinks.first()).toBeVisible();
-    expect(await postLinks.count()).toBeGreaterThanOrEqual(1);
   });
 
   test("category navbar links work from inside a tool page", async ({ page }) => {

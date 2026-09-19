@@ -83,7 +83,6 @@ export function MobileNav() {
 
   const links = [
     ...categories.map((c) => ({ href: `/${c.slug}`, label: c.name })),
-    { href: "/blog", label: "Blog" },
   ];
 
   /*
@@ -103,8 +102,6 @@ export function MobileNav() {
       <nav className="px-4 py-6">
         <div className="flex flex-col gap-0.5">
           {links.map((l, i) => {
-            // Same rule as the desktop navbar, including sub-routes — the
-            // drawer previously marked nothing as current on any route.
             const active = pathname === l.href || pathname.startsWith(`${l.href}/`);
             return (
               <Link

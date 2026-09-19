@@ -1481,6 +1481,10 @@ All engine work goes through `pdf-engine-core.ts` → `pdf.worker.js` (leaf-impo
   **123**. Every remaining Wave 3 item (the audio matrix alone is ~10 pages) pushes further past
   it. This is a real decision — raise the cap on evidence, or start canonicalising variants — and
   it is now blocking, not theoretical. Note the rollback lever is unchanged and still cheap.
+  *(This 123 is a dated historical count from 2026-09-04 — kept as-is rather than recomputed,
+  since the item itself is superseded and retired and this number is the record of what the
+  sitemap was at the time the cap was retired. `/blog` + 10 posts were removed 2026-09-18; the
+  current sitemap total is derived from the live registry, not from this line.)*
 - [x] ⚠ **Honest limits — DONE 2026-09-04. The audit AND the fix.**
   *(**A new registry field, `practicalLimitNote`, carries the ceiling a tool HAS but does not
   ENFORCE.** `maxSizeMB` keeps its documented meaning — the limit the tool actually enforces — and
@@ -2892,6 +2896,10 @@ All engine work goes through `pdf-engine-core.ts` → `pdf.worker.js` (leaf-impo
     plugin returning to `globals.css`, and a component using `prose` without
     importing the sheet — which is how the FIRST version of this split shipped,
     with the blog fixed and the two Markdown tools silently unstyled.
+  *(Blog removed 2026-09-18 — this whole bullet is a historical measurement from
+  the 2026-09-13 pass. `prose.css` now has two consumers, not three; the byte
+  figures above are not re-derived here and should not be quoted as today's size
+  without re-measuring the built `out/`.)*
 
   **⚠ ONE CLAIM FROM THE SCOPE WAS REFUTED, recorded so nobody re-pulls it:**
   "IBM Plex Mono weight 600 is declared and never used" is FALSE. It is used —

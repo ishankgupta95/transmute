@@ -1,19 +1,39 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import {
   renderMarkdown,
   sanitizeMarkdownHtml,
   _resetHighlighterForTests,
 } from "@/lib/tools/markdown-to-pdf";
 
+/*
+  The load failure is a FLAG, not a second mock, and that is the whole point.
+
+  The "falls back gracefully when Shiki fails to load" test used to install its
+  own `vi.doMock("shiki/core")` that throws — a mock this module cannot undo,
+  which is why it carried a "keep this test last in the file" comment. That
+  comment is not a guard: nothing enforces it, and `--sequence.shuffle` walks
+  straight through it. When that test runs early, every later Shiki test gets
+  the throwing highlighter, falls back to `md-pdf-code-fallback`, and fails
+  claiming Shiki did not highlight — while the code under test is fine.
+
+  Routing the failure through a flag the shared mock reads makes the state
+  reversible, so `afterEach` can put it back and the file no longer has an
+  order requirement to remember.
+*/
+const shiki = vi.hoisted(() => ({ failsToLoad: false }));
+
 // Stub Shiki — the real package pulls in lang/theme JSON via dynamic imports
 // that jsdom cannot resolve. We only need to verify our pipeline calls into
 // the highlighter and that fallback works when it doesn't.
 vi.mock("shiki/core", () => ({
-  createHighlighterCore: vi.fn(async () => ({
-    codeToHtml: (code: string, opts: { lang: string }) =>
-      `<pre class="shiki" data-lang="${opts.lang}"><code><span style="color:#005CC5">${code}</span></code></pre>`,
-    getLoadedLanguages: () => ["js", "ts", "python"],
-  })),
+  createHighlighterCore: vi.fn(async () => {
+    if (shiki.failsToLoad) throw new Error("boom");
+    return {
+      codeToHtml: (code: string, opts: { lang: string }) =>
+        `<pre class="shiki" data-lang="${opts.lang}"><code><span style="color:#005CC5">${code}</span></code></pre>`,
+      getLoadedLanguages: () => ["js", "ts", "python"],
+    };
+  }),
 }));
 
 vi.mock("shiki/engine/javascript", () => ({
@@ -22,6 +42,10 @@ vi.mock("shiki/engine/javascript", () => ({
 
 beforeEach(() => {
   _resetHighlighterForTests();
+});
+
+afterEach(() => {
+  shiki.failsToLoad = false;
 });
 
 describe("sanitizeMarkdownHtml", () => {
@@ -124,16 +148,29 @@ describe("renderMarkdown — code blocks", () => {
     expect(darkHtml).toContain('class="shiki"');
   });
 
-  // Keep this test last in the file — it overrides the module mock and
-  // intentionally cannot be cleanly restored within the same module load.
+  // No longer has to run last: the failure is a flag the shared mock reads,
+  // and `afterEach` clears it. See the note at the top of the file.
   it("falls back gracefully when Shiki fails to load", async () => {
-    vi.doMock("shiki/core", () => ({
-      createHighlighterCore: vi.fn(async () => {
-        throw new Error("boom");
-      }),
-    }));
+    shiki.failsToLoad = true;
     _resetHighlighterForTests();
     const html = await renderMarkdown("```js\nfoo()\n```\n");
     expect(html).toContain("foo()");
+    expect(html).not.toContain('class="shiki"');
+  });
+
+  /*
+     The positive control for the flag itself. Without it, `failsToLoad`
+     silently doing nothing would leave the test above green — it asserts a
+     FALLBACK, which is also what a working highlighter produces if the code
+     under test regressed. This one proves the two states differ.
+  */
+  it("highlights again once the load failure clears", async () => {
+    shiki.failsToLoad = true;
+    _resetHighlighterForTests();
+    expect(await renderMarkdown("```js\nfoo()\n```\n")).not.toContain('class="shiki"');
+
+    shiki.failsToLoad = false;
+    _resetHighlighterForTests();
+    expect(await renderMarkdown("```js\nfoo()\n```\n")).toContain('class="shiki"');
   });
 });

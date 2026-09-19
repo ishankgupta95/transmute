@@ -5,29 +5,27 @@ import { join, resolve } from "node:path";
 /*
  * The engine-disclosure gate.
  *
- * Three pages make a promise about what this site downloads:
+ * Two pages make a promise about what this site downloads:
  *
  *   - the homepage table, framed as exhaustive ("No black box. These are the
  *     engines compiled into the page, and what each one costs you on first
  *     use") with a DOWNLOAD and a LOADED column;
  *   - the privacy policy's "External resources" section, which enumerates
- *     every library a tool fetches;
- *   - the "Verifying Transmute itself" section of
- *     why-browser-based-tools-are-private.mdx, whose entire argument is that a
- *     reader can settle the question in the Network tab.
+ *     every library a tool fetches.
  *
- * All three were written when the PDF tools were pure JavaScript, and all
- * three survived the arrival of a 2.3 MB WebAssembly engine — the privacy
- * policy still said "The PDF tools no longer pull a WebAssembly engine at
- * all", the homepage table had no qpdf row, and the blog post said the four
- * security tools were the only exception and "That is the whole list". A
- * reader who followed the blog post's own instructions would have caught all
- * three in about thirty seconds; no test would have.
+ * Both were written when the PDF tools were pure JavaScript, and both survived
+ * the arrival of a 2.3 MB WebAssembly engine — the privacy policy still said
+ * "The PDF tools no longer pull a WebAssembly engine at all", and the homepage
+ * table had no qpdf row. A third surface, a long-form post that walked a
+ * reader through the same check in the Network tab, was wrong in the same way
+ * and has since been deleted along with the rest of that section. A reader
+ * with DevTools open would have caught all of them in about thirty seconds; no
+ * test would have.
  *
  * This is that test. It reads the SHIPPED BYTES out of vendor/qpdf/ and checks
  * the copy against them, so the disclosure cannot drift from the artifact —
- * rebuild qpdf at a different size and the homepage's DOWNLOAD figure and the
- * blog's byte counts go red until someone updates them.
+ * rebuild qpdf at a different size and the homepage's DOWNLOAD figure goes red
+ * until someone updates it.
  *
  * Every negative assertion below is paired with a positive one. A negative
  * search ("the false sentence is gone") passes identically on a file that
@@ -40,7 +38,6 @@ import { join, resolve } from "node:path";
 const root = process.cwd();
 const HOMEPAGE = resolve(root, "src/app/page.tsx");
 const PRIVACY = resolve(root, "src/app/privacy/page.tsx");
-const BLOG = resolve(root, "src/content/blog/why-browser-based-tools-are-private.mdx");
 const LICENSES = resolve(root, "src/app/licenses/page.tsx");
 const QPDF_GLUE = resolve(root, "vendor/qpdf/qpdf.js");
 const QPDF_WASM = resolve(root, "vendor/qpdf/qpdf.wasm");
@@ -58,7 +55,6 @@ const LIBARCHIVE_WASM = resolve(root, "node_modules/libarchive-wasm/dist/libarch
 const homepage = readFileSync(HOMEPAGE, "utf8");
 const licenses = readFileSync(LICENSES, "utf8");
 const privacy = readFileSync(PRIVACY, "utf8");
-const blog = readFileSync(BLOG, "utf8");
 
 const glueBytes = statSync(QPDF_GLUE).size;
 const wasmBytes = statSync(QPDF_WASM).size;
@@ -206,7 +202,6 @@ describe("engine disclosure", () => {
     // The positive control for every negative assertion below.
     expect(homepage.length).toBeGreaterThan(1000);
     expect(privacy.length).toBeGreaterThan(1000);
-    expect(blog.length).toBeGreaterThan(1000);
     expect(glueBytes).toBeGreaterThan(0);
     expect(wasmBytes).toBeGreaterThan(0);
     // The two artifacts copy:wasm stages into the origin root. If either path
@@ -221,7 +216,6 @@ describe("engine disclosure", () => {
     expect(homepage).toContain("Every engine this site serves you as its own file");
     expect(licenses.length).toBeGreaterThan(1000);
     expect(privacy).toContain("External resources");
-    expect(blog).toContain("Verifying Transmute itself");
   });
 
   describe("homepage ENGINES table", () => {
@@ -292,6 +286,29 @@ describe("engine disclosure", () => {
     it("names qpdf in the list of fetched libraries", () => {
       expect(privacy).toContain("qpdf");
       expect(privacy).toContain("/qpdf.wasm");
+    });
+
+    /*
+       WHEN an engine is fetched is a separate claim from WHETHER one is, and
+       it used to be pinned somewhere else: the privacy blog post said qpdf
+       arrives on the first file read rather than on page load, and this file
+       asserted over that post. The post was deleted with the rest of the blog
+       on 2026-09-18. The privacy policy makes the same claim in its own words,
+       so the assertion moves here rather than being dropped — the timing is the
+       load-bearing half of "opening a tool hands nobody else your IP address".
+    */
+    it("says the engines wait for a file, not for the page", () => {
+      /*
+         Matched WITH its "None of the …" head, and that is the whole point:
+         the bare tail "is fetched when you open the page" is equally a
+         substring of the OPPOSITE claim ("each one is fetched when you open
+         the page"), so a toContain on it would go green on the sentence this
+         exists to forbid. The count is a `\w+` because the number-word moves
+         every time an engine is added — the list-length gate below is what
+         pins the word itself.
+      */
+      expect(privacy).toMatch(/None of the \w+ is fetched when you open the page/);
+      expect(privacy).toContain("the first time one of those PDF tools actually reads a file");
     });
 
     it("does not deny that the PDF tools fetch a WebAssembly engine", () => {
@@ -410,34 +427,6 @@ describe("engine disclosure", () => {
         users.some(([, text]) => text.includes("__NEXT_ROUTER_BASEPATH")),
         `the ${pkg} loader hardcodes its path instead of prefixing __NEXT_ROUTER_BASEPATH, so it breaks the day a basePath comes back`,
       ).toBe(true);
-    });
-  });
-
-  describe("why-browser-based-tools-are-private.mdx", () => {
-    it("quotes the exact byte counts a reader will see in the Network tab", () => {
-      // Exact, not rounded: these come off a checked-in artifact, and the
-      // post's whole argument is that DevTools settles the question.
-      expect(blog).toContain(glueBytes.toLocaleString("en-US"));
-      expect(blog).toContain(wasmBytes.toLocaleString("en-US"));
-    });
-
-    it("does not claim the security tools are the only PDF pages that fetch an engine", () => {
-      // /compress-pdf pulls ~445 KB of pdf-lib from /workers/ and /pdf-to-jpg
-      // pulls a ~1.2 MB pdf.js worker, so both halves of this were false.
-      expect(blog).not.toContain("Most of the PDF tools fetch no engine at all");
-      expect(blog).not.toContain("That is the whole list");
-      // ...and the replacement has to actually mention them.
-      expect(blog).toContain("/workers/pdf.worker.js");
-      expect(blog).toContain("pdf.js");
-    });
-
-    it("does not say qpdf is fetched on opening the page", () => {
-      // Measured: QpdfToolShell's pre-flight runs from handleFiles (on the
-      // drop) for protect/unlock/permissions, and repair-pdf passes no
-      // pre-flight at all, so its fetch waits for the click. A page-load-only
-      // trace records zero qpdf requests.
-      expect(blog).not.toContain("the first time you open one");
-      expect(blog).toContain("not when you open the page");
     });
   });
 

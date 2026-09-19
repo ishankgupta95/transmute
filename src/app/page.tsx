@@ -109,9 +109,8 @@ const WORKSHOPS: Record<string, { blurb: string; icon: React.ReactNode }> = {
   settle any of them against a line in the Network tab. (Not every row is
   pinned yet — pdf-lib's "320 KB" is the one figure here that answers to no
   file: the chunk /workers/ actually serves for it measured 431,490 bytes on
-  this build, and the blog post quotes ~445 KB. It is flagged, not fixed, in
-  this pass because inventing a fourth number for it is worse than leaving one
-  wrong one visible.)
+  this build. It is flagged, not fixed, in this pass because inventing a third
+  number for it is worse than leaving one wrong one visible.)
 
   It was being broken by the two rows that are no longer here. `pica` (36 KB)
   and `utif2` (96 KB) are not served files: they are bundled into whichever
@@ -530,10 +529,10 @@ export default function Home() {
       <section className="px-4 py-16 md:px-11">
         <div className="mx-auto grid max-w-[1440px] items-start gap-10 lg:grid-cols-[260px_1fr] lg:gap-14">
           {/* 74px is the shared "pin clear of the 58px navbar" offset — the
-              hubs, the blog rails and the tool aside all use it. The Home
-              Redesign doc draws this one rail at `sticky;top:82px`, but Site
-              Pages draws the same rail at 74px in all three of its instances,
-              so the docs disagree 3-to-1 and the shared offset wins. */}
+              hubs and the tool aside both use it. The Home Redesign doc draws
+              this one rail at `sticky;top:82px`, but Site Pages draws the
+              same rail at 74px in all three of its instances, so the docs
+              disagree 3-to-1 and the shared offset wins. */}
           <div className="lg:sticky lg:top-[82px]">
             <h2 className="m-0 mb-3 font-display text-2xl leading-[1.2] font-medium tracking-[-0.02em] text-text-primary">
               Reached for most

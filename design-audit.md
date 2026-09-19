@@ -66,25 +66,25 @@
 | BatchPane `4 THREADS` / `WORKER POOL 4/8` | ✅ | Phase 4 (2026-08-10): BatchPane (and every seeded pane) is deleted — batch tools now mount their REAL queue table in the workspace, with the pool's real thread count (`n OF m DONE · k THREADS`, Phase 3). |
 | Canvases process real files | ✅ | Phase 4 (2026-08-10): the workspace mounts the real `*UI.tsx` components through the shared `ToolClient` switch — same components as the tool pages, never a fork. One real conversion per archetype pinned by `conversion/workspace.spec.ts` (Chromium + WebKit). |
 
-## Site Pages doc → hubs, blog, about, privacy, 404
+## Site Pages doc → hubs, about, privacy, 404
+
+> **2026-09-18 — blog removed.** Seven blog-specific audit rows (index stat tiles; post
+> contents-rail/TRY IT HERE/ALSO MENTIONED; index post order/tags/blurbs; the four-row
+> ALSO MENTIONED count; per-post TRY IT HERE; the GFM comparison-table row; and the
+> `HEIC→JPG` hub-route-typography row) were dropped from this section — the audited surface
+> no longer exists. The dropped comparison-table row had flagged `remark-gfm` as not
+> installed; that package has now been removed from the project entirely along with the blog.
 
 | Element | Status | Notes |
 | --- | --- | --- |
 | Category hub: sticky rail `ON THIS PAGE`, `I HAVE A…` chips, stat tiles, two-section split | ✓ | `I HAVE A…` present in `CategoryHubPage`; verify chips + `DOWNLOAD 0 KB` tile in sweep. |
-| Blog index: stat tiles POSTS/READING/UPDATED, numbered two-column list | ✓ | Verified 2026-08-09: `POSTS 8 · READING 81 MIN · UPDATED MAY 3, 2026`, derived from real posts. |
-| Blog post: contents rail, read-progress, TRY IT HERE panel, ALSO MENTIONED | ✓ | `ArticleRail` owns contents+progress. Doc puts `62% READ` in the top bar — rail placement is a fine structural match; confirm in sweep. |
 | About: capabilities grid + "Built by Ishank" link | ✓ | Verified 2026-08-09: tagged capability grid + ishank.dev link present. |
 | Privacy: green shield card "Your files never leave your device." + numbered sections | ✓ | App copy is *more honest* than the doc (see cross-cutting row). |
 | 404: "Nothing converts to this." + search + five hub links | ✓ | E2E asserts branded copy; count derives. |
 | Hub row copy: doc's one-clause editorial line | ✅ | 2026-08-30: `Tool.hubLine` (optional) added and seeded verbatim from the doc's `utilities`/`converters` arrays for all 22 image tools; the hub renders `hubLine ?? description`, so the other four hubs still show the (clamped) SEO blurb until the owner commissions lines for them. One doc string corrected for honesty: the favicon generator ships **eight** assets (6 PNGs + .ico + manifest), not the doc's "Seven". |
 | Hub row names: doc's short forms | ✅ | 2026-08-30: the hub now renders `getWorkspaceTool(slug)?.name ?? tool.name`, which already carried the doc's `Resize Image` / `Crop Image` / `EXIF Viewer`. Registry names are untouched — 11 tools get a shorter hub label, matching the workspace rail. |
-| Blog index: post order, tags, index blurbs | ✅ | 2026-08-30: sort is `date, then longest read` (every post shares 2026-05-03, so the date sort alone was a no-op and numbering fell back to registry order) — reproduces the doc's exact 01–08. `BlogPost.indexBlurb` seeded from the doc; `BlogPost.tag` overrides the derived label on the two `IMAGE FORMATS` posts and the `PRIVACY` one, and `postTag()` no longer falls back to `relatedTools[0]` before the privacy keyword check. Dates are the doc's `3 MAY 2026` (UTC-pinned) and the tile is the coarser `MAY 2026`. |
-| Blog post: `ALSO MENTIONED` is four rows | ✅ | 2026-08-30: trimmed at the render site (`relatedTools` stays long — it is also the internal-link audit list). Was 9 rows on HEIC (duplicating the TRY IT HERE tool) and 25 on the dev-tools post. |
-| Blog post: `TRY IT HERE` on every post | ✅ | 2026-08-30: the three posts without a `primaryTool` got one — `modern-image-formats…` → `jpg-to-webp`, `browser-based-developer-tools` → `json-formatter`, `why-browser-based-tools-are-private` → `compress-pdf`. Owner call on which tool each headlines. |
-| Blog post: doc's bordered/rounded comparison table | ⚠ | The `prose-table-*`/`prose-th-*`/`prose-td-*` treatment is in place, but **`remark-gfm` is not installed**, so the GFM tables in `heic-vs-jpg`, `modern-image-formats…` and `video-to-gif-tradeoffs` render as raw `\| --- \| --- \|` paragraph text today. Styling is inert until the plugin lands. The doc's mono/accent value columns cannot come from Markdown at all — that needs an MDX component, flagged not faked. |
 | Focus rings on rails, prose links, about/privacy links | ✅ | 2026-08-30: DS readme's 2px accent `:focus-visible` added to `HubRail`, `ArticleRail`, `prose-a` and the two ishank.dev links. Measured live at 2px / 2px offset / #9184d9 (they transition in over 200ms — read the settled value, not the first frame). |
 | `I HAVE A…` chips are selectable in the doc | ◇ | Format filtering is not a shipped feature; the chips stay static labels rather than faking a filter. |
-| Doc's hub route typography (`HEIC→JPG`) | ◇ | The app keeps ` → ` spacing — it is load-bearing (`blog/[slug]` splits the route on `" → "` for the TRY IT HERE pair). |
 
 ## Logo doc → mark, icons, OG
 

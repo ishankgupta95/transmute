@@ -80,11 +80,6 @@ test.describe("SEO validation", () => {
     await assertSeoBasics(page, { expectedJsonLdTypes: ["BreadcrumbList"] });
   });
 
-  test("blog index exposes Blog + BreadcrumbList JSON-LD", async ({ page }) => {
-    await page.goto("/blog");
-    await assertSeoBasics(page, { expectedJsonLdTypes: ["Blog", "BreadcrumbList"] });
-  });
-
   for (const slug of SAMPLE_TOOLS) {
     test(`tool page ${slug} renders the full SEO scaffolding`, async ({ page }) => {
       await page.goto(`/${slug}`);

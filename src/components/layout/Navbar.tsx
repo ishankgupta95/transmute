@@ -25,7 +25,6 @@ export function Navbar() {
       href: `/${c.slug}`,
       label: SHORT_LABEL[c.slug] ?? c.name,
     })),
-    { href: "/blog", label: "Blog" },
   ];
 
   return (
@@ -41,9 +40,6 @@ export function Navbar() {
 
         <div className="ml-3.5 hidden items-center gap-0.5 lg:flex">
           {links.map((l) => {
-            // Sub-routes count: /blog/heic-vs-jpg is still "Blog". Safe for the
-            // hubs — tool routes are top-level slugs (/compress-image), never
-            // nested under a category — so only /blog/* changes behaviour.
             const active =
               l.href === "/"
                 ? pathname === "/"

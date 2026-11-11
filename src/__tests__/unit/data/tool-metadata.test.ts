@@ -2,10 +2,24 @@ import { describe, expect, it } from "vitest";
 import { readFileSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { tools, getToolBySlug } from "@/data/tools";
+import { getToolCopy } from "@/data/tool-copy";
 import { categories } from "@/data/categories";
 import { faqs, PRIVACY_FAQ } from "@/data/faqs";
 import { workspaceTools } from "@/data/workspace";
 import { svgFallbackSize } from "@/lib/tools/image-convert";
+
+/**
+ * The server-only copy for a tool. `aboutText`, `relatedTools` and `titleTag`
+ * moved off `Tool` into src/data/tool-copy.ts so they stop shipping to the
+ * client — see that file's header. Throws rather than returning undefined: a
+ * registry entry with no copy entry is a bug these suites should catch.
+ */
+const copyOf = (slug: string) => {
+  const c = getToolCopy(slug);
+  if (!c) throw new Error(`${slug} has no tool-copy entry`);
+  return c;
+};
+
 
 /** src/, for the few claims below that live in a page or on disk. */
 const SRC = join(dirname(new URL(import.meta.url).pathname), "../../../");
@@ -104,15 +118,15 @@ const OVER_CEILING_WAIVERS = [
 const UNDER_FLOOR_BUDGET = 100;
 
 describe("aboutText word count (§1.2: 200–400 words)", () => {
-  const overCeiling = tools.filter((t) => wordCount(t.aboutText) > ABOUT_MAX_WORDS);
-  const underFloor = tools.filter((t) => wordCount(t.aboutText) < ABOUT_MIN_WORDS);
+  const overCeiling = tools.filter((t) => wordCount(copyOf(t.slug).aboutText) > ABOUT_MAX_WORDS);
+  const underFloor = tools.filter((t) => wordCount(copyOf(t.slug).aboutText) < ABOUT_MIN_WORDS);
 
   it.each(tools.filter((t) => !OVER_CEILING_WAIVERS.includes(t.slug)).map((t) => [t.slug, t]))(
     "%s aboutText is at or under the ceiling",
     (slug, tool) => {
       expect(
-        wordCount(tool.aboutText),
-        `${slug} is ${wordCount(tool.aboutText)} words; the ceiling is ${ABOUT_MAX_WORDS}`,
+        wordCount(copyOf(tool.slug).aboutText),
+        `${slug} is ${wordCount(copyOf(tool.slug).aboutText)} words; the ceiling is ${ABOUT_MAX_WORDS}`,
       ).toBeLessThanOrEqual(ABOUT_MAX_WORDS);
     },
   );
@@ -127,7 +141,7 @@ describe("aboutText word count (§1.2: 200–400 words)", () => {
 
   it("the waiver list only shrinks", () => {
     expect(
-      overCeiling.map((t) => `${t.slug} (${wordCount(t.aboutText)})`).sort(),
+      overCeiling.map((t) => `${t.slug} (${wordCount(copyOf(t.slug).aboutText)})`).sort(),
       "a new aboutText is over the ceiling; trim it rather than waiving it",
     ).toHaveLength(OVER_CEILING_WAIVERS.length);
   });
@@ -136,7 +150,7 @@ describe("aboutText word count (§1.2: 200–400 words)", () => {
     expect(
       underFloor.length,
       `${underFloor.length} tools are under ${ABOUT_MIN_WORDS} words; the recorded backlog is ${UNDER_FLOOR_BUDGET}. Shortest: ${underFloor
-        .map((t) => `${t.slug} (${wordCount(t.aboutText)})`)
+        .map((t) => `${t.slug} (${wordCount(copyOf(t.slug).aboutText)})`)
         .sort()
         .slice(0, 3)
         .join(", ")}`,
@@ -148,7 +162,7 @@ describe("relatedTools resolution (§1.2)", () => {
   it.each(tools.map((t) => [t.slug, t]))(
     "%s relatedTools all resolve to existing tools",
     (slug, tool) => {
-      for (const related of tool.relatedTools) {
+      for (const related of copyOf(tool.slug).relatedTools) {
         expect(getToolBySlug(related), `${slug} → ${related}`).toBeDefined();
       }
     },
@@ -157,14 +171,14 @@ describe("relatedTools resolution (§1.2)", () => {
   it.each(tools.map((t) => [t.slug, t]))(
     "%s relatedTools does not list itself",
     (slug, tool) => {
-      expect(tool.relatedTools).not.toContain(slug);
+      expect(copyOf(tool.slug).relatedTools).not.toContain(slug);
     },
   );
 
   it.each(tools.map((t) => [t.slug, t]))(
     "%s has no duplicate relatedTools entries",
     (_slug, tool) => {
-      expect(new Set(tool.relatedTools).size).toBe(tool.relatedTools.length);
+      expect(new Set(copyOf(tool.slug).relatedTools).size).toBe(copyOf(tool.slug).relatedTools.length);
     },
   );
 });
@@ -216,7 +230,7 @@ const copyFor = (slug: string) => {
   return [
     tool!.description,
     tool!.subtitle,
-    tool!.aboutText,
+    copyOf(slug).aboutText,
     ...(faqs[slug] ?? []).flatMap((f) => [f.question, f.answer]),
   ].join("\n");
 };

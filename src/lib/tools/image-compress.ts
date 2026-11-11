@@ -11,6 +11,7 @@ import {
   MAX_DIMENSION_STEPS,
   nextScale,
   scaledToTargetWarning,
+  searchQuality,
   stepDimensions,
 } from "./target-size";
 
@@ -52,39 +53,6 @@ function neverGrow(file: File, blob: Blob, fileName: string): ProcessedResult {
     return { blob: file, fileName: file.name, originalSize: file.size, newSize: file.size };
   }
   return { blob, fileName, originalSize: file.size, newSize: blob.size };
-}
-
-/**
- * The quality half of the target-size engine: binary-search encode quality
- * for the largest result at or under `targetBytes`. Returns that under-target
- * blob (null when quality alone cannot get there) plus the smallest blob
- * seen, which drives the dimension step and is the honest fallback when
- * nothing fits. Mirrored in workers/image.worker.ts.
- */
-async function searchQuality(
-  encode: (quality: number) => Promise<Blob>,
-  targetBytes: number,
-): Promise<{ under: Blob | null; smallest: Blob }> {
-  let lo = 0.01;
-  let hi = 1.0;
-  let smallest = await encode(hi);
-  if (smallest.size <= targetBytes) return { under: smallest, smallest };
-
-  let under: Blob | null = null;
-  for (let i = 0; i < 10; i++) {
-    const mid = (lo + hi) / 2;
-    const candidate = await encode(mid);
-    if (candidate.size < smallest.size) smallest = candidate;
-    if (candidate.size <= targetBytes) {
-      under = candidate;
-      lo = mid;
-      // Close enough (within 5% of target) — stop refining.
-      if (candidate.size > targetBytes * 0.95) break;
-    } else {
-      hi = mid;
-    }
-  }
-  return { under, smallest };
 }
 
 export async function compressImage(

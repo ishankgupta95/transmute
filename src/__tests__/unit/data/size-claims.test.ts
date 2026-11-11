@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { tools, getToolBySlug, type Tool } from "@/data/tools";
+import { WEBCRYPTO_MAX_BYTES } from "@/lib/tools/hash-digest";
 
 /*
  * THE SIZE-CLAIM GATE
@@ -309,13 +310,35 @@ describe("size claims — the absolute claim and the known ceilings stay disjoin
   });
 
   it("the hash tools really do stream — the claim above rests on it", () => {
-    // Without this the assertion above is just "we deleted a sentence". The
-    // sentence is only safe to delete while the code streams.
+    /*
+      Without this the assertion above is just "we deleted a sentence". The
+      sentence is only safe to delete while no SIZE is memory-bound.
+
+      This used to read `not.toContain("arrayBuffer()")`, a blunt proxy for
+      that: no buffering anywhere meant no ceiling anywhere. Since 2026-11-11
+      hash-digest.ts has a buffered fast path — `crypto.subtle` is 5.2x faster
+      and has no incremental API, so going fast means holding the file — and
+      that proxy would now forbid the optimisation rather than the hazard.
+
+      The hazard was never `arrayBuffer` itself; it was materialising a file
+      too big to materialise. So what is pinned is the BOUND. The streaming
+      path must still exist, and the threshold that routes to the buffered one
+      must stay far below the renderer's single-allocation wall (~2 GB, derived
+      at the top of ffmpeg-loader.ts). At 128 MiB an allocation is
+      unremarkable, every larger file still streams, and "NO SIZE CAP" stays
+      true because nothing is refused at any size.
+
+      The behaviour behind it — that an over-threshold file really does reach
+      the streaming path — is pinned in hash-digest-streaming.test.ts ("routes
+      a file too big to buffer to the streaming path"), and the two paths are
+      proved to produce identical digests in hash-digest-webcrypto.test.ts.
+    */
     const digest = codeOnly(readSrc("lib/tools/hash-digest.ts"));
-    expect(digest).toContain("blob.stream()");
-    expect(digest, "a whole-file read would restore the ceiling silently").not.toContain(
-      "arrayBuffer()",
-    );
+    expect(digest, "the streaming path is what makes the claim true").toContain("blob.stream()");
+    expect(
+      WEBCRYPTO_MAX_BYTES,
+      "the buffered path must stay far below the single-allocation wall",
+    ).toBeLessThanOrEqual(256 * 1024 * 1024);
     for (const file of ["HashGeneratorUI.tsx", "FileChecksumUI.tsx"]) {
       expect(
         codeOnly(readSrc(`${TOOL_UI_DIR}/${file}`)),

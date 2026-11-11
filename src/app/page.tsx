@@ -181,10 +181,17 @@ const WORKSHOPS: Record<string, { blurb: string; icon: React.ReactNode }> = {
   choosing this site over an uploader is entitled to know which of their pixels
   get rewritten.
 
-  lamejs has its own row for the same reason libheif does: it is no longer
+  libmp3lame has its own row for the same reason libheif does: it is not
   bundled into the audio worker but fetched from /vendor/ at the first MP3
   encode, so folding it into Web Audio's "0 KB, built in" would hide a real
-  254 KB request. Size is the byte count of the file we copy into public/vendor/.
+  226 KB request. Size is the byte count of the files we copy into
+  public/vendor/ — here the Emscripten glue plus its WebAssembly binary, which
+  always arrive together.
+
+  It was lamejs, the pure-JavaScript port of this same library, until
+  2026-11-11. The replacement is LAME itself compiled to single-threaded SIMD
+  WebAssembly (scripts/build-libmp3lame-wasm.sh), which is both smaller and
+  several times faster; the row's figure moved 253 KB -> 226 KB with it.
 
   zxing-wasm and libarchive are the developer hub's first real downloads, added
   2026-09-05 with /qr-code-reader and /extract-archive. Both npm packages expect
@@ -255,7 +262,7 @@ const ENGINES = [
   { name: "Tesseract", handles: "Reading printed text out of a photo, screenshot or scan — the OCR engine, its worker and the English language model, which is the only language served", size: "4.9 MB", when: "ON FIRST OCR" },
   { name: "WebCodecs", handles: "Video compression and WebM→MP4, hardware H.264 encoding", size: "0 KB", when: "BUILT IN" },
   { name: "Web Audio", handles: "Decoding, trimming and merging audio", size: "0 KB", when: "BUILT IN" },
-  { name: "lamejs", handles: "MP3 encoding — the one codec browsers will decode but not write", size: "253 KB", when: "ON FIRST MP3" },
+  { name: "libmp3lame", handles: "MP3 encoding — the one codec browsers will decode but not write", size: "226 KB", when: "ON FIRST MP3" },
   { name: "zxing-wasm", handles: "Reading QR codes and barcodes out of a dropped image — the zxing-cpp reader, self-hosted rather than fetched from its default CDN", size: "1.0 MB", when: "ON FIRST SCAN" },
   { name: "libarchive", handles: "Opening TAR, 7z, RAR, CAB, ISO and CPIO, including tar.gz, tar.bz2 and tar.xz — listing what is inside and extracting it. This build cannot write an archive, and cannot open a bare .gz, .bz2 or .xz: a lone .gz is unpacked by the browser’s own DecompressionStream instead", size: "599 KB", when: "ON FIRST ARCHIVE" },
 ] as const;

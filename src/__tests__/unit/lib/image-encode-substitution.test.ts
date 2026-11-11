@@ -128,6 +128,16 @@ vi.mock("@/lib/workers/pool", () => ({
       return runJob(...args);
     }
   },
+  /*
+    image-client.ts reads these two to size the pool (`imagePoolCeiling`), so
+    the mock has to carry them or the module throws on import rather than
+    running the path under test. The budget returned here is the real module's
+    no-`deviceMemory` fallback — a quarter of an assumed 4 GB — which is what
+    jsdom would produce anyway, so the ceiling resolves to the default 4 and
+    these tests stay about encode substitution rather than about pool sizing.
+  */
+  DEFAULT_MAX_WORKERS: 4,
+  memoryBudgetBytes: () => 1024 ** 3,
 }));
 
 function stubWorkerPipeline() {

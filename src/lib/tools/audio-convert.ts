@@ -31,10 +31,10 @@ import {
  *     browser can decode, plus the FFmpeg decode fallback for the ones it
  *     cannot, and it keeps a 31 MB engine out of the common case.
  *   - `flac` goes through FFmpeg, because the pool has exactly two encoders
- *     (lamejs MP3 and a hand-rolled WAV writer) and adding a third would mean
+ *     (the LAME MP3 build and a hand-rolled WAV writer) and adding a third would mean
  *     a new pool worker. Three separate mechanisms make that expensive here —
  *     the `build-workers.mjs` entrypoint list, the non-analyzable `vendorUrl`
- *     specifier that keeps lamejs out of the worker bundle (audio-pcm.ts), and
+ *     specifier that keeps the encoder out of the worker bundle (audio-pcm.ts), and
  *     the worker's "import ONLY audio-pcm.ts" rule — and FFmpeg already runs
  *     in its own worker, so the FLAC encoder we need is a dynamic import away.
  *
@@ -174,7 +174,7 @@ async function convertViaWebAudio(
   }
 
   // MP3 cannot carry rates above 48 kHz and decoding preserves the source
-  // rate, so a 96 kHz master has to come down before it reaches lamejs.
+  // rate, so a 96 kHz master has to come down before it reaches LAME.
   const { resampleForMp3 } = await import("./audio-encode-mp3");
   const audioBuffer = await resampleForMp3(await decodeAudioFile(file, ctx));
   const { encodeMp3 } = await import("@/lib/workers/audio-client");

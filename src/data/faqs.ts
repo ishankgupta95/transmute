@@ -1991,7 +1991,7 @@ export const faqs: ToolFAQs = {
     {
       question: "Is my data sent to a server?",
       answer:
-        "No. SHA hashes are computed using the Web Crypto API and MD5 using the js-md5 library — both run entirely in your browser.",
+        "No. SHA-1, SHA-256 and SHA-512 are computed with the browser's own Web Crypto API, and MD5 with a small WebAssembly build of it — Web Crypto does not offer MD5 at all. A very large file switches to a WebAssembly implementation of all four, so that nothing has to be held in memory in one piece. Every one of those runs entirely in your browser.",
     },
     {
       question: "Which hash algorithm should I use?",
@@ -3385,7 +3385,7 @@ export const faqs: ToolFAQs = {
     {
       question: "Why does this page fetch an engine when the MP3 tools do not?",
       answer:
-        "Because the encoders differ. MP3 is written by the lamejs library — about 254 KB, loaded from this site — and WAV by a small hand-rolled writer that is part of the page already. There is no FLAC encoder in JavaScript here, so FLAC output goes through an FFmpeg build compiled to WebAssembly: a one-time download of roughly 31 MB, served from this site rather than a CDN, and cached afterwards.",
+        "Because the encoders differ. MP3 is written by LAME, compiled to WebAssembly — about 226 KB, loaded from this site — and WAV by a small hand-rolled writer that is part of the page already. There is no FLAC encoder in JavaScript here, so FLAC output goes through an FFmpeg build compiled to WebAssembly: a one-time download of roughly 31 MB, served from this site rather than a CDN, and cached afterwards.",
     },
   ],
   "mp3-converter": [
@@ -3417,7 +3417,7 @@ export const faqs: ToolFAQs = {
     {
       question: "Do I need to install or sign up for anything?",
       answer:
-        "No. The MP3 is written by the lamejs encoder that ships with the page, and for the formats your browser cannot decode on its own an FFmpeg build served from this site takes over — a one-time 31 MB download, cached afterwards. Both run inside the tab, and no file is ever sent anywhere.",
+        "No. The MP3 is written by the LAME encoder that ships with the page, and for the formats your browser cannot decode on its own an FFmpeg build served from this site takes over — a one-time 31 MB download, cached afterwards. Both run inside the tab, and no file is ever sent anywhere.",
     },
   ],
   "wma-to-mp3": [

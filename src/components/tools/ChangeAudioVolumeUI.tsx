@@ -312,7 +312,7 @@ export function ChangeAudioVolumeUI() {
 
           THE ENGINE ROW IS NOT A FLAT "WEB AUDIO", and that matters. The gain
           itself never touches FFmpeg, but the audio worker pool has exactly two
-          encoders (lamejs MP3 and the WAV writer), so a FLAC output is rendered
+          encoders (the LAME MP3 build and the WAV writer), so a FLAC output is rendered
           to a lossless WAV and handed to `convertAudio`, which encodes it with
           FFmpeg. Saying "WEB AUDIO" over a run that downloads a 31 MB engine
           would be the kind of quiet inaccuracy this page is otherwise careful

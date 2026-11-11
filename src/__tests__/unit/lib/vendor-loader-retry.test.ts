@@ -3,7 +3,7 @@ import { describe, it, expect, vi, type Mock } from "vitest";
 /*
  * Regression cover for the ONE failure mode that vendoring introduced.
  *
- * lamejs and the HEIC decoder used to be bundled, so "loading the library"
+ * The MP3 encoder and the HEIC decoder used to be bundled, so "loading the library"
  * could not fail — it was already in the chunk that was running. They are
  * LGPL, and an LGPL library only stays under its own terms while it remains
  * replaceable, so both are now copied verbatim to `public/vendor/` and fetched
@@ -12,8 +12,8 @@ import { describe, it, expect, vi, type Mock } from "vitest";
  * phone, a deploy racing a page that is already open.
  *
  * The two loaders do NOT share a mechanism, and that is the point of testing
- * both. lamejs is reached with `import()`, so its enemy is the realm's MODULE
- * MAP. libheif's UMD is unreachable through `import()` — an empty namespace
+ * both. libmp3lame is reached with `import()`, so its enemy is the realm's
+ * MODULE MAP. libheif's UMD is unreachable through `import()` — an empty namespace
  * and no global — so it is loaded with a classic <script> tag, whose enemy is
  * the HTTP CACHE. Same cure, two different caches, and the query-string retry
  * is what defeats each.
@@ -41,19 +41,36 @@ import { describe, it, expect, vi, type Mock } from "vitest";
 
 const lame = vi.hoisted(() => ({ failNext: true, imports: 0 }));
 
-function lamejsModule() {
+/*
+ * A minimal stand-in for the wasm module: a real heap so the encode loop's
+ * `HEAPF32.set` has somewhere to write, byte-offset pointers, and output
+ * delivered by writing into the heap and returning a count. The glue's own
+ * shape matters here — it is an ES module whose DEFAULT export is an async
+ * factory — because getting that wrong is exactly the failure this file is
+ * about.
+ */
+function libmp3lameModule() {
   lame.imports++;
   if (lame.failNext) throw new Error("simulated network failure");
-  return {
-    Mp3Encoder: class {
-      encodeBuffer() {
-        return new Uint8Array([0xff, 0xfb]);
-      }
-      flush() {
-        return new Uint8Array([0x00]);
-      }
+  const CAPACITY = 1152;
+  const heap = new ArrayBuffer(64 * 1024);
+  const OUT_AT = CAPACITY * 8;
+  const mod = {
+    _mp3_in_left: () => 0,
+    _mp3_in_right: () => CAPACITY * 4,
+    _mp3_out: () => OUT_AT,
+    _mp3_frame_capacity: () => CAPACITY,
+    _mp3_open: () => 0,
+    _mp3_encode: () => {
+      new Uint8Array(heap)[OUT_AT] = 0xff;
+      return 1;
     },
+    _mp3_flush: () => 0,
+    _mp3_close: () => {},
+    HEAPF32: new Float32Array(heap),
+    HEAPU8: new Uint8Array(heap),
   };
+  return { default: () => Promise.resolve(mod) };
 }
 
 // BOTH specifiers are mocked on purpose. The retry deliberately asks for a
@@ -61,8 +78,8 @@ function lamejsModule() {
 // records a failed module fetch against the specifier and will not re-request
 // it. Mocking only the bare path would make this test pass for the wrong
 // reason on the first attempt and fail on the retry.
-vi.mock("/vendor/lamejs.js", () => lamejsModule());
-vi.mock("/vendor/lamejs.js?retry=1", () => lamejsModule());
+vi.mock("/vendor/libmp3lame.js", () => libmp3lameModule());
+vi.mock("/vendor/libmp3lame.js?retry=1", () => libmp3lameModule());
 
 /*
  * The HEIC half is driven through the DOM rather than through vi.mock, because
@@ -137,7 +154,7 @@ function installHeicScriptLoader(): void {
 }
 
 describe("vendored library loaders recover from a failed fetch", () => {
-  it("lamejs: a second encode after a failed load actually re-imports and succeeds", async () => {
+  it("libmp3lame: a second encode after a failed load actually re-imports and succeeds", async () => {
     const { encodePcmToMp3 } = await import("@/lib/tools/audio-pcm");
     const pcm = [new Float32Array(4096)];
 

@@ -1,4 +1,4 @@
-import { computeHashesStreaming, type Hashes } from "@/lib/tools/hash-digest";
+import { computeHashes, type Hashes } from "@/lib/tools/hash-digest";
 import { WorkerPool } from "./pool";
 
 /**
@@ -44,6 +44,6 @@ export async function computeHashesGuarded(
   blob: Blob,
   onProgress?: (percent: number) => void,
 ): Promise<Hashes> {
-  if (hashRunsInline()) return computeHashesStreaming(blob, onProgress);
+  if (hashRunsInline()) return computeHashes(blob, onProgress);
   return getHashPool().run<Hashes>({ blob }, { memoryBytes: blob.size, onProgress });
 }

@@ -16,7 +16,7 @@ export interface Mp3EncodeOptions {
 
 /**
  * MP3 cannot carry rates above 48 kHz. Now that decoding preserves the source
- * rate (see audio-decode.ts), a 96 kHz master would reach lamejs unchanged and
+ * rate (see audio-decode.ts), a 96 kHz master would reach LAME unchanged and
  * come back as garbage — resample down first. ≤48 kHz buffers pass through
  * untouched.
  */
@@ -35,7 +35,7 @@ export async function resampleForMp3(buffer: AudioBuffer): Promise<AudioBuffer> 
 /**
  * Encode an AudioBuffer to MP3 on the calling thread — no worker, no
  * progress reporting. Async because the encoder is fetched from
- * `/vendor/lamejs.js` rather than bundled (see audio-pcm.ts); the encode loop
+ * `/vendor/libmp3lame.js` rather than bundled (see audio-pcm.ts); the encode loop
  * itself still blocks whichever thread calls this, which is why the tools go
  * through `convertToMp3` and the worker pool instead.
  */
@@ -54,7 +54,7 @@ export function extractChannels(buffer: AudioBuffer): Float32Array[] {
 
 /**
  * Convert any browser-decodable audio file to MP3. Decoding stays on the
- * main thread (AudioContext doesn't exist in workers); the lamejs encode
+ * main thread (AudioContext doesn't exist in workers); the LAME encode
  * runs in the audio worker pool.
  *
  * The body moved to `audio-convert.ts` when FLAC arrived: this was one of two

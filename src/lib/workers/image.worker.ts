@@ -24,6 +24,7 @@ import {
   MAX_DIMENSION_STEPS,
   nextScale,
   scaledToTargetWarning,
+  searchQuality,
   stepDimensions,
 } from "@/lib/tools/target-size";
 import type { PoolWorkerRequest, PoolWorkerResponse } from "./pool";
@@ -286,42 +287,6 @@ function chooseOutput(job: ImageJob, bitmap: ImageBitmap): { mime: string; ext: 
   return { mime: "image/jpeg", ext: "jpg" };
 }
 
-/**
- * The quality half of the target-size engine: binary-search encode quality
- * for the largest result at or under `targetBytes`. Returns that under-target
- * blob (null when quality alone cannot get there) plus the smallest blob
- * seen, which drives the dimension step and is the honest fallback when
- * nothing fits. Mirrored in lib/tools/image-compress.ts.
- */
-async function searchQuality(
-  encode: (quality: number) => Promise<Blob>,
-  targetBytes: number,
-  tick: () => void,
-): Promise<{ under: Blob | null; smallest: Blob }> {
-  let lo = 0.01;
-  let hi = 1.0;
-  let smallest = await encode(hi);
-  tick();
-  if (smallest.size <= targetBytes) return { under: smallest, smallest };
-
-  let under: Blob | null = null;
-  for (let i = 0; i < 10; i++) {
-    const mid = (lo + hi) / 2;
-    const candidate = await encode(mid);
-    tick();
-    if (candidate.size < smallest.size) smallest = candidate;
-    if (candidate.size <= targetBytes) {
-      under = candidate;
-      lo = mid;
-      // Close enough (within 5% of target) — stop refining.
-      if (candidate.size > targetBytes * 0.95) break;
-    } else {
-      hi = mid;
-    }
-  }
-  return { under, smallest };
-}
-
 async function compress(
   bitmap: ImageBitmap,
   job: ImageJob,
@@ -464,11 +429,28 @@ async function resize(
   const srcData = srcCtx.getImageData(0, 0, srcW, srcH);
   progress(35);
 
-  // Same Lanczos3 math the main-thread path uses — pica maps quality 3 to the
-  // lanczos3 filter in both resize() and resizeBuffer(). The buffer API works
-  // on raw RGBA, which is what a worker has; features:["js"] keeps pica from
-  // spawning its own nested workers inside ours.
-  const pica = new Pica({ features: ["js"] });
+  /*
+    Same Lanczos3 math the main-thread path uses — pica maps quality 3 to the
+    lanczos3 filter in both resize() and resizeBuffer(). The buffer API works
+    on raw RGBA, which is what a worker has.
+
+    `features` IS THE WHOLE POINT OF THIS LINE, and the flags are independent.
+    This used to read `["js"]`, to stop pica spawning its own nested workers
+    inside ours — a real concern, and `"ww"` is the flag that does that. But
+    omitting `"wasm"` as well turned off pica's wasm resampler and left the
+    pure-JS one doing the work, which buys nothing: `"wasm"` and `"ww"` are
+    separate entries in pica's feature list (node_modules/pica/index.js:100-102
+    declares them separately, and lib/mathlib.js reads only `js` and `wasm`).
+
+    MEASURED 2026-11-10, 4000x3000 -> 1200x900 at quality 3, Node 24:
+      features ["js"]        first 239ms, then 229 / 227 / 227ms
+      features ["wasm","js"] first 238ms, then 100 / 102 / 103ms
+    So 2.2x in steady state, identical on the first call — instantiating the
+    module costs nothing worth naming at this size — and no nested workers
+    either way, because `"ww"` is still absent. `"js"` stays as the fallback
+    for a browser where `has_wasm()` comes back false.
+  */
+  const pica = new Pica({ features: ["wasm", "js"] });
   const resized = (await pica.resizeBuffer({
     // Same bytes, uint8 view — pica's typings don't accept Uint8ClampedArray.
     src: new Uint8Array(srcData.data.buffer, srcData.data.byteOffset, srcData.data.length),

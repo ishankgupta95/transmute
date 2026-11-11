@@ -20,7 +20,7 @@ export const metadata: Metadata = {
   // The root layout's template appends " | Transmute".
   title: "Licenses",
   description:
-    "Third-party licenses and notices for every engine transmute.tools ships — FFmpeg, qpdf, Tesseract, zxing-cpp, libarchive, oxipng, lamejs, libheif, ExifReader and the permissive libraries beside them.",
+    "Third-party licenses and notices for every engine transmute.tools ships — FFmpeg, qpdf, Tesseract, zxing-cpp, libarchive, oxipng, libmp3lame, libheif, ExifReader and the permissive libraries.",
   alternates: { canonical: "/licenses" },
 };
 
@@ -97,18 +97,18 @@ const ENGINES: readonly Engine[] = [
     ],
   },
   {
-    id: "lamejs",
-    name: "lamejs",
-    spdx: "LGPL-3.0",
-    ships: "@breezystack/lamejs 1.2.7 — served unbundled at /vendor/lamejs.js, byte for byte as its authors published it, and imported at runtime the first time you encode an MP3.",
+    id: "libmp3lame",
+    name: "libmp3lame",
+    spdx: "LGPL-2.0-or-later",
+    ships: "LAME 3.100, compiled here to single-threaded SIMD WebAssembly and served unbundled at /vendor/libmp3lame.js plus /vendor/libmp3lame.wasm, imported at runtime the first time you encode an MP3. Until 2026-11-11 this was lamejs, a pure-JavaScript port of the same library; the encoder is now LAME itself.",
     paras: [
-      "The LGPL lets a program use a library while keeping its own terms, but only on the condition that the library stays replaceable: whoever receives the combined work has to be able to substitute their own build of it. So lamejs is compiled into nothing here. It sits on its own at a stable URL and is loaded by that URL at runtime. Swapping in an interface-compatible build of the encoder means replacing that one file — nothing on this site is recompiled, and the replacement is what runs.",
-      "LGPL-3.0 is written as a set of additional permissions layered on GPL-3.0 and incorporates that license by reference, so both texts are linked. The third link is the LAME project's own notice about using it in a commercial program.",
+      "The LGPL lets a program use a library while keeping its own terms, but only on the condition that the library stays replaceable: whoever receives the combined work has to be able to substitute their own build of it. So LAME is compiled into nothing here. It sits on its own at a stable pair of URLs and is loaded by those URLs at runtime. Swapping in an interface-compatible build of the encoder means replacing those two files — nothing on this site is recompiled, and the replacement is what runs.",
+      "What is linked is LAME and nothing else: no decoder, no VBR tag writer, no frontend. The build is ours rather than a prebuilt package, so the compile flags are known rather than hoped for, and the small C bridge over it (vendor/libmp3lame/mp3-bridge.c) is our own work, not LAME's.",
+      "LAME is LGPL-2.0-or-later, and the license text below is the one LAME itself ships — the GNU Library General Public License, version 2, reproduced byte for byte from the COPYING file of the 3.100 source this build is compiled from. That is a standalone license, unlike LGPL-3.0, which is written as additional permissions layered over GPL-3.0 and needs that second text beside it; version 2 needs no companion, so this entry links one license and not two. \u201COr later\u201D means a later LGPL is also available to you if you would rather take it under one. The last link is the LAME project's own notice about using it in a commercial program.",
     ],
     refs: [
-      { href: "https://github.com/shijinyu/lamejs", label: "SOURCE" },
-      { href: licenseText("lgpl-3.0.txt"), label: "LGPL-3.0 TEXT" },
-      { href: licenseText("gpl-3.0.txt"), label: "GPL-3.0 TEXT" },
+      { href: "https://lame.sourceforge.io/", label: "SOURCE" },
+      { href: licenseText("lgpl-2.0.txt"), label: "LGPL-2.0 TEXT" },
       { href: licenseText("lame-notice.txt"), label: "LAME NOTICE" },
     ],
   },
@@ -118,7 +118,7 @@ const ENGINES: readonly Engine[] = [
     spdx: "LGPL-3.0-OR-LATER",
     ships: "libheif-js 1.23.2 — served unbundled at /vendor/libheif.js and /vendor/libheif.wasm, byte for byte as published, and loaded at runtime the first time you open a HEIC.",
     paras: [
-      "libheif-js is an Emscripten build of libheif with libde265 for HEVC decoding, and both of those are LGPL. That makes the same replaceability condition apply to it as to lamejs, so it gets the same treatment: not bundled, served at its own stable URL, loaded by that URL at runtime. Replacing the HEIC decoder is replacing those two files — the loader reads the WebAssembly binary itself and hands it to the module, so a substituted binary at the same path is the one that runs.",
+      "libheif-js is an Emscripten build of libheif with libde265 for HEVC decoding, and both of those are LGPL. That makes the same replaceability condition apply to it as to libmp3lame, so it gets the same treatment: not bundled, served at its own stable URL, loaded by that URL at runtime. Replacing the HEIC decoder is replacing those two files — the loader reads the WebAssembly binary itself and hands it to the module, so a substituted binary at the same path is the one that runs.",
       "The build is decode-only, which is what keeps it LGPL rather than GPL. Verified against the shipped bytes on 2026-09-12: it registers exactly one decoder plugin, libde265 1.0.15, and its only encoder is libheif's own built-in mask format. x265, x264, aom, rav1e, SVT-AV1 and kvazaar appear nowhere in it, so no GPL encoder is conveyed.",
       "The package publishes the FSF's LGPL-3.0 boilerplate and no copyright line of its own, so the authors are named here rather than quoted from it: libheif and libde265 are copyright struktur AG and Dirk Farin; the npm distribution is maintained by Kiril Vatev.",
     ],

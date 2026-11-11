@@ -93,7 +93,7 @@ it("parses the copy:wasm command it derives everything else from", () => {
   expect(SERVED.get("/ffmpeg-core.wasm")).toBe(
     "node_modules/@ffmpeg/core/dist/umd/ffmpeg-core.wasm",
   );
-  expect(SERVED.get("/vendor/lamejs.js")).toBe("node_modules/@breezystack/lamejs/dist/lamejs.js");
+  expect(SERVED.get("/vendor/libmp3lame.js")).toBe("vendor/libmp3lame/libmp3lame.js");
   expect(SERVED.get("/fonts/print/syne-latin-wght-normal.woff2")).toContain("@fontsource-variable");
 });
 
@@ -295,25 +295,30 @@ describe("formatEngineBytes uses the ruler the homepage already uses", () => {
     expect(formatEngineBytes(1024 * 1024)).toBe("1.0 MB");
   });
 
-  it("agrees with the homepage's lamejs row, which this test is why we fixed", () => {
+  it("agrees with the homepage's MP3 encoder row, which this test is why we fixed", () => {
     /*
       This case was written as a MARKER, not a fix: it found that the homepage
-      ENGINES row for lamejs read "254 KB" while the file is 259,508 bytes —
-      253.43 KiB, so 253 on the column's own ruler and 260 on a decimal one.
-      254 was neither. It asserted the wrong value deliberately, so that it
-      would go red on the day someone corrected the row.
+      ENGINES row — lamejs at the time — read "254 KB" while the file was
+      259,508 bytes: 253.43 KiB, so 253 on the column's own ruler and 260 on a
+      decimal one. 254 was neither. It asserted the wrong value deliberately,
+      so that it would go red on the day someone corrected the row.
 
-      That day was the same day. The row now reads "253 KB", and
-      engine-disclosure.test.ts pins BOTH vendored rows to their artifacts —
-      lamejs and heic2any were the last two ENGINES rows quoting a number
-      nothing checked, which is exactly how this one drifted. So the marker has
-      done its job and become an ordinary agreement check: two modules, one
+      That day was the same day. engine-disclosure.test.ts now pins BOTH
+      vendored rows to their artifacts — they were the last two ENGINES rows
+      quoting a number nothing checked, which is exactly how that one drifted.
+      So the marker has become an ordinary agreement check: two modules, one
       ruler, one artifact.
+
+      The encoder became libmp3lame on 2026-11-11, and the figure is the SUM of
+      the glue and its binary. That is not bookkeeping: the glue resolves the
+      .wasm relative to its own URL, so a browser that fetches one fetches
+      both, and quoting the glue alone would understate the download by 28x.
     */
-    expect(formatEngineBytes(bytesOf("/vendor/lamejs.js"))).toBe("253 KB");
+    const bytes = bytesOf("/vendor/libmp3lame.js") + bytesOf("/vendor/libmp3lame.wasm");
+    expect(formatEngineBytes(bytes)).toBe("226 KB");
     const homepage = readFileSync(resolve(root, "src/app/page.tsx"), "utf8");
-    expect(homepage).toContain('name: "lamejs"');
-    expect(homepage).toContain('size: "253 KB"');
+    expect(homepage).toContain('name: "libmp3lame"');
+    expect(homepage).toContain('size: "226 KB"');
   });
 });
 

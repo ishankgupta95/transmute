@@ -33,7 +33,7 @@ import { ENGINE_CACHE, OWNED_CACHES, isEngineUrl } from "./sw-policy";
 export interface EngineBundle {
   id:
     | "ffmpeg"
-    | "lamejs"
+    | "libmp3lame"
     | "heic"
     | "qpdf"
     | "zxing"
@@ -114,11 +114,14 @@ export const ENGINE_BUNDLES: readonly EngineBundle[] = [
     toolCount: 4,
   },
   {
-    id: "lamejs",
-    label: "lamejs",
+    id: "libmp3lame",
+    label: "libmp3lame",
     handles: "MP3 encoding — the one codec browsers will decode but not write.",
-    bytes: 259_508,
-    urls: ["/vendor/lamejs.js"],
+    // The glue AND its binary: the glue resolves the .wasm relative to its own
+    // URL, so a browser that fetches one fetches both, and an offline bundle
+    // holding only the glue would fail at the first encode.
+    bytes: 231_475,
+    urls: ["/vendor/libmp3lame.js", "/vendor/libmp3lame.wasm"],
     toolCount: 17,
   },
   {
@@ -533,10 +536,11 @@ export async function storageEstimate(): Promise<{ usage: number; quota: number 
  *
  * It is not a free choice — it is the ruler the homepage DOWNLOAD column
  * already uses, measured off the rows that were there before this file
- * existed: lamejs is 259,508 bytes and reads "253 KB" (253.4 KiB; decimal
- * would be 260 — and "254" is what this comment said until 2026-09-12, which
- * is the arithmetic slip engine-disclosure.test.ts:73 already records fixing
- * on the homepage), and the HEIC decoder — heic2any's 1,361,547 B then, libheif's
+ * existed: the MP3 encoder is 231,475 bytes and reads "226 KB" (226.1 KiB;
+ * decimal would be 231). It was lamejs at 259,508 B / "253 KB" until
+ * 2026-11-11, and that row said "254" until 2026-09-12 — the arithmetic slip
+ * engine-disclosure.test.ts already records fixing on the homepage. The HEIC
+ * decoder — heic2any's 1,361,547 B then, libheif's
  * 1,513,632 B since 2026-09-12 — reads "1.3 MB" and "1.4 MB" respectively,
  * where a decimal ruler would have printed 1.4 and 1.5 for the same two files.
  * Printing the same artifacts on a decimal ruler here would make two pages of

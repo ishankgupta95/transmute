@@ -6,7 +6,19 @@ import { MAX_DIMENSION_STEPS } from "@/lib/tools/target-size";
 import { animatedWebpBytes, gifBytes } from "./image-byte-fixtures";
 
 /** Encode passes per quality search: the q=1.0 probe + up to 10 iterations. */
-const PASSES_PER_SEARCH = 11;
+/**
+ * Encodes one quality search can cost: the q=1.0 fast-path probe, the quality
+ * FLOOR probe, then up to `MAX_QUALITY_PASSES` bisections.
+ */
+const MAX_PASSES_PER_SEARCH = 12;
+
+/**
+ * What an UNREACHABLE target costs now: the ceiling and the floor, and then
+ * `searchQuality` returns rather than bisecting toward an answer the floor
+ * already ruled out. It was 11 before the floor probe landed, paid once per
+ * dimension step — see the derivation in lib/tools/target-size.ts.
+ */
+const PASSES_PER_INFEASIBLE_SEARCH = 2;
 
 let mockCtx: Record<string, ReturnType<typeof vi.fn>>;
 let mockCanvas: Record<string, unknown>;
@@ -231,10 +243,13 @@ describe("compressImage", () => {
       // Must return 2048 (the only size available), NOT a larger blob
       expect(result.blob.size).toBe(2048);
       // The quality search at source dims fails, so dimension stepping runs
-      // its searches too — bounded by the shared step cap.
-      expect(toBlobMock.mock.calls.length).toBeGreaterThan(PASSES_PER_SEARCH);
+      // its searches too — bounded by the shared step cap. Each of those
+      // searches costs only the two bracket probes, because the floor probe
+      // rules the target out before any bisection happens: that is the whole
+      // saving, and asserting the bound here is what keeps it.
+      expect(toBlobMock.mock.calls.length).toBeGreaterThan(PASSES_PER_INFEASIBLE_SEARCH);
       expect(toBlobMock.mock.calls.length).toBeLessThanOrEqual(
-        PASSES_PER_SEARCH * (1 + MAX_DIMENSION_STEPS),
+        PASSES_PER_INFEASIBLE_SEARCH * (1 + MAX_DIMENSION_STEPS),
       );
       // Downscaling never made the blob smaller here, so the full-size encode
       // is what comes back — and it must NOT claim a scale-down happened.
@@ -242,24 +257,36 @@ describe("compressImage", () => {
     });
 
     it("when target is unreachable, returns smallest of varying sizes", async () => {
-      // Simulate: sizes decrease with lower quality but never reach target
-      let call = 0;
-      const sizes = [5000, 4000, 3500, 3000, 2800, 2600, 2500, 2400, 2300, 2200, 2100];
-      toBlobMock.mockImplementation((cb: (b: Blob | null) => void, type: string) => {
-        const size = sizes[Math.min(call, sizes.length - 1)];
-        call++;
-        cb(new Blob([new Uint8Array(size)], { type }));
-      });
+      /*
+        Size falls with quality but bottoms out at 2100 bytes, well above the
+        1 KB target — so no quality and no dimension reaches it, and the
+        compressor's job is to hand back the smallest thing it actually made.
+
+        The mock is a function of QUALITY, deliberately. It used to be a fixed
+        array indexed by call order, which made the assertion a statement about
+        how many times the search encodes rather than about which blob it
+        picks: improving the search's efficiency moved the answer without
+        changing the behaviour under test. Keying on quality pins the
+        semantics instead, and 2100 is now an exact expectation.
+      */
+      const FLOOR_BYTES = 2100;
+      toBlobMock.mockImplementation(
+        (cb: (b: Blob | null) => void, type: string, quality?: number) => {
+          const q = quality ?? 1;
+          const size = Math.max(FLOOR_BYTES, Math.round(5000 * (0.2 + 0.8 * q)));
+          cb(new Blob([new Uint8Array(size)], { type }));
+        },
+      );
 
       const file = makeFile("photo.jpg");
-      // Target 1 KB, but smallest achievable is ~2100 bytes
+      // Target 1 KB, but the smallest achievable is FLOOR_BYTES.
       const opts: ImageCompressOptions = { mode: "target-size", quality: 0, targetSizeKb: 1 };
       const result = await compressImage(file, opts);
 
-      // Must NOT return the initial 5000-byte blob
+      // Must NOT return the 5000-byte q=1.0 blob...
       expect(result.blob.size).toBeLessThan(5000);
-      // Should return the smallest blob encountered
-      expect(result.blob.size).toBeLessThanOrEqual(2100);
+      // ...it must be the smallest the encoder can produce.
+      expect(result.blob.size).toBe(FLOOR_BYTES);
     });
 
     it("stops early when within 5% of target", async () => {
@@ -300,7 +327,10 @@ describe("compressImage", () => {
       const opts: ImageCompressOptions = { mode: "target-size", quality: 0, targetSizeKb: 1 };
       const result = await compressImage(file, opts);
 
-      expect(call).toBe(11); // 1 initial + 10 iterations, no stepping passes
+      // Ceiling probe + floor probe + the 10 bisections. The cap on bisections
+      // is unchanged; the floor probe is the one extra encode it now sits
+      // behind, and it is what proves the target reachable before any of them.
+      expect(call).toBe(MAX_PASSES_PER_SEARCH);
       expect(result.blob.size).toBe(500);
     });
 

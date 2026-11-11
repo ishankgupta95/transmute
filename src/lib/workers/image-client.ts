@@ -6,7 +6,7 @@ import type { ImageConvertOptions } from "@/lib/tools/image-convert";
 import { editVerbSuffix, isMultiOutputEdit } from "@/lib/tools/image-edit-core";
 import type { ImageResizeOptions } from "@/lib/tools/image-resize";
 import { throwIfAborted } from "@/lib/utils/abort";
-import { WorkerPool } from "./pool";
+import { DEFAULT_MAX_WORKERS, memoryBudgetBytes, WorkerPool } from "./pool";
 import type {
   ImageEditJobOptions,
   ImageJob,
@@ -35,6 +35,48 @@ import type { PNG_RASTER_BYTE_LIMIT } from "@/lib/tools/png-optimise";
  * pool schedules them across `pool.size` workers under the memory budget.
  */
 
+/**
+ * Worker ceiling for the image pool: 8 where the device says it has the memory
+ * for it, otherwise the pool's default of 4.
+ *
+ * WHY THIS IS NOT JUST `maxWorkers: 8`. The image pipeline is the one pool that
+ * routinely gets a batch — a drop of 20 photos is N independent decode/encode
+ * jobs sharing nothing — and on a 14-core desktop the default cap ran 4 of
+ * them, which measurably left half the machine idle. So more is worth having.
+ *
+ * But the cap is also the backstop against `estimateImageTaskBytes` being
+ * WRONG, and it is only an estimate: `file.size * 12 + 16 MB` tracks a typical
+ * JPEG well (decoded RGBA is 4 bytes a pixel, and a JPEG spends roughly a third
+ * to one byte on each) and under-counts a heavily compressed one, where the
+ * same bytes decode to several times more raster. `WorkerPool.pump` admits
+ * against that estimate, so an under-count admits more real memory than the
+ * budget intends, and the worker ceiling is what bounds how far that can go.
+ * Doubling the ceiling doubles the exposure.
+ *
+ * `poolSize` takes `hardwareConcurrency - 1`, which is NOT the guard one might
+ * assume: an 8-core phone would have gone from 4 workers to 7 on a device whose
+ * whole budget may be 512 MB. So the ceiling follows the one memory signal
+ * available instead. `memoryBudgetBytes()` returns a quarter of
+ * `navigator.deviceMemory`, and that API is Chromium-only and capped at 8, so a
+ * 2 GiB budget means "the device reported 8 GB" — desktop-class. Everywhere the
+ * API is absent (Safari, Firefox) the budget is the conservative 4 GB
+ * assumption, which lands below the threshold and keeps today's behaviour
+ * exactly. Nothing gets a smaller pool than before; only a device that says it
+ * can afford more gets more.
+ *
+ * The better long-term fix is a truer estimate — the decoded dimensions are
+ * knowable after `createImageBitmap` but not before admission, which is the
+ * whole difficulty. Until then this stays keyed to what the device declares.
+ *
+ * Hash and regex stay at 1 and audio at 2: those are single-file paths, and the
+ * MP3 encoder holds a wasm heap per worker.
+ */
+function imagePoolCeiling(): number {
+  /** A quarter of 8 GB — the most `navigator.deviceMemory` ever reports. */
+  const DESKTOP_CLASS_BUDGET = 2 * 1024 ** 3;
+  return memoryBudgetBytes() >= DESKTOP_CLASS_BUDGET ? 8 : DEFAULT_MAX_WORKERS;
+}
+
 let pool: WorkerPool | null = null;
 
 /** The image pool singleton — also the honest THREADS count for queue UIs. */
@@ -48,6 +90,7 @@ export function getImagePool(): WorkerPool {
         new Worker(`${process.env.__NEXT_ROUTER_BASEPATH ?? ""}/workers/image.worker.js`, {
           type: "module",
         }),
+      maxWorkers: imagePoolCeiling(),
     });
   }
   return pool;

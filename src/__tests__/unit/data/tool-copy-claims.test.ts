@@ -3,9 +3,23 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 import { getToolBySlug, type Tool } from "@/data/tools";
+import { getToolCopy } from "@/data/tool-copy";
 import { faqs } from "@/data/faqs";
 import { getHowToSteps } from "@/lib/seo/tool-metadata";
 import { getWorkspaceTool } from "@/data/workspace";
+
+/**
+ * The server-only copy for a tool. `aboutText`, `relatedTools` and `titleTag`
+ * moved off `Tool` into src/data/tool-copy.ts so they stop shipping to the
+ * client — see that file's header. Throws rather than returning undefined: a
+ * registry entry with no copy entry is a bug these suites should catch.
+ */
+const copyOf = (slug: string) => {
+  const c = getToolCopy(slug);
+  if (!c) throw new Error(`${slug} has no tool-copy entry`);
+  return c;
+};
+
 
 /*
  * THE COPY-CLAIM GATE for the three Phase-3 tools.
@@ -64,8 +78,8 @@ function allCopy(tool: Tool): string {
     tool.hubLine ?? "",
     tool.h1,
     tool.subtitle,
-    tool.aboutText,
-    tool.titleTag ?? "",
+    copyOf(tool.slug).aboutText,
+    copyOf(tool.slug).titleTag ?? "",
     ...own.flatMap((f) => [f.question, f.answer]),
     ...getHowToSteps(tool.toolType),
   ]
@@ -251,7 +265,7 @@ describe("extract-images-from-pdf says what the engine does", () => {
 
   it("sends page renders to pdf-to-jpg instead of pretending", () => {
     expect(getToolBySlug("pdf-to-jpg"), "the tool it points at must exist").toBeDefined();
-    expect(t.relatedTools).toContain("pdf-to-jpg");
+    expect(copyOf(t.slug).relatedTools).toContain("pdf-to-jpg");
     expect(copy, "the copy never points at the page renderer").toContain("pdf to jpg");
     expect(copy, "the copy never says this is not a page render").toMatch(
       /not a page screenshot|not a screenshot|ignores the page/,

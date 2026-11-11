@@ -2,12 +2,17 @@ import { describe, it, expect } from "vitest";
 
 import {
   MAX_DIMENSION_STEPS,
+  MAX_QUALITY_PASSES,
   MAX_SCALE_FACTOR,
   MIN_LONGEST_SIDE,
   MIN_SCALE_FACTOR,
+  QUALITY_CEILING,
+  QUALITY_CLOSE_ENOUGH,
+  QUALITY_FLOOR,
   nextScale,
   scaledImagesWarning,
   scaledToTargetWarning,
+  searchQuality,
   stepDimensions,
 } from "@/lib/tools/target-size";
 
@@ -180,5 +185,136 @@ describe("scaledImagesWarning", () => {
 
   it("rounds rather than truncating, so a 99.6% scale does not read as 99%", () => {
     expect(scaledImagesWarning(0.996)).toContain("Images scaled to 100% of their original size");
+  });
+});
+
+/*
+  ── searchQuality ──────────────────────────────────────────────────────
+
+  The quality half of the engine, and the half that decides how much CPU a
+  target-size run costs: every pass is a full re-encode of the image at the
+  current dimensions. A fake encoder is used here rather than a canvas, which
+  is what makes the pass COUNT directly assertable — the thing the floor probe
+  exists to reduce and the thing a canvas mock can only measure by proxy.
+
+  Sizes are a function of quality, never of call order, so these tests pin
+  behaviour and not the number of times the search happens to encode.
+*/
+
+/**
+ * A fake encoder: `sizeAt(quality)` bytes per call, with the qualities it was
+ * asked for recorded. Monotonic size in quality is the only thing
+ * `searchQuality` assumes, so that is what the helpers below provide.
+ */
+function fakeEncoder(sizeAt: (quality: number) => number) {
+  const qualities: number[] = [];
+  const encode = (quality: number): Promise<Blob> => {
+    qualities.push(quality);
+    return Promise.resolve(new Blob([new Uint8Array(Math.max(0, Math.round(sizeAt(quality))))]));
+  };
+  return { encode, qualities, get calls() { return qualities.length; } };
+}
+
+/** Linear in quality, from `min` at quality 0 to `max` at quality 1. */
+const ramp = (min: number, max: number) => (q: number) => min + (max - min) * q;
+
+describe("searchQuality", () => {
+  it("takes the fast path when best quality already fits, with one encode", async () => {
+    const enc = fakeEncoder(ramp(100, 1000));
+    const { under, smallest } = await searchQuality(enc.encode, 5000);
+
+    expect(enc.calls, "a target already met at q=1.0 needs no search").toBe(1);
+    expect(enc.qualities).toEqual([QUALITY_CEILING]);
+    expect(under?.size).toBe(1000);
+    expect(smallest.size).toBe(1000);
+  });
+
+  it("rules an unreachable target out with two encodes, not eleven", async () => {
+    /*
+      THE WHOLE POINT OF THE FLOOR PROBE. Nothing between 2000 and 4000 bytes
+      can satisfy a 1000-byte target, and one encode at the floor says so.
+      Before the probe this cost the full bisection — once per dimension step,
+      at full resolution, every time.
+    */
+    const sizeAt = ramp(2000, 4000);
+    const enc = fakeEncoder(sizeAt);
+    const { under, smallest } = await searchQuality(enc.encode, 1000);
+
+    expect(enc.calls).toBe(2);
+    expect(enc.qualities).toEqual([QUALITY_CEILING, QUALITY_FLOOR]);
+    expect(under, "no quality reaches the target, and the caller must be told").toBeNull();
+    // The floor is QUALITY_FLOOR, not 0 — it is a real encode at a real
+    // quality, so derive the figure rather than assuming the bottom of the ramp.
+    expect(smallest.size, "the floor encode is the smallest thing available").toBe(
+      Math.round(sizeAt(QUALITY_FLOOR)),
+    );
+  });
+
+  it("finds an under-target result and never exceeds the pass cap", async () => {
+    const enc = fakeEncoder(ramp(100, 10_000));
+    const target = 4000;
+    const { under, smallest } = await searchQuality(enc.encode, target);
+
+    expect(under, "this target is reachable").not.toBeNull();
+    expect(under!.size).toBeLessThanOrEqual(target);
+    expect(smallest.size).toBeLessThanOrEqual(under!.size);
+    // Ceiling probe + floor probe + at most MAX_QUALITY_PASSES bisections.
+    expect(enc.calls).toBeLessThanOrEqual(2 + MAX_QUALITY_PASSES);
+  });
+
+  it("stops once the result is inside the close-enough band", async () => {
+    const enc = fakeEncoder(ramp(100, 10_000));
+    const target = 4000;
+    const { under } = await searchQuality(enc.encode, target);
+
+    // Landing just under the target is the goal: a much smaller file means
+    // quality the user asked for and did not get.
+    expect(under!.size).toBeGreaterThan(target * QUALITY_CLOSE_ENOUGH);
+    expect(under!.size).toBeLessThanOrEqual(target);
+  });
+
+  it("returns a result for a target only the very bottom of the range reaches", async () => {
+    /*
+      A REGRESSION THE PROBE CLOSED. Ten bisections from [0.01, 1.0] bring the
+      upper bound down to about 0.011 and never evaluate the floor itself, so a
+      target that only q <= 0.0105 satisfies used to fall out of the loop as
+      `under: null` — and the caller would downscale a picture that did not
+      need it. The floor is a measured point now, so it cannot.
+    */
+    const target = 1000;
+    const enc = fakeEncoder((q) => (q <= 0.0105 ? 900 : 5000));
+    const { under, smallest } = await searchQuality(enc.encode, target);
+
+    expect(under, "reachable at the floor, so a blob must come back").not.toBeNull();
+    expect(under!.size).toBeLessThanOrEqual(target);
+    expect(smallest.size).toBe(900);
+  });
+
+  it("tracks the smallest blob seen even when it is not the answer", async () => {
+    const enc = fakeEncoder(ramp(50, 10_000));
+    const { under, smallest } = await searchQuality(enc.encode, 9000);
+
+    expect(under!.size).toBeLessThanOrEqual(9000);
+    // The floor probe is the smallest thing encoded, and stays reported as
+    // such — it is what `nextScale` steers the next dimension step with.
+    expect(smallest.size).toBeLessThan(under!.size);
+  });
+
+  it("reports one pass per encode, for the progress bars that count them", async () => {
+    const enc = fakeEncoder(ramp(100, 10_000));
+    let passes = 0;
+    await searchQuality(enc.encode, 4000, () => { passes++; });
+
+    expect(passes).toBe(enc.calls);
+  });
+
+  it("never asks for a quality outside the declared bounds", async () => {
+    const enc = fakeEncoder(ramp(100, 10_000));
+    await searchQuality(enc.encode, 4000);
+
+    for (const q of enc.qualities) {
+      expect(q).toBeGreaterThanOrEqual(QUALITY_FLOOR);
+      expect(q).toBeLessThanOrEqual(QUALITY_CEILING);
+    }
   });
 });

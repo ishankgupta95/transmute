@@ -3,6 +3,7 @@ import Link from "next/link";
 import type { FAQ } from "@/data/faqs";
 import type { Tool } from "@/data/tools";
 import { getToolBySlug, getToolsByCategory, tools } from "@/data/tools";
+import { getToolCopy } from "@/data/tool-copy";
 import { getCategoryBySlug } from "@/data/categories";
 import { getWorkspaceTool, pipelineByArchetype } from "@/data/workspace";
 import { ToolSchema } from "@/components/seo/ToolSchema";
@@ -74,7 +75,10 @@ export function ToolPageLayout({
   const pipeline = ws ? (pipelineByArchetype[ws.kind] ?? []) : [];
   const toolIndex = tools.findIndex((t) => t.slug === tool.slug) + 1;
 
-  const relatedTools = tool.relatedTools
+  // `relatedTools` lives in the server-only copy module, not on `Tool` — see
+  // the header of src/data/tool-copy.ts for why. This component is server-only
+  // (every client mention of it is a comment), so reading it here is safe.
+  const relatedTools = (getToolCopy(tool.slug)?.relatedTools ?? [])
     .map((slug) => getToolBySlug(slug))
     .filter((t): t is Tool => t !== undefined);
 

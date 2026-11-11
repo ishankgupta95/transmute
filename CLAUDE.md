@@ -27,7 +27,14 @@ npm run test:all     # Unit + E2E sequentially
 - Heavy WASM usage: FFmpeg.wasm (video/audio), WebCodecs (H.264 encoding). PDF is pure JS — there is no PDF WASM engine any more.
 
 ### Key directories
-- `src/data/tools.ts` — Central registry of 40+ tool definitions (slug, metadata, category)
+- `src/data/tools.ts` — Central registry of 190 tool definitions (slug, metadata, category).
+  **Client-reachable**: `CommandPalette` is in the global layout and imports it, so this
+  module ships on every route. Keep it to fields the client actually reads.
+- `src/data/tool-copy.ts` — The server-only half of each entry: `aboutText`, `relatedTools`,
+  `titleTag`. Split out of `tools.ts` because a field can't be tree-shaken out of an object
+  literal, so 265 KB of prose was shipping to every visitor of every page. Do not import it
+  from a `"use client"` module, or from anything one reaches —
+  `src/__tests__/unit/data/server-only-copy.test.ts` walks the import graph and fails if you do.
 - `src/data/categories.ts` — 5 categories: image, pdf, audio, video, developer
 - `src/lib/tools/` — Pure processing logic (no React), one file per tool
 - `src/components/tools/` — Tool UI components
@@ -44,7 +51,7 @@ Each tool follows a three-layer pattern to handle the Server/Client Component bo
 ### Media processing
 - **FFmpeg.wasm** — Singleton loaded via `lib/tools/ffmpeg-loader.ts`. The core is **self-hosted, never a CDN**: `npm run copy:wasm` copies `ffmpeg-core.js`/`ffmpeg-core.wasm` (~31 MB, from the `@ffmpeg/core` devDependency) into `public/` on dev and build; the copies are gitignored, and the conversion suite's `forbidCdnCore` check fails the run on any CDN regression. Single-threaded build only (multi-threaded causes pthread deadlocks).
 - **Video compression** — Uses WebCodecs API (`VideoEncoder`) + `mp4-muxer`, not FFmpeg. See `lib/tools/video-compress.ts`.
-- **Audio** — `AudioContext.decodeAudioData()` for decoding; `lamejs` for MP3 encoding. lamejs is **not bundled**: `copy:wasm` copies it to `public/vendor/lamejs.js` and `lib/tools/audio-pcm.ts` loads it with a runtime `import()` of that same-origin URL. The HEIC decoder is vendored the same way but **NOT loaded the same way**: `copy:wasm` copies libheif-js to `public/vendor/libheif.js` + `libheif.wasm`, and `lib/tools/image-convert.ts` loads the glue with a CLASSIC `<script>` TAG and hands it the `.wasm` itself. A runtime `import()` does not work for it — its UMD leaves an empty namespace and sets no global (measured; heic2any, which it replaced on 2026-09-12, had a global branch and could be imported). Both are LGPL and staying unbundled is what keeps them replaceable; do not let a bundler inline either one back in — read the load-bearing comments in those two files before touching the specifier.
+- **Audio** — `AudioContext.decodeAudioData()` for decoding; **libmp3lame** (LAME 3.100, our own single-threaded SIMD wasm build — `scripts/build-libmp3lame-wasm.sh`, sources in `vendor/libmp3lame/`) for MP3 encoding. It replaced the pure-JS `lamejs` on 2026-11-11 and is 4.3x faster with byte-identical output (measured in Chromium; see that directory's README). It is **not bundled**: `copy:wasm` stages `libmp3lame.js` + `libmp3lame.wasm` into `public/vendor/` and `lib/tools/audio-pcm.ts` loads the glue with a runtime `import()` of that same-origin URL, which resolves the `.wasm` beside it. The bridge keeps LAME's state in one file-scope `gfp`, so encodes are serialised through a module-level queue — one instance cannot carry two. The HEIC decoder is vendored the same way but **NOT loaded the same way**: `copy:wasm` copies libheif-js to `public/vendor/libheif.js` + `libheif.wasm`, and `lib/tools/image-convert.ts` loads the glue with a CLASSIC `<script>` TAG and hands it the `.wasm` itself. A runtime `import()` does not work for it — its UMD leaves an empty namespace and sets no global (measured; heic2any, which it replaced on 2026-09-12, had a global branch and could be imported). Both are LGPL and staying unbundled is what keeps them replaceable; do not let a bundler inline either one back in — read the load-bearing comments in those two files before touching the specifier.
 - **PDF** — `pdf-lib` (MIT, pure JS) for every document and page operation: merge, split, rotate, reorder, page numbers, compress, images→PDF. `pdfjs-dist` for rendering (thumbnails, PDF→image). MuPDF is **gone** — it was AGPL and the repo is closed-source, so it was removed rather than licensed; do not reintroduce it. That also removed a 10 MB WASM download from every PDF page.
 
 ### Styling rules

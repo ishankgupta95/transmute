@@ -3,8 +3,22 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 import { getToolBySlug, type Tool } from "@/data/tools";
+import { getToolCopy } from "@/data/tool-copy";
 import { faqs } from "@/data/faqs";
 import { getWorkspaceTool } from "@/data/workspace";
+
+/**
+ * The server-only copy for a tool. `aboutText`, `relatedTools` and `titleTag`
+ * moved off `Tool` into src/data/tool-copy.ts so they stop shipping to the
+ * client — see that file's header. Throws rather than returning undefined: a
+ * registry entry with no copy entry is a bug these suites should catch.
+ */
+const copyOf = (slug: string) => {
+  const c = getToolCopy(slug);
+  if (!c) throw new Error(`${slug} has no tool-copy entry`);
+  return c;
+};
+
 
 /*
  * THE COPY-CLAIM GATE for the ten Wave-3 tools, written as the last step of an
@@ -57,7 +71,14 @@ const tool = (slug: string): Tool => {
 /** The registry prose a tool ships, lowercased. Excludes HowTo steps on purpose. */
 const registryCopy = (slug: string): string => {
   const t = tool(slug);
-  return [t.description, t.hubLine ?? "", t.h1, t.subtitle, t.aboutText, t.titleTag ?? ""]
+  return [
+    t.description,
+    t.hubLine ?? "",
+    t.h1,
+    t.subtitle,
+    copyOf(slug).aboutText,
+    copyOf(slug).titleTag ?? "",
+  ]
     .join("\n")
     .toLowerCase();
 };
@@ -205,7 +226,7 @@ describe("merge-video copy matches the compatibility check and the guard", () =>
     // green while the ENUMERATION — the thing the refusal table prints from —
     // quietly loses the row. Measured: it did.
     const CLAUSE = "the timing base that container counts in";
-    expect(tool("merge-video").aboutText.toLowerCase()).toContain(CLAUSE);
+    expect(copyOf("merge-video").aboutText.toLowerCase()).toContain(CLAUSE);
     expect(faqCopy("merge-video")).toContain(CLAUSE);
   });
 
@@ -241,7 +262,7 @@ describe("merge-video copy matches the compatibility check and the guard", () =>
     the opposite direction.
   */
   it("keeps the two-sided guard promise on both surfaces", () => {
-    expect(tool("merge-video").aboutText.toLowerCase()).toContain("comes up short or runs long");
+    expect(copyOf("merge-video").aboutText.toLowerCase()).toContain("comes up short or runs long");
     expect(faqCopy("merge-video")).toContain("comes up short or runs long");
   });
 

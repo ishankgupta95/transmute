@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "copy:wasm": "cp node_modules/@ffmpeg/core/dist/umd/ffmpeg-core.js node_modules/@ffmpeg/core/dist/umd/ffmpeg-core.wasm public/ && cp vendor/qpdf/qpdf.js vendor/qpdf/qpdf.wasm public/ && cp node_modules/zxing-wasm/dist/reader/zxing_reader.wasm node_modules/libarchive-wasm/dist/libarchive.wasm public/ && cp node_modules/@jsquash/oxipng/codec/pkg/squoosh_oxipng_bg.wasm public/ && mkdir -p public/tesseract && cp node_modules/tesseract.js/dist/tesseract.esm.min.js node_modules/tesseract.js/dist/worker.min.js node_modules/tesseract.js-core/tesseract-core-simd-lstm.js node_modules/tesseract.js-core/tesseract-core-simd-lstm.wasm public/tesseract/ && cp vendor/tessdata/eng.traineddata.gz public/tesseract/ && mkdir -p public/vendor && cp node_modules/@breezystack/lamejs/dist/lamejs.js node_modules/libheif-js/libheif-wasm/libheif.js node_modules/libheif-js/libheif-wasm/libheif.wasm public/vendor/ && node scripts/build-workers.mjs && mkdir -p public/fonts/print && cp node_modules/@fontsource-variable/newsreader/files/newsreader-latin-wght-normal.woff2 node_modules/@fontsource-variable/newsreader/files/newsreader-latin-wght-italic.woff2 node_modules/@fontsource-variable/outfit/files/outfit-latin-wght-normal.woff2 node_modules/@fontsource-variable/syne/files/syne-latin-wght-normal.woff2 node_modules/@fontsource-variable/jetbrains-mono/files/jetbrains-mono-latin-wght-normal.woff2 public/fonts/print/",
+    "copy:wasm": "cp node_modules/@ffmpeg/core/dist/umd/ffmpeg-core.js node_modules/@ffmpeg/core/dist/umd/ffmpeg-core.wasm public/ && cp vendor/qpdf/qpdf.js vendor/qpdf/qpdf.wasm public/ && cp node_modules/zxing-wasm/dist/reader/zxing_reader.wasm node_modules/libarchive-wasm/dist/libarchive.wasm public/ && cp node_modules/@jsquash/oxipng/codec/pkg/squoosh_oxipng_bg.wasm public/ && mkdir -p public/tesseract && cp node_modules/tesseract.js/dist/tesseract.esm.min.js node_modules/tesseract.js/dist/worker.min.js node_modules/tesseract.js-core/tesseract-core-simd-lstm.js node_modules/tesseract.js-core/tesseract-core-simd-lstm.wasm public/tesseract/ && cp vendor/tessdata/eng.traineddata.gz public/tesseract/ && mkdir -p public/vendor && cp vendor/libmp3lame/libmp3lame.js vendor/libmp3lame/libmp3lame.wasm node_modules/libheif-js/libheif-wasm/libheif.js node_modules/libheif-js/libheif-wasm/libheif.wasm public/vendor/ && node scripts/build-workers.mjs && mkdir -p public/fonts/print && cp node_modules/@fontsource-variable/newsreader/files/newsreader-latin-wght-normal.woff2 node_modules/@fontsource-variable/newsreader/files/newsreader-latin-wght-italic.woff2 node_modules/@fontsource-variable/outfit/files/outfit-latin-wght-normal.woff2 node_modules/@fontsource-variable/syne/files/syne-latin-wght-normal.woff2 node_modules/@fontsource-variable/jetbrains-mono/files/jetbrains-mono-latin-wght-normal.woff2 public/fonts/print/",
     "dev": "npm run copy:wasm && next dev",
     "build": "npm run copy:wasm && next build",
     "start": "next start",
@@ -22,11 +22,9 @@
     "fixtures:generate": "node scripts/generate-test-fixtures.mjs"
   },
   "dependencies": {
-    "@breezystack/lamejs": "^1.2.7",
     "@ffmpeg/ffmpeg": "^0.12.15",
     "@ffmpeg/util": "^0.12.2",
     "@jsquash/oxipng": "^2.3.0",
-    "@noble/hashes": "^2.4.0",
     "@types/dompurify": "^3.0.5",
     "bcryptjs": "^3.0.3",
     "bwip-js": "^4.11.4",
@@ -36,7 +34,7 @@
     "dompurify": "^3.4.2",
     "exifreader": "^4.37.0",
     "gifenc": "^1.0.3",
-    "js-md5": "^0.8.3",
+    "hash-wasm": "^4.13.0",
     "js-yaml": "^4.3.2",
     "jszip": "^3.10.1",
     "libarchive-wasm": "^1.2.0",
@@ -62,6 +60,7 @@
     "zxing-wasm": "^3.1.3"
   },
   "devDependencies": {
+    "@breezystack/lamejs": "^1.2.7",
     "@ffmpeg/core": "^0.12.10",
     "@fontsource-variable/jetbrains-mono": "^5.3.0",
     "@fontsource-variable/newsreader": "^5.3.0",

@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import { tools, getToolBySlug } from "@/data/tools";
+import { getToolCopy } from "@/data/tool-copy";
 import { faqs, PRIVACY_FAQ } from "@/data/faqs";
 import { getToolMetadata, getHowToSteps } from "@/lib/seo/tool-metadata";
 import { ToolPageLayout } from "@/components/tools/ToolPageLayout";
@@ -35,7 +36,7 @@ export default async function ToolPage({
       tool={tool}
       howToSteps={getHowToSteps(tool.toolType)}
       faqs={toolFaqs}
-      aboutText={tool.aboutText}
+      aboutText={getToolCopy(slug)?.aboutText}
     >
       <ToolClient tool={tool} />
     </ToolPageLayout>

@@ -1,5 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { tools } from "../../../data/tools";
+import { getToolCopy } from "../../../data/tool-copy";
 
 /**
  * Page-load sweep across every tool registered in `tools.ts`. Cheap per tool
@@ -45,8 +46,8 @@ test.describe("every tool page renders the registry's H1 + its own interactive s
       ).toBeAttached();
 
       // The exact title the metadata layer is supposed to build, not merely a
-      // non-empty one: `tool.titleTag ?? tool.h1` plus the site suffix.
-      await expect(page).toHaveTitle(`${tool.titleTag ?? tool.h1} | Transmute`);
+      // non-empty one: the copy module's `titleTag ?? tool.h1` plus the suffix.
+      await expect(page).toHaveTitle(`${getToolCopy(tool.slug)?.titleTag ?? tool.h1} | Transmute`);
 
       // A tool UI that throws during render can still leave the H1 behind.
       expect(

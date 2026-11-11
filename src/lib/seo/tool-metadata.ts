@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { getToolBySlug } from "@/data/tools";
+import { getToolCopy } from "@/data/tool-copy";
 import type { ToolType } from "@/data/tools";
 import { OG_LOCALE } from "@/lib/seo/locale";
 
@@ -884,7 +885,7 @@ export function getToolMetadata(slug: string): Metadata {
   return {
     // Plain string — the root layout's title.template adds " | Transmute".
     // Returning "... | Transmute" here produced a doubled "| Transmute | Transmute".
-    title: tool.titleTag ?? tool.h1,
+    title: getToolCopy(slug)?.titleTag ?? tool.h1,
     description: tool.description,
     keywords: tool.keywords,
     alternates: {

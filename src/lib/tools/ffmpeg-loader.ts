@@ -1,5 +1,4 @@
 import { FFmpeg, FFFSType } from "@ffmpeg/ffmpeg";
-import { toBlobURL } from "@ffmpeg/util";
 import type { ProcessingContext } from "@/hooks/useFileProcessor";
 import { abortError, throwIfAborted } from "@/lib/utils/abort";
 
@@ -358,9 +357,51 @@ export async function getFFmpeg(): Promise<FFmpeg> {
     // rejection rather than accidentally retrying mid-flight.
     loadPromise = (async () => {
       try {
+        /*
+          Plain same-origin URLs, NOT `toBlobURL`. Both of these used to be
+          wrapped in it, which was correct while the core came from unpkg:
+          `@ffmpeg/ffmpeg`'s worker loads the core with `importScripts`, and a
+          cross-origin script needs to be fetched and re-served from a blob.
+          Nothing is cross-origin any more (`CORE_BASE_URL` is ""), and the
+          wrapper is not free:
+
+          1. MEMORY. `toBlobURL` is `fetch(url).arrayBuffer()` then
+             `new Blob([buf])` (node_modules/@ffmpeg/util/dist/esm/index.js) —
+             it runs on the MAIN thread, so the whole 32 MB core is pulled into
+             the page's heap and copied, before the worker has been handed
+             anything. `URL.createObjectURL` then keeps that Blob alive, and
+             nothing ever revoked it, so the copy was resident for the lifetime
+             of the tab.
+          2. THE WASM CODE CACHE. A blob URL is a fresh opaque identity on
+             every page load (`blob:<origin>/<uuid>`), and the browser's
+             compiled-module cache is keyed on the resource URL. So the core
+             was recompiled from scratch on every single visit; against a
+             stable `/ffmpeg-core.wasm` the compile can be served from cache.
+
+          What is NOT a reason, and was stated wrongly once: streaming compile
+          was never lost. Emscripten gates it on `!isDataURI(binaryFile)` (see
+          `instantiateAsync` in public/ffmpeg-core.js), and a blob: URL is not
+          a data: URI, so `instantiateStreaming` ran either way.
+
+          Absolute rather than root-relative, deliberately. The worker resolves
+          `coreURL` with `importScripts` and the core resolves `wasmURL` out of
+          the `mainScriptUrlOrBlob` hash with its own `locateFile`; both would
+          in fact resolve "/ffmpeg-core.js" against the same origin today, but
+          an absolute URL does not depend on either of them agreeing about what
+          the base is. Built here rather than at module scope because
+          `location` does not exist during the static export.
+
+          The trailing slash on the base is load-bearing: `new URL("x", ".../a")`
+          resolves against the DIRECTORY of "/a" and so discards that last
+          segment, while `new URL("x", ".../a/")` keeps it. With the empty
+          `CORE_BASE_URL` of today the two spell the same thing, so this only
+          matters the day someone points the core at a subpath — which is
+          exactly when a silent 404 would be hardest to read.
+        */
+        const coreBase = new URL(`${CORE_BASE_URL}/`, location.href).href;
         await instance.load({
-          coreURL: await toBlobURL(`${CORE_BASE_URL}/ffmpeg-core.js`, "text/javascript"),
-          wasmURL: await toBlobURL(`${CORE_BASE_URL}/ffmpeg-core.wasm`, "application/wasm"),
+          coreURL: new URL("ffmpeg-core.js", coreBase).href,
+          wasmURL: new URL("ffmpeg-core.wasm", coreBase).href,
         });
         // A terminate() landed while we were loading: this instance is already
         // orphaned, so drop it rather than publishing it as the singleton.

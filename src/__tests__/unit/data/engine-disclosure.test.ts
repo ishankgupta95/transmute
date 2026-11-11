@@ -62,16 +62,19 @@ const wasmBytes = statSync(QPDF_WASM).size;
 /*
  * The homepage DOWNLOAD column is binary-prefix and one decimal place —
  * measured against the rows that were already there: the HEIC decoder is
- * 1,513,632 B and reads "1.4 MB" (1.44 MiB; decimal would be 1.5), lamejs is 259,508 B and
- * reads "253 KB" (253.4 KiB; decimal would be 260). A new row has to use the
- * same ruler or the column stops being comparable.
+ * 1,513,632 B and reads "1.4 MB" (1.44 MiB; decimal would be 1.5), and the MP3
+ * encoder is 231,475 B and reads "226 KB" (226.1 KiB; decimal would be 231).
+ * A new row has to use the same ruler or the column stops being comparable.
  *
- * That lamejs figure USED TO SAY "254 KB", here and on the homepage, and this
- * comment is where the error lived: it computed 253.4 KiB and then wrote 254,
- * so the row it was citing as the reference for the ruler was itself off by
- * one. Both vendored rows are now pinned to their artifacts below — they were
- * the last two ENGINES rows quoting a number nothing checked, which is exactly
- * how this one drifted.
+ * This comment is also where an error once lived, and the shape of it is worth
+ * keeping. The MP3 row used to be lamejs at 259,508 B, the figure read
+ * "254 KB", and this comment computed 253.4 KiB and then wrote 254 — so the
+ * row being cited as the reference for the ruler was itself off by one. Both
+ * vendored rows are pinned to their artifacts below now; they were the last
+ * two ENGINES rows quoting a number nothing checked, which is exactly how that
+ * one drifted. Do not reintroduce a hand-written byte count here: every figure
+ * in this comment is derived from a `statSync` below, and the prose is only a
+ * restatement of it.
  *
  * The figure is the PAIR, because a browser never fetches one without the
  * other: qpdf.js is the loader that instantiates qpdf.wasm.
@@ -88,7 +91,20 @@ const libarchiveBytes = statSync(LIBARCHIVE_WASM).size;
  * measured where copy:wasm reads them FROM (node_modules), not where it writes
  * them to, so the assertion holds on a clean checkout before any build.
  */
-const LAMEJS_VENDOR = resolve(root, "node_modules/@breezystack/lamejs/dist/lamejs.js");
+/*
+ * The MP3 encoder is TWO files and the disclosed figure is their sum, for the
+ * same reason the HEIC decoder below is: the glue resolves its binary as
+ * `new URL("libmp3lame.wasm", import.meta.url)`, so a browser that fetches one
+ * fetches both, and quoting the glue alone would understate the download by
+ * 28x. Measured in vendor/ rather than node_modules because, unlike every
+ * other served artifact here, we compile this one ourselves — see
+ * scripts/build-libmp3lame-wasm.sh. It replaced lamejs (a pure-JavaScript port
+ * of the same library, 259,508 B / "253 KB") on 2026-11-11.
+ */
+const LIBMP3LAME_FILES = [
+  "vendor/libmp3lame/libmp3lame.js",
+  "vendor/libmp3lame/libmp3lame.wasm",
+];
 /*
  * The HEIC decoder is TWO files and the disclosed figure is their sum, for the
  * same reason the OCR bundle below is five: image-convert.ts's loadLibheif()
@@ -100,7 +116,10 @@ const LIBHEIF_FILES = [
   "node_modules/libheif-js/libheif-wasm/libheif.js",
   "node_modules/libheif-js/libheif-wasm/libheif.wasm",
 ];
-const lamejsBytes = statSync(LAMEJS_VENDOR).size;
+const libmp3lameBytes = LIBMP3LAME_FILES.reduce(
+  (sum, f) => sum + statSync(resolve(root, f)).size,
+  0,
+);
 
 /*
  * The OCR bundle is FIVE files, and the disclosed figure is their sum, because
@@ -126,7 +145,7 @@ const tesseractBytes = TESSERACT_FILES.reduce(
 );
 const expectedTesseractSize = `${(tesseractBytes / 1024 / 1024).toFixed(1)} MB`;
 const libheifBytes = LIBHEIF_FILES.reduce((sum, f) => sum + statSync(resolve(root, f)).size, 0);
-const expectedLamejsSize = `${Math.round(lamejsBytes / 1024)} KB`;
+const expectedLibmp3lameSize = `${Math.round(libmp3lameBytes / 1024)} KB`;
 const expectedLibheifSize = `${(libheifBytes / 1024 / 1024).toFixed(1)} MB`;
 
 /*
@@ -264,7 +283,7 @@ describe("engine disclosure", () => {
     it.each([
       ["zxing-wasm", () => expectedZxingSize, zxingBytes, /qr|barcode|scan/i, "SCAN"],
       ["libarchive", () => expectedLibarchiveSize, libarchiveBytes, /archive|tar|7z|rar/i, "ARCHIVE"],
-      ["lamejs", () => expectedLamejsSize, lamejsBytes, /mp3/i, "MP3"],
+      ["libmp3lame", () => expectedLibmp3lameSize, libmp3lameBytes, /mp3/i, "MP3"],
       ["libheif", () => expectedLibheifSize, libheifBytes, /heic/i, "HEIC"],
       ["Tesseract", () => expectedTesseractSize, tesseractBytes, /text|ocr|scan/i, "OCR"],
     ] as const)("carries a %s row that quotes the artifact", (name, size, bytes, topic, when) => {
@@ -445,7 +464,7 @@ describe("engine disclosure", () => {
      the positive that the served engines are all still rowed.
   */
   describe("only served artifacts get a row", () => {
-    const SERVED = ["qpdf", "zxing-wasm", "libarchive", "libheif", "lamejs", "FFmpeg WASM", "Tesseract"];
+    const SERVED = ["qpdf", "zxing-wasm", "libarchive", "libheif", "libmp3lame", "FFmpeg WASM", "Tesseract"];
     const BUNDLED_NAMES = ["pica", "utif2", "bwip-js", "svgo", "mammoth", "jszip"];
 
     it("rows every engine served as its own file", () => {

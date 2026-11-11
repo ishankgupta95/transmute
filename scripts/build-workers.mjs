@@ -14,8 +14,10 @@ import path from "node:path";
  * third-party library over the network instead of having it bundled in, and
  * both of which build the specifier through a function call so esbuild cannot
  * fold it to a literal and re-inline the file:
- *   - audio-encode.worker.ts pulls lamejs from `/vendor/lamejs.js`, because an
- *     LGPL library has to stay replaceable. See `vendorUrl` in
+ *   - audio-encode.worker.ts pulls libmp3lame from `/vendor/libmp3lame.js`
+ *     (which resolves `/vendor/libmp3lame.wasm` relative to itself), because an
+ *     LGPL library has to stay replaceable. It was lamejs, the pure-JS port of
+ *     the same library, until 2026-11-11. See `vendorUrl` in
  *     src/lib/tools/audio-pcm.ts before touching that code.
  *   - qpdf.worker.ts pulls `/qpdf.js` from the origin root. Not a licensing
  *     matter (qpdf is Apache-2.0) but a mechanical one: the Emscripten glue

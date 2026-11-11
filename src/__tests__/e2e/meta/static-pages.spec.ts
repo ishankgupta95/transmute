@@ -81,7 +81,10 @@ test.describe("static pages", () => {
     // of the page — so each is asserted individually rather than by count.
     for (const heading of [
       /^FFmpeg$/i,
-      /^lamejs$/i,
+      // LAME, compiled to wasm here, since 2026-11-11; it was lamejs (the
+      // pure-JS port of the same library) before that, and the obligation is
+      // the same LGPL one either way.
+      /^libmp3lame$/i,
       /^libheif and libde265$/i,
       /^ExifReader$/i,
       // Apache-2.0 §4(d): the qpdf NOTICE has to travel with the binary we

@@ -10,6 +10,9 @@ import {
   assertWebCodecsSupported,
   pickH264Config,
 } from "./video-utils";
+import { audioChunkAdder, videoChunkAdder } from "./mux-chunk";
+import { toStereoFloats } from "./audio-pcm";
+
 
 export type CompressionPreset = "whatsapp" | "email" | "web";
 
@@ -250,10 +253,24 @@ function heightForBitrate(bitrate: number): number {
  * ceiling; the ceiling arm solves a bitrate through `planSizeTarget` and
  * reports what it actually achieved on `result.sizeTarget`.
  */
+/**
+ * Re-encode only part of the source, at the source's own size and bitrate —
+ * what an EXACT trim needs (`video-trim.ts`). A stream copy can only start on
+ * a keyframe; decoding from the seek point and encoding again is the only way
+ * a clip can begin on the frame the user picked. `matchSource` keeps the
+ * resolution and spends what the source spends per second, so the trim is not
+ * also a quality downgrade the user never asked for.
+ */
+export interface EncodeRangeOptions {
+  range?: { start: number; end: number };
+  matchSource?: boolean;
+}
+
 export async function compressVideo(
   file: File,
   mode: VideoCompressionMode,
   ctx: ProcessingContext = {},
+  { range, matchSource = false }: EncodeRangeOptions = {},
 ): Promise<VideoCompressResult> {
   const { onProgress, signal } = ctx;
   const sizeTarget = typeof mode === "string" ? null : mode;
@@ -306,7 +323,17 @@ export async function compressVideo(
           hasAudio,
         })
       : null;
-    const config = plan
+    const sourceRate = (file.size * 8) / duration;
+    const config = matchSource
+      ? {
+          maxHeight: videoHeight,
+          // The whole file's rate, video and audio together, is a slight
+          // over-estimate of the picture's share — the safe direction for a
+          // trim, which should not look worse than its source.
+          bitrate: Math.max(500_000, Math.round(sourceRate)),
+          audioBitrate: 128_000,
+        }
+      : plan
       ? {
           maxHeight: plan.maxHeight,
           bitrate: plan.videoBitrate,
@@ -315,10 +342,15 @@ export async function compressVideo(
           audioBitrate: plan.audioBitrate ?? AUDIO_LADDER[AUDIO_LADDER.length - 1],
         }
       : PRESET_CONFIG[mode as CompressionPreset];
-    const sourceBitrate = (file.size * 8) / duration;
-    const targetBitrate = plan
+    const targetBitrate = matchSource
+      ? config.bitrate
+      : plan
       ? plan.videoBitrate
-      : Math.min(config.bitrate, Math.max(200_000, Math.round(sourceBitrate * 0.9)));
+      : Math.min(config.bitrate, Math.max(200_000, Math.round(sourceRate * 0.9)));
+    // Clamped to what the file really holds: a range past the end would make
+    // the frame loop wait for frames that never come.
+    const from = Math.max(0, Math.min(range?.start ?? 0, duration));
+    const to = Math.max(from, Math.min(range?.end ?? duration, duration));
 
     /*
       Firefox ≥132 passes every coarse WebCodecs probe but ships no AAC
@@ -387,6 +419,7 @@ export async function compressVideo(
       on the first chunk, and testing every chunk would reject a healthy run.
     */
     let decoderConfigSeen = false;
+    const addVideoChunk = videoChunkAdder(muxer);
     const videoEncoder = new VideoEncoder({
       output: (chunk, meta) => {
         if (!decoderConfigSeen) {
@@ -397,7 +430,15 @@ export async function compressVideo(
           }
           decoderConfigSeen = true;
         }
-        muxer.addVideoChunk(chunk, meta);
+        // A muxer throw here would fire asynchronously, out of reach of every
+        // try block — the run would then die in finalize() on a library
+        // message. Captured, it ends the run with its own words instead.
+        try {
+          addVideoChunk(chunk, meta);
+        } catch (e) {
+          if (!encoderError) encoderError = e instanceof Error ? e : new Error(String(e));
+          wakeBackpressure?.();
+        }
       },
       // Capture rather than throw — a throw here fires async and becomes an
       // uncaught rejection, freezing the UI on "Compressing…" forever.
@@ -435,8 +476,8 @@ export async function compressVideo(
       let frameCount = 0;
       await playAndExtractFrames(
         video,
-        0,
-        duration,
+        from,
+        to,
         async (vid, timestampUs) => {
           throwIfAborted(signal);
           if (encoderError) throw encoderError;
@@ -470,7 +511,7 @@ export async function compressVideo(
 
       if (audioBuffer && aacConfig) {
         onProgress?.(85);
-        await encodeAudio(audioBuffer, muxer, aacConfig, signal);
+        await encodeAudio(audioBuffer, muxer, aacConfig, signal, { from, to });
         onProgress?.(95);
       }
 
@@ -541,12 +582,22 @@ async function encodeAudio(
   // with the same identity keeps probe and configure from ever diverging.
   config: AudioEncoderConfig,
   signal?: AbortSignal,
+  // Seconds of the source to encode. Timestamps restart at 0 so the audio
+  // lines up with the video, which the muxer also offsets to start at 0.
+  span?: { from: number; to: number },
 ): Promise<void> {
   const { numberOfChannels, sampleRate } = config;
 
   let encoderError: Error | null = null;
+  const addAudioChunk = audioChunkAdder(muxer, sampleRate);
   const audioEncoder = new AudioEncoder({
-    output: (chunk, meta) => { muxer.addAudioChunk(chunk, meta); },
+    output: (chunk, meta) => {
+      try {
+        addAudioChunk(chunk, meta);
+      } catch (e) {
+        if (!encoderError) encoderError = e instanceof Error ? e : new Error(String(e));
+      }
+    },
     error: (e) => { encoderError = e instanceof Error ? e : new Error(String(e)); },
   });
 
@@ -554,9 +605,28 @@ async function encodeAudio(
     audioEncoder.configure(config);
 
     const chunkSize = 1024;
-    const totalSamples = audioBuffer.length;
+    const firstSample = span ? Math.min(audioBuffer.length, Math.round(span.from * sampleRate)) : 0;
+    const totalSamples = span
+      ? Math.min(audioBuffer.length, Math.round(span.to * sampleRate))
+      : audioBuffer.length;
 
-    for (let offset = 0; offset < totalSamples; offset += chunkSize) {
+    /*
+      The AAC track is configured for at most two channels, and this loop used
+      to read channels 0 and 1 of the source and nothing else — so a 5.1
+      soundtrack lost its centre (usually the dialogue), both surrounds and
+      the LFE without a word (found 2026-11-11). A wider source is now FOLDED
+      with the same ITU-R BS.775 matrix the MP3 encoder uses (audio-pcm.ts):
+      centre into both sides, each surround into its own side, LFE dropped.
+    */
+    const sourceTracks = Array.from({ length: audioBuffer.numberOfChannels }, (_, ch) =>
+      audioBuffer.getChannelData(ch),
+    );
+    const tracks =
+      sourceTracks.length > numberOfChannels
+        ? (toStereoFloats(sourceTracks) as [Float32Array, Float32Array])
+        : sourceTracks;
+
+    for (let offset = firstSample; offset < totalSamples; offset += chunkSize) {
       // A long track is thousands of iterations — check often enough that
       // cancelling feels immediate.
       throwIfAborted(signal);
@@ -564,7 +634,7 @@ async function encodeAudio(
       const interleaved = new Float32Array(remaining * numberOfChannels);
 
       for (let ch = 0; ch < numberOfChannels; ch++) {
-        const channelData = audioBuffer.getChannelData(ch);
+        const channelData = tracks[ch];
         for (let i = 0; i < remaining; i++) {
           interleaved[i * numberOfChannels + ch] = channelData[offset + i];
         }
@@ -575,7 +645,7 @@ async function encodeAudio(
         sampleRate,
         numberOfFrames: remaining,
         numberOfChannels,
-        timestamp: Math.round((offset / sampleRate) * 1_000_000),
+        timestamp: Math.round(((offset - firstSample) / sampleRate) * 1_000_000),
         data: interleaved,
       });
 

@@ -18,10 +18,12 @@ export default defineConfig({
       provider: "v8",
       include: ["src/lib/**", "src/hooks/**"],
       thresholds: {
-        statements: 10,
-        branches: 10,
-        functions: 10,
-        lines: 10,
+        // Measured 2026-11-11: 86.3 / 80.9 / 87.0 / 87.8. A floor a few points
+        // under that, so a real drop fails the run but jitter does not.
+        statements: 82,
+        branches: 76,
+        functions: 83,
+        lines: 83,
       },
     },
   },

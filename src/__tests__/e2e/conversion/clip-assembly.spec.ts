@@ -13,6 +13,7 @@ import {
   toolError,
 } from "./support";
 import { assertZip } from "./validators";
+import { VIDEO_MAE, compareVideoToSource, expectVideoMatches } from "./fidelity";
 
 /**
  * Cutting a clip into parts, and joining parts back into a clip — the two
@@ -165,6 +166,19 @@ test.describe("cutting a clip into parts, and joining parts into a clip", () => 
       probed.duration + secondProbe.duration,
       "the two parts together must still be the whole clip",
     ).toBeGreaterThan(SOURCE_SECONDS - 0.2);
+
+    // Content: part 1 is the start of the source, and part 2 picks up exactly
+    // where part 1 ends — no repeated, missing or wrong frames at the seam.
+    const src = { bytes: source.buffer, mime: "video/mp4" };
+    const p1 = await compareVideoToSource(page, src, { bytes: part, mime: "video/mp4" }, {
+      outTimes: [0.1, probed.duration * 0.5, probed.duration - 0.1],
+    });
+    expectVideoMatches(p1.matches, { maxMae: VIDEO_MAE.copy + 2, label: "part 1" });
+    const p2 = await compareVideoToSource(page, src, { bytes: second, mime: "video/mp4" }, {
+      outTimes: [0.05, secondProbe.duration * 0.5, secondProbe.duration - 0.1],
+      map: (t) => t + probed.duration,
+    });
+    expectVideoMatches(p2.matches, { maxMae: VIDEO_MAE.copy + 2, label: "part 2" });
   });
 
   /**
@@ -262,5 +276,20 @@ test.describe("cutting a clip into parts, and joining parts into a clip", () => 
 
     await expect(surface).toContainText("NOT ONE FRAME WAS RE-ENCODED");
     await expect(surface).toContainText("COPIED ACROSS BYTE FOR BYTE");
+
+    // Content: the first clip, then the second clip from ITS start. Both are
+    // the same frames, so a join that dropped, repeated or reordered the second
+    // half shows up as the wrong frame at a known time.
+    const firstLength = (await probeVideoInPage(page, first.buffer, "video/mp4")).duration;
+    const joined = await compareVideoToSource(
+      page,
+      { bytes: first.buffer, mime: "video/mp4" },
+      { bytes, mime: "video/mp4" },
+      {
+        outTimes: [0.4, 1.2, firstLength + 0.4, firstLength + 1.2],
+        map: (t) => (t < firstLength ? t : t - firstLength),
+      },
+    );
+    expectVideoMatches(joined.matches, { maxMae: VIDEO_MAE.copy + 2, label: "joined" });
   });
 });

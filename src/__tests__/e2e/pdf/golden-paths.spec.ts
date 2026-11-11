@@ -1,16 +1,18 @@
 import { test, expect, type Page } from "@playwright/test";
 import { uploadFile, downloadButton, waitForDownload, downloadBytes } from "../helpers";
 import { tinyPdf, tinyPng, tinyJpg } from "../fixtures";
+import { expectPdfPages } from "../conversion/fidelity";
 
 /**
  * PDF tools rely on pdf-lib (documents and pages) and pdfjs (rendering)
  * running in the browser. Tests upload programmatically generated tiny PDFs
  * (via pdf-lib in Node) so we never depend on a checked-in PDF blob.
  *
- * These are shape checks — the right button, the right filename, a file that
- * starts `%PDF-`. The assertions on the BYTES that come back (page counts,
- * page boxes, extracted text, archive members) live in the opt-in conversion
- * suite: `conversion/pdf.spec.ts` and `conversion/pdf-pages.spec.ts`.
+ * Every page of a `tinyPdf` draws "Page N", so each page-picking tool here
+ * checks WHICH pages came back (`expectPdfPages`), not only that the download
+ * starts `%PDF-` — a "page 2" extract that held page 1 used to pass. Deeper
+ * checks (page boxes, archive members, metadata) live in the opt-in
+ * conversion suite: `conversion/pdf.spec.ts` and `conversion/pdf-pages.spec.ts`.
  *
  * Tools that thumbnail every page (split, extract, delete, rotate, reorder)
  * take measurably longer than the others because they paint a JPEG canvas per
@@ -61,6 +63,7 @@ test.describe("PDF golden paths", () => {
     expect(suggestedFilename).toBe("split.pdf");
     const bytes = await downloadBytes(download);
     expect(bytes.subarray(0, 5).toString("ascii")).toBe("%PDF-");
+    await expectPdfPages(bytes, [2], "split.pdf");
   });
 
   test("images-to-pdf: 2 images → multi-page PDF", async ({ page }) => {
@@ -87,8 +90,14 @@ test.describe("PDF golden paths", () => {
     await expect(rotateBtn).toBeVisible({ timeout: 15_000 });
     await rotateBtn.click();
 
-    const { suggestedFilename } = await waitForDownload(page, downloadButton(page));
+    const { suggestedFilename, download } = await waitForDownload(page, downloadButton(page));
     expect(suggestedFilename).toMatch(/-rotated\.pdf$/);
+    const bytes = await downloadBytes(download);
+    // The rotation is in the file, on every page, and the pages are unchanged.
+    const { PDFDocument } = await import("pdf-lib");
+    const doc = await PDFDocument.load(new Uint8Array(bytes));
+    expect(doc.getPages().map((p) => p.getRotation().angle)).toEqual([90, 90]);
+    await expectPdfPages(bytes, [1, 2], "rotated");
   });
 
   test("add-page-numbers: stamps a number on every page", async ({ page }) => {
@@ -100,6 +109,7 @@ test.describe("PDF golden paths", () => {
     expect(suggestedFilename).toMatch(/-numbered\.pdf$/);
     const bytes = await downloadBytes(download);
     expect(bytes.subarray(0, 5).toString("ascii")).toBe("%PDF-");
+    await expectPdfPages(bytes, [1, 2, 3], "numbered");
   });
 
   test("compress-pdf: round-trips a valid PDF (compression auto-starts on upload)", async ({
@@ -203,6 +213,7 @@ test.describe("PDF golden paths", () => {
     expect(suggestedFilename).toBe("extracted-pages.pdf");
     const bytes = await downloadBytes(download);
     expect(bytes.subarray(0, 5).toString("ascii")).toBe("%PDF-");
+    await expectPdfPages(bytes, [2], "extracted-pages.pdf");
   });
 
   test("extract-pdf-pages: a one-page per-page run saves the page, not an archive", async ({
@@ -230,6 +241,7 @@ test.describe("PDF golden paths", () => {
     expect(suggestedFilename).toBe("page-2.pdf");
     const bytes = await downloadBytes(download);
     expect(bytes.subarray(0, 5).toString("ascii")).toBe("%PDF-");
+    await expectPdfPages(bytes, [2], "page-2.pdf");
   });
 
   test("delete-pdf-pages: removes page 2 of a 3-page PDF", async ({ page }) => {
@@ -246,6 +258,8 @@ test.describe("PDF golden paths", () => {
     expect(suggestedFilename).toBe("pages-removed.pdf");
     const bytes = await downloadBytes(download);
     expect(bytes.subarray(0, 5).toString("ascii")).toBe("%PDF-");
+    // Page 2 went; 1 and 3 stayed.
+    await expectPdfPages(bytes, [1, 3], "pages-removed.pdf");
   });
 
   test("crop-pdf: renders page 1, then crops every page", async ({ page }) => {

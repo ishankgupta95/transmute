@@ -8,6 +8,13 @@ import {
   toolError,
 } from "./support";
 import { assertPng, assertWebp, assertZip } from "./validators";
+import { expectFixturePageRasters } from "./fidelity";
+
+/** ZIP entries as images, ordered by the page number in their name. */
+function byPage(entries: { name: string; bytes: Buffer; mime: string }[]) {
+  const n = (s: string) => Number(s.match(/\d+/)?.[0]);
+  return [...entries].sort((a, b) => n(a.name) - n(b.name));
+}
 
 /**
  * The pdf-to-png / pdf-to-webp variant pages share pdf-to-jpg's renderer
@@ -48,6 +55,7 @@ test.describe("pdf→image variant pages — real output", () => {
 
     const JSZip = (await import("jszip")).default;
     const zip = await JSZip.loadAsync(bytes);
+    const images: { name: string; bytes: Buffer; mime: string }[] = [];
     for (const entryName of names) {
       expect(entryName).toMatch(/^page-\d+\.png$/);
       const entry = await zip.files[entryName].async("nodebuffer");
@@ -55,7 +63,12 @@ test.describe("pdf→image variant pages — real output", () => {
       const dims = assertPng(entry);
       expect(dims.width, `${entryName} should be a rendered page`).toBeGreaterThan(100);
       expect(dims.height).toBeGreaterThan(100);
+      images.push({ name: entryName, bytes: entry, mime: "image/png" });
     }
+    // Each page-N.png is a render of page N (its bar's colour), not a blank,
+    // a repeat or a neighbour.
+    const bars = await expectFixturePageRasters(page, byPage(images), [1, 2, 3, 4, 5], { label: "pdf-to-png" });
+    test.info().annotations.push({ type: "bar colours", description: JSON.stringify(bars) });
   });
 
   test("pdf-to-webp delivers real webp pages, or refuses honestly where the browser can't encode them", async ({
@@ -94,6 +107,7 @@ test.describe("pdf→image variant pages — real output", () => {
 
       const JSZip = (await import("jszip")).default;
       const zip = await JSZip.loadAsync(bytes);
+      const images: { name: string; bytes: Buffer; mime: string }[] = [];
       for (const entryName of names) {
         expect(entryName).toMatch(/^page-\d+\.webp$/);
         const entry = await zip.files[entryName].async("nodebuffer");
@@ -101,7 +115,10 @@ test.describe("pdf→image variant pages — real output", () => {
         // PNG fallback would break — and a still, not an animation.
         const info = assertWebp(entry);
         expect(info.animated, `${entryName} must be a still image`).toBe(false);
+        images.push({ name: entryName, bytes: entry, mime: "image/webp" });
       }
+      const bars = await expectFixturePageRasters(page, byPage(images), [1, 2, 3, 4, 5], { label: "pdf-to-webp" });
+      test.info().annotations.push({ type: "bar colours", description: JSON.stringify(bars) });
     } else {
       // The engine sniffs page 1's bytes and fails fast with the same wording
       // pdf-engine.ts throws — surfaced through the tool's role=alert path.

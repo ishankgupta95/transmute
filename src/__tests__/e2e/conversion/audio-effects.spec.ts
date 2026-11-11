@@ -11,6 +11,7 @@ import {
   toolError,
 } from "./support";
 import { assertWav } from "./validators";
+import { audioLevelsInPage, audioTonesInPage, dB, expectDyad, expectLevels, expectTones } from "./fidelity";
 
 /**
  * The four audio-effect pages, driven against real samples.
@@ -60,11 +61,46 @@ const NORMALIZE_SOURCE_BYTES = 352_844;
 const NORMALIZED_WAV_MIN_BYTES = 300_000;
 const NORMALIZED_WAV_MAX_BYTES = 600_000;
 
+/**
+ * How far from the −16 LUFS target the unweighted meter may read. Measured
+ * 2026-11-11: the output reads −15.86 in Chromium and WebKit (the meter skips
+ * K-weighting, which is near 0 dB at 440/554 Hz); the untouched source −9.42.
+ */
+const NORMALIZE_TOLERANCE_LU = 1;
+
 /** `sample-audio-gaps.wav`: 1 s + 1 s tone + 1.5 s + 1 s tone + 1 s. */
 const GAPS_SECONDS = 5.5;
 /** Measured with the shipped core: "ends" leaves 3.499683 s, "all" 2.039683 s. */
 const GAPS_ENDS_SECONDS = 3.5;
 const GAPS_ALL_SECONDS = 2.04;
+
+/**
+ * `sample-audio-gaps.wav`'s two tones as RMS: 12000 and 4000 int16 peak sines,
+ * read back by `audioLevelsInPage` at 0.2590 and 0.0863 (fidelity.spec).
+ */
+const GAPS_LOUD = 12000 / 32768 / Math.SQRT2;
+const GAPS_QUIET = 4000 / 32768 / Math.SQRT2;
+
+/** Windows inside each span of the gaps fixture, 0.1 s clear of every edge. */
+const GAPS_WINDOWS = [
+  { from: 0.1, to: 0.9 },
+  { from: 1.1, to: 1.9 },
+  { from: 2.6, to: 3.4 },
+  { from: 3.6, to: 4.4 },
+  { from: 4.6, to: 5.4 },
+];
+
+/** The 2 s dyad fixture's steady stretch, clear of its 125 ms fades. */
+const STEADY = [{ from: 0.3, to: 1.7 }];
+
+function note(name: string, value: unknown): void {
+  test.info().annotations.push({ type: name, description: JSON.stringify(value) });
+}
+
+/** Unweighted BS.1770-style loudness of a stereo window: −0.691 + 10·log10(Σ mean square). */
+function approxLufs(rms: number[]): number {
+  return -0.691 + 10 * Math.log10(rms.reduce((a, r) => a + r * r, 0));
+}
 
 async function gapsFixture() {
   return sample("sample-audio-gaps.wav", "audio/wav");
@@ -187,6 +223,16 @@ test.describe("audio effects — real filters, real samples", () => {
     expect(wav.channels, "the source is stereo and nothing here downmixes").toBe(2);
     expect(wav.peak, "a normalised file must not be digital silence").toBeGreaterThan(0.05);
 
+    // Content: the level actually MOVED to the target, and it is still the
+    // same two tones. The default chip is "podcast", −16 LUFS; the source
+    // reads −9.42 on the same meter, so a no-op misses by 6.6 LU.
+    const srcLevel = approxLufs((await audioLevelsInPage(page, source.buffer, STEADY)).rms[0]);
+    const outLevel = approxLufs((await audioLevelsInPage(page, bytes, STEADY)).rms[0]);
+    note("loudness (unweighted LUFS)", { source: srcLevel, output: outLevel });
+    expect(outLevel, `normalised to ${outLevel.toFixed(2)} from ${srcLevel.toFixed(2)}, target −16`).toBeGreaterThan(-16 - NORMALIZE_TOLERANCE_LU);
+    expect(outLevel).toBeLessThan(-16 + NORMALIZE_TOLERANCE_LU);
+    note("purity", (await expectDyad(page, bytes, { label: "normalize-audio" })).channels.map((c) => c.purity));
+
     expect(
       bytes.length,
       `a 192 kHz output measures 1,536,102 B against the source's ${NORMALIZE_SOURCE_BYTES}`,
@@ -249,6 +295,20 @@ test.describe("audio effects — real filters, real samples", () => {
     ).toBeLessThan(GAPS_ENDS_SECONDS + 0.2);
     expect(decoded.peak, "the tones must survive the trim").toBeGreaterThan(0.05);
 
+    // Content: loud tone, the kept 1.5 s gap, quiet tone — in that order, at
+    // their source levels. A cut in the wrong place, or one that ate into a
+    // tone, moves a window's level or puts sound where the gap should be.
+    const levels = await audioLevelsInPage(page, bytes, [
+      { from: 0.1, to: 0.9 },
+      { from: 1.1, to: 2.4 },
+      { from: 2.6, to: 3.4 },
+    ]);
+    note("levels", levels.rms);
+    expectLevels(levels, [GAPS_LOUD, 0, GAPS_QUIET], { label: "remove-silence ends" });
+    const tones = await audioTonesInPage(page, bytes, [440], { from: 0.1, to: 0.9 });
+    note("purity", tones.channels.map((c) => c.purity));
+    expectTones(tones, [440, 440], { label: "remove-silence ends, loud tone" });
+
     // And the page's own arithmetic, off the engine's report of the run.
     const surface = page.locator("[data-tool-surface]");
     await expect(surface).toContainText("5.5 s");
@@ -277,6 +337,17 @@ test.describe("audio effects — real filters, real samples", () => {
       "'every gap' must remove strictly more than 'ends only' did",
     ).toBeLessThan(GAPS_ENDS_SECONDS - 0.5);
     expect(decoded.peak, "the two tones must still be there").toBeGreaterThan(0.05);
+
+    // Content: the two tones back to back, loud then quiet, nothing between.
+    const levels = await audioLevelsInPage(page, bytes, [
+      { from: 0.1, to: 0.9 },
+      { from: 1.15, to: 1.95 },
+    ]);
+    note("levels", { duration: decoded.duration, rms: levels.rms });
+    expectLevels(levels, [GAPS_LOUD, GAPS_QUIET], { label: "remove-silence all" });
+    const tones = await audioTonesInPage(page, bytes, [440], { from: 1.15, to: 1.95 });
+    note("purity", tones.channels.map((c) => c.purity));
+    expectTones(tones, [440, 440], { label: "remove-silence all, quiet tone" });
   });
 
   /**
@@ -305,6 +376,18 @@ test.describe("audio effects — real filters, real samples", () => {
     ).toBeGreaterThan(0.06);
     expect(quietWav.peak, "−12 dB must actually be quieter than the source").toBeLessThan(0.15);
 
+    const source = await sample("sample-audio.wav", "audio/wav");
+    const srcRms = (await audioLevelsInPage(page, source.buffer, STEADY)).rms[0];
+    const quietRms = (await audioLevelsInPage(page, quiet.bytes, STEADY)).rms[0];
+    // Measured −12.00 dB on both channels, both engines.
+    const quietGain = quietRms.map((r, c) => dB(r / srcRms[c]));
+    note("−12 dB measured gain per channel", quietGain);
+    for (const g of quietGain) {
+      expect(g, "the RMS must move by the chosen gain, on every channel").toBeGreaterThan(-12 - 0.5);
+      expect(g).toBeLessThan(-12 + 0.5);
+    }
+    note("−12 dB purity", (await expectDyad(page, quiet.bytes, { label: "volume −12 dB" })).channels.map((c) => c.purity));
+
     const quietDecoded = await decodeAudioInPage(page, quiet.bytes);
     expect(quietDecoded.peak, "a gain change must not produce silence").toBeGreaterThan(0.05);
     expect(quietDecoded.peak).toBeLessThan(0.2);
@@ -322,6 +405,13 @@ test.describe("audio effects — real filters, real samples", () => {
       loudWav.peak,
       "+12 dB on a −8.7 dBFS source cannot fit, so the stored peak is full scale",
     ).toBeGreaterThan(0.98);
+
+    // Louder by a lot, though not the full 12 dB: the samples past full
+    // scale were clipped on the way into 16 bits (measured +10.14 dB RMS).
+    const loudRms = (await audioLevelsInPage(page, loud.bytes, STEADY)).rms[0];
+    const loudGain = loudRms.map((r, c) => dB(r / srcRms[c]));
+    note("+12 dB measured gain per channel", loudGain);
+    for (const g of loudGain) expect(g, "+12 dB must make it substantially louder").toBeGreaterThan(6);
 
     // The report, not a limiter: the page has to name the overshoot.
     await expect(surface).toContainText("above the 0 dBFS ceiling");
@@ -371,5 +461,16 @@ test.describe("audio effects — real filters, real samples", () => {
       identityDelta,
       "control: an output that merely copied the input would score 0 here",
     ).toBeGreaterThan(0.05);
+
+    // The envelope, as a listener hears it: quiet tone first, loud one last,
+    // gaps where they mirror to — and both still a clean 440 Hz.
+    const levels = await audioLevelsInPage(page, bytes, GAPS_WINDOWS);
+    note("levels", levels.rms);
+    expectLevels(levels, [0, GAPS_QUIET, 0, GAPS_LOUD, 0], { label: "reverse-audio" });
+    for (const w of [GAPS_WINDOWS[1], GAPS_WINDOWS[3]]) {
+      const tones = await audioTonesInPage(page, bytes, [440], w);
+      note(`purity ${w.from}–${w.to}`, tones.channels.map((c) => c.purity));
+      expectTones(tones, [440, 440], { label: `reverse-audio ${w.from}–${w.to}s` });
+    }
   });
 });

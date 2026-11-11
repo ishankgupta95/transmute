@@ -1,0 +1,15 @@
+# The real-conversion e2e suite, on push.
+#
+# GitHub Actions no longer runs any tests (only build + deploy), and the
+# pre-commit hook runs unit tests only — jsdom has no canvas, WebCodecs or
+# WASM, so it cannot see a wrong picture, frame, sound or page. This suite
+# can: it drives every engine for real in Chromium and checks the
+# output's CONTENT against its source (src/__tests__/e2e/conversion/fidelity.ts).
+# On 2026-11-11 it caught two shipped bugs the rest of the gates passed.
+#
+# ~1.5 minutes. It reuses a dev server already on :3000, or starts one.
+# `--reporter=line`: the default html reporter serves its report and waits on
+# failure, which would hang the push instead of failing it.
+#
+# To skip it once (e.g. a docs-only push): git push --no-verify
+npm run test:e2e:conversion -- --reporter=line

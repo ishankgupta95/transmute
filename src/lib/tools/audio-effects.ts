@@ -7,7 +7,7 @@ import {
   type AudioOutputFormat,
 } from "./audio-format";
 import { sniffSampleRate } from "./audio-decode";
-import { MAX_MP3_SAMPLE_RATE } from "./audio-pcm";
+import { MAX_MP3_SAMPLE_RATE, foldChannelsToStereo } from "./audio-pcm";
 
 /**
  * ───────────────────────────────────────────────────────────────────────────
@@ -989,12 +989,6 @@ async function encodeBuffer(
  */
 const MP3_MAX_CHANNELS = 2;
 
-/**
- * The -3 dB every channel beyond front L/R is summed in at — `SURROUND_FOLD_GAIN`
- * in `audio-pcm.ts`, same constant, same reason.
- */
-const SURROUND_FOLD_GAIN = Math.SQRT1_2;
-
 export interface StereoFold {
   /** Two channels for a wider input; the input untouched for one or two. */
   channels: Float32Array[];
@@ -1007,8 +1001,8 @@ export interface StereoFold {
 /**
  * Sum a wider-than-stereo mix into L/R exactly the way the MP3 encoder would.
  *
- * A DELIBERATE DUPLICATE of `toStereoFloats` (`audio-pcm.ts`), and it is here so
- * the fold happens where a page can see it. The encoder's copy runs inside the
+ * Built on `foldChannelsToStereo` (`audio-pcm.ts`), the encoder's own fold, and
+ * it is here so the fold happens where a page can see it. The encoder's copy runs inside the
  * audio worker and reports nothing back, so measuring a peak before handing the
  * samples over described samples that were never written: six sub-unity
  * channels can sum above 1, at which point `toStereoFloats` divides the WHOLE
@@ -1020,23 +1014,17 @@ export interface StereoFold {
  * Folding here first is what fixes it: the encoder's copy then sees two
  * channels and returns them untouched, so the bytes are unchanged, while
  * `peakAfter`, `clipped` and the warnings finally describe the delivered file.
- * The arithmetic is copied line for line, accumulation order included.
+ * The fold is the encoder's own function, so the two cannot disagree.
  */
 export function foldToStereo(channels: readonly Float32Array[]): StereoFold {
   if (channels.length <= MP3_MAX_CHANNELS) {
     return { channels: channels.slice(), foldPeak: peakOfChannels(channels), scale: 1 };
   }
 
-  const left = Float32Array.from(channels[0]);
-  const right = Float32Array.from(channels[1]);
-  for (let ch = 2; ch < channels.length; ch++) {
-    const extra = channels[ch];
-    for (let i = 0; i < left.length; i++) {
-      const folded = extra[i] * SURROUND_FOLD_GAIN;
-      left[i] += folded;
-      right[i] += folded;
-    }
-  }
+  // The SAME arithmetic the encoder runs (audio-pcm.ts), called rather than
+  // copied since 2026-11-11 — when the copy was also wrong (every surround and
+  // the LFE into both sides) and had to be fixed in two places.
+  const [left, right] = foldChannelsToStereo(channels);
 
   let foldPeak = 0;
   for (let i = 0; i < left.length; i++) {

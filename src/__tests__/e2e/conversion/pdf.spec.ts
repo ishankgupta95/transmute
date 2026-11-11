@@ -9,6 +9,7 @@ import {
   toolError,
 } from "./support";
 import { assertPdf, assertZip, assertJpeg } from "./validators";
+import { expectFixturePageRasters, expectPdfPages } from "./fidelity";
 
 /**
  * PDF pipelines run on pdf-lib (every document and page operation) and pdfjs
@@ -46,6 +47,7 @@ test.describe("pdf conversions — real output", () => {
     const { bytes } = await captureDownload(page, dl);
 
     await assertPdf(bytes, { pages: 2 });
+    await expectPdfPages(bytes, [1, 3], "split-pdf");
   });
 
   test("merge-pdf concatenates both documents", async ({ page }) => {
@@ -64,6 +66,8 @@ test.describe("pdf conversions — real output", () => {
 
     // 5 + 5 — the whole point of the tool.
     await assertPdf(bytes, { pages: 10 });
+    // First document, then the second, each in its own order.
+    await expectPdfPages(bytes, [1, 2, 3, 4, 5, 1, 2, 3, 4, 5], "merge-pdf");
   });
 
   test("images-to-pdf assembles one page per image", async ({ page }) => {
@@ -104,6 +108,9 @@ test.describe("pdf conversions — real output", () => {
 
     // Compression must never silently drop pages, whatever it does to size.
     await assertPdf(bytes, { pages: 5 });
+    // Every page still renders its own text: compression must not have
+    // dropped fonts or content streams.
+    await expectPdfPages(bytes, [1, 2, 3, 4, 5], "compress-pdf");
   });
 
   test("pdf-to-jpg rasterises every page", async ({ page }) => {
@@ -123,11 +130,19 @@ test.describe("pdf conversions — real output", () => {
     // Every entry must be a real JPEG, not an empty or truncated blob.
     const JSZip = (await import("jszip")).default;
     const zip = await JSZip.loadAsync(bytes);
+    const images: { name: string; bytes: Buffer; mime: string }[] = [];
     for (const name of names) {
       const entry = await zip.files[name].async("nodebuffer");
       assertJpeg(entry);
       expect(entry.length, `${name} should carry real pixels`).toBeGreaterThan(2000);
+      images.push({ name, bytes: entry, mime: "image/jpeg" });
     }
+    // Content: entry page-N must be a render of page N — each fixture page
+    // draws its bar in its own colour, so a blank, repeated or misnumbered
+    // page fails here. Sorted by the page number in the NAME, not zip order.
+    images.sort((a, b) => Number(a.name.match(/\d+/)?.[0]) - Number(b.name.match(/\d+/)?.[0]));
+    const bars = await expectFixturePageRasters(page, images, [1, 2, 3, 4, 5], { label: "pdf-to-jpg" });
+    test.info().annotations.push({ type: "bar colours", description: JSON.stringify({ names: images.map((i) => i.name), bars }) });
   });
 
   test("rotate-pdf writes the rotation into the page tree", async ({ page }) => {
@@ -323,5 +338,8 @@ test.describe("pdf conversions — real output", () => {
     const { bytes } = await captureDownload(page, dl);
 
     await assertPdf(bytes, { pages: 5 });
+    // A page count of 5 is also what saving the UNCHANGED document gives. The
+    // order is the product: page 1 dropped into slot 4 moves 2–4 up one.
+    await expectPdfPages(bytes, [2, 3, 4, 1, 5], "pdf-page-reorder");
   });
 });

@@ -363,9 +363,74 @@ async function decodeViaFFmpeg(
 
   const bytes =
     wavBytes instanceof Uint8Array ? wavBytes : new Uint8Array(wavBytes as ArrayBufferLike);
+  /*
+    Built here, NOT handed back to decodeAudioData. Measured 2026-11-11 in
+    Chromium: Web Audio rejects 6-channel audio whose declared layout is 5.1
+    with BACK surrounds (WAVEFORMATEXTENSIBLE mask 0x3F) — "Unable to decode
+    audio data" — while the same samples with mask 0x60F (side surrounds) or no
+    mask decode fine. 0x3F is the classic 5.1 mask, and FFmpeg writes it both as
+    the FLAC channel-mask tag and in the >2-channel WAV this fallback produces.
+    So a 5.1 FLAC or a DAW's 5.1 WAV failed the browser decode AND this
+    fallback, and flac-to-mp3, audio-trimmer and reverse-audio showed the raw
+    browser error. The samples are plain s16le, which needs no decoder at all.
+  */
+  const direct = pcm16WavToAudioBuffer(bytes);
+  if (direct) return direct;
   return decodeBytes(
     bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer,
   );
+}
+
+/**
+ * A 16-bit PCM WAV (plain or WAVE_FORMAT_EXTENSIBLE) as an AudioBuffer at its
+ * own rate and channel count, with no decoder involved. Returns null for
+ * anything else, so the caller can fall back to the browser. Exported for tests.
+ */
+export function pcm16WavToAudioBuffer(bytes: Uint8Array): AudioBuffer | null {
+  if (bytes.length < 44 || typeof AudioBuffer === "undefined") return null;
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const tag = (o: number) => String.fromCharCode(bytes[o], bytes[o + 1], bytes[o + 2], bytes[o + 3]);
+  if (tag(0) !== "RIFF" || tag(8) !== "WAVE") return null;
+
+  let channels = 0;
+  let rate = 0;
+  let pcm16 = false;
+  let dataAt = -1;
+  let dataLen = 0;
+  for (let o = 12; o + 8 <= bytes.length; ) {
+    const id = tag(o);
+    const size = view.getUint32(o + 4, true);
+    const body = o + 8;
+    if (id === "fmt " && size >= 16) {
+      const format = view.getUint16(body, true);
+      channels = view.getUint16(body + 2, true);
+      rate = view.getUint32(body + 4, true);
+      const bits = view.getUint16(body + 14, true);
+      // 0xFFFE: the sub-format GUID starts with the real format code.
+      const real = format === 0xfffe && size >= 26 ? view.getUint16(body + 24, true) : format;
+      pcm16 = real === 1 && bits === 16;
+    } else if (id === "data") {
+      dataAt = body;
+      // FFmpeg writes 0xFFFFFFFF-style sizes when streaming; trust the file.
+      dataLen = Math.min(size, bytes.length - body);
+      break;
+    }
+    o = body + size + (size & 1);
+  }
+  if (!pcm16 || dataAt < 0 || channels < 1 || channels > 32 || rate < 3000 || rate > 768000) {
+    return null;
+  }
+  const frames = Math.floor(dataLen / (2 * channels));
+  if (frames < 1) return null;
+  const buffer = new AudioBuffer({ numberOfChannels: channels, length: frames, sampleRate: rate });
+  for (let c = 0; c < channels; c++) {
+    const out = new Float32Array(frames);
+    for (let i = 0, at = dataAt + c * 2; i < frames; i++, at += 2 * channels) {
+      out[i] = view.getInt16(at, true) / 32768;
+    }
+    buffer.copyToChannel(out, c);
+  }
+  return buffer;
 }
 
 /** The shared rate-preserving decode over raw bytes. */

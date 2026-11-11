@@ -72,9 +72,12 @@ describe("TextDiffUI", () => {
     fireEvent.change(original, { target: { value: "line one\nline two\n" } });
     fireEvent.change(modified, { target: { value: "line one\nline three\n" } });
 
+    // `ignoreNewlineAtEof` is load-bearing: without it an unchanged last line
+    // with no trailing newline diffs as removed + re-added (see TextDiffUI).
     expect(mockDiffLines).toHaveBeenCalledWith(
       "line one\nline two\n",
       "line one\nline three\n",
+      { ignoreNewlineAtEof: true },
     );
   });
 
@@ -161,6 +164,6 @@ describe("TextDiffUI", () => {
     // Switch to by-line
     fireEvent.click(screen.getByText("By line"));
 
-    expect(mockDiffLines).toHaveBeenCalledWith("abc", "abc");
+    expect(mockDiffLines).toHaveBeenCalledWith("abc", "abc", { ignoreNewlineAtEof: true });
   });
 });

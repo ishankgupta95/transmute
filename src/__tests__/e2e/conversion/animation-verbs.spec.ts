@@ -1,6 +1,7 @@
 import { test, expect, type Page } from "@playwright/test";
 
 import { captureDownload, downloadAffordance } from "./support";
+import { IMAGE_MAE, decodeGif, diffGrids, expectSameImage, gifFrameGrid, imageGridInPage } from "./fidelity";
 
 /**
  * The GIF verbs, and the decoder underneath them.
@@ -66,6 +67,25 @@ async function readBack(bytes: Buffer): Promise<{ frames: number; delaysMs: numb
   return { frames, delaysMs, width: reader.width };
 }
 
+/**
+ * PIXELS, not just counts and delays: output frame k must look like source
+ * frame `order[k]`. The fixture's frames are solid red, green and blue, so a
+ * verb that kept the count but repeated frame 0, dropped the palette, or
+ * reversed the delays over unreversed pictures fails here.
+ */
+async function expectFrames(bytes: Buffer, order: number[], label: string): Promise<void> {
+  const src = await decodeGif(threeFrameAnimation());
+  const out = await decodeGif(bytes);
+  expect(out.frames.length, `${label}: frame count`).toBe(order.length);
+  const grid = { width: Math.min(8, out.width), height: Math.min(8, out.height) };
+  order.forEach((from, k) => {
+    expectSameImage(diffGrids(gifFrameGrid(src, from, grid), gifFrameGrid(out, k, grid), grid), {
+      maxMae: IMAGE_MAE.lossy,
+      label: `${label} frame ${k} (should be source frame ${from})`,
+    });
+  });
+}
+
 async function runTool(page: Page, route: string, primary?: RegExp) {
   await page.goto(route);
   const input = surfaceOf(page).locator('input[type="file"]').first();
@@ -97,6 +117,8 @@ test.describe("animation verbs", () => {
     const { bytes } = await runTool(page, "/reverse-gif");
     const out = await readBack(bytes);
     expect(out.frames, "the animation was flattened to a still").toBe(3);
+    // Three frames that are all frame 0 would pass the count.
+    await expectFrames(bytes, [2, 1, 0], "reversed");
   });
 
   test("reversing takes the delays with the frames", async ({ page }) => {
@@ -122,6 +144,7 @@ test.describe("animation verbs", () => {
       that does NOT reverse must leave them as they were.
     */
     expect(out.delaysMs, "a non-reversing verb must not touch the order").toEqual([100, 200, 300]);
+    await expectFrames(bytes, [0, 1, 2], "resized");
   });
 
   test("splitting yields one file per frame, numbered in order", async ({ page }) => {
@@ -134,6 +157,18 @@ test.describe("animation verbs", () => {
     // …and they are real PNGs, not empty entries.
     const first = await zip.files["frame-1.png"].async("uint8array");
     expect(Buffer.from(first.subarray(1, 4)).toString("latin1")).toBe("PNG");
+    // …holding frame k's pixels: red, green, blue — not three copies of one.
+    const src = await decodeGif(threeFrameAnimation());
+    const grid = { width: 8, height: 8 };
+    for (let k = 0; k < 3; k++) {
+      const png = await zip.files[`frame-${k + 1}.png`].async("nodebuffer");
+      const got = await imageGridInPage(page, { bytes: png, mime: "image/png" }, grid);
+      expect({ width: got.width, height: got.height }).toEqual({ width: 16, height: 16 });
+      expectSameImage(diffGrids(gifFrameGrid(src, k, grid), got.rgb, grid), {
+        maxMae: IMAGE_MAE.lossy,
+        label: `frame-${k + 1}.png`,
+      });
+    }
   });
 
   test("the maker builds an animation from stills, ordered by filename", async ({ page }) => {
@@ -160,6 +195,7 @@ test.describe("animation verbs", () => {
       blue: "iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAEElEQVR4nGNgYPiPAw0pCQCpcD/BFMrqcwAAAABJRU5ErkJggg==",
     };
     const png = (b64: string) => Buffer.from(b64, "base64");
+    const stills = [PNG.red, PNG.green, PNG.blue];
     await input.setInputFiles([
       { name: "frame-1.png", mimeType: "image/png", buffer: png(PNG.red) },
       { name: "frame-2.png", mimeType: "image/png", buffer: png(PNG.green) },
@@ -175,5 +211,16 @@ test.describe("animation verbs", () => {
     expect(out.frames, "one frame per picture").toBe(3);
     // The default slider is 100 ms, applied to every frame.
     expect(out.delaysMs).toEqual([100, 100, 100]);
+
+    // And each frame IS its picture, in numeric-name order: red, green, blue.
+    const gif = await decodeGif(bytes);
+    const grid = { width: 8, height: 8 };
+    for (let k = 0; k < 3; k++) {
+      const want = await imageGridInPage(page, { bytes: png(stills[k]), mime: "image/png" }, grid);
+      expectSameImage(diffGrids(want.rgb, gifFrameGrid(gif, k, grid), grid), {
+        maxMae: IMAGE_MAE.lossy,
+        label: `frame ${k} of the made animation`,
+      });
+    }
   });
 });

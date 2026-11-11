@@ -2,6 +2,15 @@ import { test, expect } from "@playwright/test";
 import { uploadFile, downloadButton, waitForDownload, downloadBytes } from "../helpers";
 import { tinyPng, tinyJpg, tinyWebp, tinyBmp, tinySvg, tinyTiff } from "../fixtures";
 import type { Page } from "@playwright/test";
+import type { FixtureFile } from "../helpers";
+import { compareImages, expectSameImage } from "../conversion/fidelity";
+
+/** Decode both and require the same colour (solid fixtures: no layout to compare). */
+async function expectSameColour(page: Page, input: FixtureFile, bytes: Buffer, mime: string) {
+  const diff = await compareImages(page, { bytes: input.buffer, mime: input.mimeType }, { bytes, mime });
+  // A flat fill has no structure, so correlation is meaningless here.
+  expectSameImage(diff, { minCorrelation: -1, label: `${input.name} → ${mime}` });
+}
 
 /**
  * Decode a converted image inside the browser and report its real dimensions.
@@ -36,10 +45,13 @@ async function decodedSize(
  * every entry in `tools.ts` resolves and renders, so we don't need to
  * exhaustively iterate here.
  *
- * Every conversion here asserts the DECODED dimensions of the output, not just
- * its magic bytes — a converter that dropped the pixels still emits a valid
- * header, so a format-only assertion cannot fail on the regression that
- * matters.
+ * Every conversion here decodes the output and compares its COLOUR to the
+ * input's (`expectSameColour`), not just its magic bytes — a converter that
+ * dropped the pixels, swapped channels or flattened onto the wrong colour
+ * still emits a valid header. (Until 2026-11-11 this comment claimed every
+ * test checked decoded dimensions; two of eight did.) The fixtures are tiny
+ * solid fills, so layout is not checkable here; orientation and structure
+ * are covered against real photos in `conversion/image*.spec.ts`.
  *
  * AVIF is the only input still on a page smoke, for a verified reason: it
  * cannot be synthesised in-browser — Chromium's `canvas.toBlob("image/avif")`
@@ -59,7 +71,8 @@ async function decodedSize(
 test.describe("image converters — lightweight pairs", () => {
   test("PNG → JPG produces a JPEG download", async ({ page }) => {
     await page.goto("/png-to-jpg");
-    await uploadFile(page, tinyPng(16));
+    const input = tinyPng(16);
+    await uploadFile(page, input);
     await page.getByRole("button", { name: "Convert", exact: true }).click();
 
     const { suggestedFilename, download } = await waitForDownload(page, downloadButton(page));
@@ -72,44 +85,52 @@ test.describe("image converters — lightweight pairs", () => {
       width: 16,
       height: 16,
     });
+    await expectSameColour(page, input, bytes, "image/jpeg");
   });
 
   test("JPG → PNG produces a PNG download", async ({ page }) => {
     await page.goto("/jpg-to-png");
-    await uploadFile(page, tinyJpg());
+    const input = tinyJpg();
+    await uploadFile(page, input);
     await page.getByRole("button", { name: "Convert", exact: true }).click();
 
     const { suggestedFilename, download } = await waitForDownload(page, downloadButton(page));
     expect(suggestedFilename).toMatch(/\.png$/i);
     const bytes = await downloadBytes(download);
     expect(bytes.subarray(0, 8).toString("hex")).toBe("89504e470d0a1a0a");
+    await expectSameColour(page, input, bytes, "image/png");
   });
 
   test("WebP → JPG produces a JPEG download", async ({ page }) => {
     await page.goto("/webp-to-jpg");
-    await uploadFile(page, tinyWebp());
+    const input = tinyWebp();
+    await uploadFile(page, input);
     await page.getByRole("button", { name: "Convert", exact: true }).click();
 
     const { suggestedFilename, download } = await waitForDownload(page, downloadButton(page));
     expect(suggestedFilename).toMatch(/\.jpe?g$/i);
     const bytes = await downloadBytes(download);
     expect(bytes.subarray(0, 2).toString("hex")).toBe("ffd8");
+    await expectSameColour(page, input, bytes, "image/jpeg");
   });
 
   test("WebP → PNG produces a PNG download", async ({ page }) => {
     await page.goto("/webp-to-png");
-    await uploadFile(page, tinyWebp());
+    const input = tinyWebp();
+    await uploadFile(page, input);
     await page.getByRole("button", { name: "Convert", exact: true }).click();
 
     const { suggestedFilename, download } = await waitForDownload(page, downloadButton(page));
     expect(suggestedFilename).toMatch(/\.png$/i);
     const bytes = await downloadBytes(download);
     expect(bytes.subarray(0, 8).toString("hex")).toBe("89504e470d0a1a0a");
+    await expectSameColour(page, input, bytes, "image/png");
   });
 
   test("PNG → WebP produces a WebP download", async ({ page }) => {
     await page.goto("/png-to-webp");
-    await uploadFile(page, tinyPng(16));
+    const input = tinyPng(16);
+    await uploadFile(page, input);
     await page.getByRole("button", { name: "Convert", exact: true }).click();
 
     const { suggestedFilename, download } = await waitForDownload(page, downloadButton(page));
@@ -118,31 +139,39 @@ test.describe("image converters — lightweight pairs", () => {
     // RIFF...WEBP marker
     expect(bytes.subarray(0, 4).toString("ascii")).toBe("RIFF");
     expect(bytes.subarray(8, 12).toString("ascii")).toBe("WEBP");
+    await expectSameColour(page, input, bytes, "image/webp");
   });
 
   test("JPG → WebP produces a WebP download", async ({ page }) => {
     await page.goto("/jpg-to-webp");
-    await uploadFile(page, tinyJpg());
+    const input = tinyJpg();
+    await uploadFile(page, input);
     await page.getByRole("button", { name: "Convert", exact: true }).click();
 
-    const { suggestedFilename } = await waitForDownload(page, downloadButton(page));
+    const { suggestedFilename, download } = await waitForDownload(page, downloadButton(page));
     expect(suggestedFilename).toMatch(/\.webp$/i);
+    const bytes = await downloadBytes(download);
+    expect(bytes.subarray(8, 12).toString("ascii")).toBe("WEBP");
+    await expectSameColour(page, input, bytes, "image/webp");
   });
 
   test("BMP → JPG produces a JPEG download", async ({ page }) => {
     await page.goto("/bmp-to-jpg");
-    await uploadFile(page, tinyBmp());
+    const input = tinyBmp();
+    await uploadFile(page, input);
     await page.getByRole("button", { name: "Convert", exact: true }).click();
 
     const { suggestedFilename, download } = await waitForDownload(page, downloadButton(page));
     expect(suggestedFilename).toMatch(/\.jpe?g$/i);
     const bytes = await downloadBytes(download);
     expect(bytes.subarray(0, 2).toString("hex")).toBe("ffd8");
+    await expectSameColour(page, input, bytes, "image/jpeg");
   });
 
   test("TIFF → JPG decodes a real TIFF and preserves its dimensions", async ({ page }) => {
     await page.goto("/tiff-to-jpg");
-    await uploadFile(page, tinyTiff(40, 30));
+    const input = tinyTiff(40, 30);
+    await uploadFile(page, input);
     await page.getByRole("button", { name: "Convert", exact: true }).click();
 
     const { suggestedFilename, download } = await waitForDownload(page, downloadButton(page));
@@ -155,6 +184,7 @@ test.describe("image converters — lightweight pairs", () => {
       width: 40,
       height: 30,
     });
+    // No colour check: browsers cannot decode the TIFF input to compare against.
   });
 
   test("SVG → PNG rasterises a vector input to a valid PNG download", async ({ page }) => {

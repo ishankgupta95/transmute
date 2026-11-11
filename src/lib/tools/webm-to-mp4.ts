@@ -10,6 +10,8 @@ import {
   assertWebCodecsSupported,
   pickH264Config,
 } from "./video-utils";
+import { audioChunkAdder, videoChunkAdder } from "./mux-chunk";
+import { toStereoFloats } from "./audio-pcm";
 
 const AUDIO_BITRATE = 128_000;
 
@@ -102,8 +104,18 @@ export async function webmToMp4(
     // Wakes a parked backpressure waiter so a fatal encoder error can't leave the
     // frame loop awaiting an ondequeue that never fires (encoder is "closed").
     let wakeBackpressure: (() => void) | null = null;
+    // Null chunk durations (WebKit) and muxer throws: see mux-chunk.ts and
+    // the matching block in video-compress.ts.
+    const addVideoChunk = videoChunkAdder(muxer);
     const videoEncoder = new VideoEncoder({
-      output: (chunk, meta) => { muxer.addVideoChunk(chunk, meta); },
+      output: (chunk, meta) => {
+        try {
+          addVideoChunk(chunk, meta);
+        } catch (e) {
+          if (!encoderError) encoderError = e instanceof Error ? e : new Error(String(e));
+          wakeBackpressure?.();
+        }
+      },
       // Capture rather than throw — a throw here becomes an uncaught async
       // rejection and freezes the UI on "Converting…".
       error: (e) => {
@@ -235,8 +247,15 @@ async function encodeAudio(
   const { numberOfChannels, sampleRate } = config;
 
   let encoderError: Error | null = null;
+  const addAudioChunk = audioChunkAdder(muxer, sampleRate);
   const audioEncoder = new AudioEncoder({
-    output: (chunk, meta) => { muxer.addAudioChunk(chunk, meta); },
+    output: (chunk, meta) => {
+      try {
+        addAudioChunk(chunk, meta);
+      } catch (e) {
+        if (!encoderError) encoderError = e instanceof Error ? e : new Error(String(e));
+      }
+    },
     error: (e) => { encoderError = e instanceof Error ? e : new Error(String(e)); },
   });
 
@@ -246,6 +265,22 @@ async function encodeAudio(
     const chunkSize = 1024;
     const totalSamples = audioBuffer.length;
 
+    /*
+      The AAC track is configured for at most two channels, and this loop used
+      to read channels 0 and 1 of the source and nothing else — so a 5.1
+      soundtrack lost its centre (usually the dialogue), both surrounds and
+      the LFE without a word (found 2026-11-11). A wider source is now FOLDED
+      with the same ITU-R BS.775 matrix the MP3 encoder uses (audio-pcm.ts):
+      centre into both sides, each surround into its own side, LFE dropped.
+    */
+    const sourceTracks = Array.from({ length: audioBuffer.numberOfChannels }, (_, ch) =>
+      audioBuffer.getChannelData(ch),
+    );
+    const tracks =
+      sourceTracks.length > numberOfChannels
+        ? (toStereoFloats(sourceTracks) as [Float32Array, Float32Array])
+        : sourceTracks;
+
     for (let offset = 0; offset < totalSamples; offset += chunkSize) {
       // A long track is thousands of iterations — check often enough that
       // cancelling feels immediate.
@@ -254,7 +289,7 @@ async function encodeAudio(
       const interleaved = new Float32Array(remaining * numberOfChannels);
 
       for (let ch = 0; ch < numberOfChannels; ch++) {
-        const channelData = audioBuffer.getChannelData(ch);
+        const channelData = tracks[ch];
         for (let i = 0; i < remaining; i++) {
           interleaved[i * numberOfChannels + ch] = channelData[offset + i];
         }

@@ -97,3 +97,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# real-file e2e inputs (personal photos/videos/PDFs) — NEVER commit
+/real-files/

@@ -30,6 +30,7 @@
  *   node scripts/generate-test-fixtures.mjs --engine-inputs  only the QR PNG
  *                                                            and the two archives
  *   node scripts/generate-test-fixtures.mjs --avif           only sample.avif
+ *   node scripts/generate-test-fixtures.mjs --surround       only sample-video-51.mp4
  *   node scripts/generate-test-fixtures.mjs --heic           only the two HEICs
  *
  * The narrow ones exist because a full run REPLACES every fixture, and several
@@ -988,7 +989,7 @@ export async function buildHevcMov(mp4, { force = false } = {}) {
 
 /**
  * The input formats the audio converters take: FLAC, Ogg Vorbis, raw ADTS AAC,
- * Ogg Opus and WMA. Every one carries the same 2-second 440/554 Hz stereo dyad
+ * Ogg Opus and WMA. All but the Opus carry the same 2-second 440/554 Hz stereo dyad
  * as `sample-audio.wav`, so one duration/peak assertion works across the whole
  * matrix and a converter that emits silence, mono or the wrong length fails.
  *
@@ -1006,6 +1007,8 @@ export async function buildHevcMov(mp4, { force = false } = {}) {
  *          `RuntimeError: memory access out of bounds` (measured safe only at
  *          `<= 4`). Never add an Opus encode here. Note the WebM's track is
  *          48 kHz and ~1.86 s, not 2.00 s — MediaRecorder decides that length.
+ *          It is also NOT the dyad: MediaRecorder captured one 440 Hz
+ *          oscillator, so both channels carry 440 Hz (measured 2026-11-11).
  *   .wma   `-c:a wmav2 -b:a 128k`, 13 ms. Measured end to end before it was
  *          added: the ASF demuxer and `wmav2` decoder round-trip it back to
  *          1.997 s of 44.1 kHz stereo PCM at a non-zero peak, so the format is
@@ -1198,6 +1201,47 @@ async function containersOnly({ force }) {
   if (hevc) files["sample-video-hevc.mov"] = hevc;
   const count = await writeFixtures(files);
   console.log(`\nWrote ${count} container fixtures to ${path.relative(ROOT, OUT_DIR)}`);
+}
+
+/**
+ * `sample-video-51.mp4`: the H.264 picture of `sample-video.mp4`, stream-
+ * copied, with `sample-audio-6ch.wav` as a 5.1 AAC soundtrack — one distinct
+ * tone per channel (L 220, R 277, C 330, LFE 110, SL 440, SR 554 Hz), so a
+ * test can see which source channel reached which output channel. It exists
+ * for the video encoders' surround fold (found 2026-11-11: compress-video
+ * kept channels 0 and 1 of a 5.1 track and dropped the centre/dialogue).
+ * Native `aac` encoder (LGPL), `+bitexact` for reproducible bytes.
+ */
+export async function buildSurroundVideo(mp4, wav6ch) {
+  const { core, logs } = await loadShippedFfmpeg();
+  core.FS.writeFile("/v.mp4", new Uint8Array(mp4));
+  core.FS.writeFile("/a.wav", new Uint8Array(wav6ch));
+  const code = core.exec(
+    "-nostdin",
+    "-i", "/v.mp4",
+    "-i", "/a.wav",
+    "-map", "0:v:0",
+    "-map", "1:a:0",
+    "-c:v", "copy",
+    "-c:a", "aac",
+    "-b:a", "384k",
+    "-channel_layout", "5.1",
+    "-shortest",
+    "-fflags", "+bitexact",
+    "-map_metadata", "-1",
+    "/out.mp4",
+  );
+  if (code !== 0) throw new Error(`5.1 mux exited ${code}: ${logs.slice(-4).join(" | ")}`);
+  return Buffer.from(core.FS.readFile("/out.mp4"));
+}
+
+/** `--surround`: build only `sample-video-51.mp4`, from fixtures already on disk. */
+async function surroundOnly() {
+  const mp4 = await readFile(path.join(OUT_DIR, "sample-video.mp4"));
+  const wav = await readFile(path.join(OUT_DIR, "sample-audio-6ch.wav"));
+  console.log("• muxing the 5.1 video fixture with the shipped FFmpeg core…");
+  const count = await writeFixtures({ "sample-video-51.mp4": await buildSurroundVideo(mp4, wav) });
+  console.log(`\nWrote ${count} fixture to ${path.relative(ROOT, OUT_DIR)}`);
 }
 
 /**
@@ -1515,6 +1559,9 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   } else if (process.argv.includes("--heic")) {
     await mkdir(OUT_DIR, { recursive: true });
     await heicOnly();
+  } else if (process.argv.includes("--surround")) {
+    await mkdir(OUT_DIR, { recursive: true });
+    await surroundOnly();
   } else if (process.argv.includes("--avif")) {
     await mkdir(OUT_DIR, { recursive: true });
     await avifOnly();

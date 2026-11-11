@@ -28,6 +28,26 @@ const conversionOnly = !!process.env.TRANSMUTE_CONVERSION_E2E;
 const pwaOnly = !!process.env.TRANSMUTE_PWA_E2E;
 
 /**
+ * The real-file suite (`src/__tests__/e2e/real-files/`), opt-in via
+ * `TRANSMUTE_REAL_FILES=<dir> npm run test:e2e:real`.
+ *
+ * Every other suite runs on tiny GENERATED fixtures. This one is pointed at a
+ * directory of the user's own files — 12 MP phone photos, iPhone HEIC/HEVC,
+ * Word-exported and scanned PDFs, long audio — and runs each file through the
+ * relevant tools, one test per (file x tool). The directory is never part of
+ * the repo (see `.gitignore`) and its contents are never read when the var is
+ * unset: the default, conversion and PWA runs are bit-identical without it
+ * (the default project's `testIgnore` below keeps the spec out of them).
+ *
+ * Same shape as the conversion gate: one env var, read once, swapping the
+ * whole `projects` array. It uses the dev server on 3000 like the conversion
+ * gate does, so it needs no web server of its own. Chromium only, like the
+ * conversion gate (see there), with much longer budgets: a 200 MB video is
+ * minutes, not seconds.
+ */
+const realFilesOnly = !!process.env.TRANSMUTE_REAL_FILES;
+
+/**
  * NOT 3000, where `npm run dev` lives: this project must be able to run while
  * a dev server is up, and Playwright would otherwise happily hand a PWA spec
  * the dev server — where no worker registers and every assertion here would
@@ -54,7 +74,27 @@ export default defineConfig({
     trace: "on-first-retry",
     screenshot: "only-on-failure",
   },
-  projects: conversionOnly
+  /*
+    CHROMIUM ONLY, by decision (2026-11-11): the product targets Chromium-based
+    browsers. The `conversion-webkit` and `real-files-webkit` projects were
+    removed — that halved the pre-push run. Their `grepInvert` (gif|FFmpeg|MP4)
+    only ever narrowed WebKit, so no Chromium coverage went with them. Specs
+    still carry comments recording what was MEASURED in WebKit; they are
+    history, not a live run.
+  */
+  projects: realFilesOnly
+    ? [
+        {
+          name: "real-files",
+          testDir: "./src/__tests__/e2e/real-files",
+          // Real inputs are big and the WASM cores load cold: 15 min a test,
+          // 10 min for any single expectation (a download appearing).
+          timeout: 900_000,
+          expect: { timeout: 600_000 },
+          use: { ...devices["Desktop Chrome"] },
+        },
+      ]
+    : conversionOnly
     ? [
         {
           name: "conversion",
@@ -78,31 +118,6 @@ export default defineConfig({
               ],
             },
           },
-        },
-        {
-          /*
-            The same conversions in WebKit — the engines the suite guards
-            (Web Audio, lamejs, pdf-lib, pdfjs, canvas, FFmpeg.wasm) all run
-            in Safari, and its decoder quirks are exactly what the m4a/Ogg
-            FFmpeg fallback exists for. Excluded: the WebCodecs video specs,
-            the screen recorder (both lean on Chromium launch flags), and the
-            GIF/FFmpeg-tagged hardening cases pending a WebKit-tuned pass.
-
-            ⚠ `grepInvert` matches the FILE PATH as well as the test title, so
-            a spec merely NAMED for GIF vanishes from this project with the run
-            still green. The gifenc/omggif animation verbs must run here —
-            WebKit is the only engine without `ImageDecoder`, so it is the only
-            place the fallback decoder is exercised at all — and their spec is
-            called `animation-verbs.spec.ts` for exactly that reason. Do not
-            rename it back.
-          */
-          name: "conversion-webkit",
-          testDir: "./src/__tests__/e2e/conversion",
-          timeout: 240_000,
-          expect: { timeout: 150_000 },
-          testIgnore: ["**/video.spec.ts", "**/interactions.spec.ts"],
-          grepInvert: /gif|FFmpeg|MP4/i,
-          use: { ...devices["Desktop Safari"] },
         },
       ]
     : pwaOnly
@@ -132,10 +147,10 @@ export default defineConfig({
       : [
           {
             name: "chromium",
-            // `pwa/` joins `conversion/` here: both are opt-in projects with
+            // `pwa/` and `real-files/` join `conversion/` here: all are opt-in projects with
             // their own web server, and collecting either into the default run
             // would point it at a server that is not running.
-            testIgnore: /(conversion|pwa)\//,
+            testIgnore: /(conversion|pwa|real-files)\//,
             use: { ...devices["Desktop Chrome"] },
           },
         ],

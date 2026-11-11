@@ -10,11 +10,15 @@ import {
   toolError,
 } from "./support";
 import { assertMp3, assertWav } from "./validators";
+import { DYAD, audioTonesInPage, expectDyad, expectTones, swapWavChannels } from "./fidelity";
 
 /**
- * Audio pipelines run on `AudioContext.decodeAudioData` + lamejs. Fixtures are
- * a genuine 2-second stereo 440/554 Hz dyad in MP3, WAV and AAC/M4A, so a
- * conversion that silently emits silence, mono, or the wrong duration fails.
+ * Audio pipelines run on `AudioContext.decodeAudioData` + libmp3lame. Fixtures
+ * are a genuine 2-second stereo dyad — left 440 Hz, right 554 Hz — in MP3, WAV
+ * and AAC/M4A. Every output is checked for CONTENT with `expectDyad`: each
+ * channel must still carry its own tone and not the other one, so a wrong
+ * sample rate (pitch shift), a downmix, swapped channels or noise fails — not
+ * only silence, mono or the wrong duration.
  */
 
 const SOURCE_SECONDS = 2;
@@ -45,6 +49,7 @@ test.describe("audio conversions — real output", () => {
     expectDuration(decoded.duration, SOURCE_SECONDS);
     expect(decoded.channels, "stereo source should stay stereo").toBe(2);
     expect(decoded.peak).toBeGreaterThan(0.05);
+    await expectDyad(page, bytes, { label: "mp3-to-wav" });
   });
 
   test("wav-to-mp3 emits a real MPEG stream", async ({ page }) => {
@@ -64,6 +69,7 @@ test.describe("audio conversions — real output", () => {
     const decoded = await decodeAudioInPage(page, bytes);
     expectDuration(decoded.duration, SOURCE_SECONDS);
     expect(decoded.peak, "output must not be digital silence").toBeGreaterThan(0.05);
+    await expectDyad(page, bytes, { label: "wav-to-mp3" });
   });
 
   test("m4a-to-mp3 decodes AAC and re-encodes", async ({ page }) => {
@@ -82,6 +88,7 @@ test.describe("audio conversions — real output", () => {
     const decoded = await decodeAudioInPage(page, bytes);
     expectDuration(decoded.duration, SOURCE_SECONDS);
     expect(decoded.peak).toBeGreaterThan(0.05);
+    await expectDyad(page, bytes, { label: "m4a-to-mp3" });
   });
 
   test("audio-trimmer cuts the selection out of the source", async ({ page }) => {
@@ -113,14 +120,18 @@ test.describe("audio conversions — real output", () => {
     // A 1-second selection out of a 2-second source.
     expectDuration(decoded.duration, 1);
     expect(decoded.peak, "trimmed audio must not be silence").toBeGreaterThan(0.05);
+    // The middle of the cut, clear of any fade the trimmer adds at its edges.
+    await expectDyad(page, bytes, { from: 0.15, to: 0.85, label: "trimmed 0.5–1.5 s" });
   });
 
   test("merge-audio concatenates both inputs", async ({ page }) => {
     const wav = await sample("sample-audio.wav", "audio/wav");
+    // The second file is the first with its channels swapped, so the merged
+    // file's two halves are distinguishable and the ORDER is checkable.
     await page.goto("/merge-audio");
     await uploadFixture(page, [
       { ...wav, name: "first.wav" },
-      { ...wav, name: "second.wav" },
+      { ...wav, name: "second.wav", buffer: swapWavChannels(wav.buffer) },
     ]);
 
     const action = primaryAction(page, /Merge 2 files/);
@@ -136,5 +147,13 @@ test.describe("audio conversions — real output", () => {
     // Two 2-second clips end to end.
     expectDuration(decoded.duration, SOURCE_SECONDS * 2);
     expect(decoded.peak).toBeGreaterThan(0.05);
+
+    const freqs = [DYAD.left, DYAD.right];
+    expectTones(await audioTonesInPage(page, bytes, freqs, { from: 0.3, to: 1.7 }), freqs, {
+      label: "merged, first half (first.wav)",
+    });
+    expectTones(await audioTonesInPage(page, bytes, freqs, { from: 2.3, to: 3.7 }), [DYAD.right, DYAD.left], {
+      label: "merged, second half (second.wav, channels swapped)",
+    });
   });
 });

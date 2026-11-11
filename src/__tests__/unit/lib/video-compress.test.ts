@@ -125,7 +125,12 @@ MockAudioEncoder.isConfigSupported = mockAudioEncoderIsConfigSupported;
 vi.stubGlobal("AudioEncoder", MockAudioEncoder);
 
 const mockAudioDataClose = vi.fn();
-function MockAudioData() { return { close: mockAudioDataClose }; }
+/** Every AudioData the engine built, so a test can read its timestamps. */
+const audioDataInits: { timestamp: number; numberOfFrames: number; numberOfChannels: number; data: Float32Array }[] = [];
+function MockAudioData(init: { timestamp: number; numberOfFrames: number; numberOfChannels: number; data: Float32Array }) {
+  audioDataInits.push(init);
+  return { close: mockAudioDataClose };
+}
 vi.stubGlobal("AudioData", MockAudioData);
 
 // Mock AudioContext for encodeAudio
@@ -173,6 +178,7 @@ describe("compressVideo", () => {
     */
     mockVideoEncoderEncode.mockReset();
     videoEncoderInits.length = 0;
+    audioDataInits.length = 0;
     mockAudioEncoderIsConfigSupported.mockResolvedValue({ supported: true });
     mockResolveDuration.mockImplementation((video: { duration: number }) =>
       Promise.resolve(video.duration),
@@ -629,6 +635,96 @@ describe("compressVideo", () => {
 
       expect(result.blob).toBeInstanceOf(Blob);
       expect(mockAddVideoChunk).toHaveBeenCalledTimes(3);
+    });
+  });
+
+  /*
+    The range arm exists for the exact trim (`video-trim.ts`): encode only the
+    selection, from the frame the user picked, without the preset's downscale
+    or bitrate ceiling turning a trim into a quality downgrade.
+  */
+  describe("encoding a range at the source's own quality", () => {
+    it("plays and encodes only the selected range", async () => {
+      const file = new File(["video"], "input.mp4", { type: "video/mp4" });
+      await compressVideo(file, "web", {}, { range: { start: 12.5, end: 20 }, matchSource: true });
+
+      expect(mockPlayAndExtractFrames).toHaveBeenCalledWith(
+        expect.anything(),
+        12.5,
+        20,
+        expect.any(Function),
+        expect.anything(),
+      );
+    });
+
+    it("clamps a range that runs past the end of the file", async () => {
+      const file = new File(["video"], "input.mp4", { type: "video/mp4" });
+      await compressVideo(file, "web", {}, { range: { start: 50, end: 90 }, matchSource: true });
+
+      const [, from, to] = mockPlayAndExtractFrames.mock.calls[0];
+      expect([from, to]).toEqual([50, 60]);
+    });
+
+    it("keeps the source resolution and spends the source's bitrate", async () => {
+      // 1080p is above whatsapp's 720 ceiling, and 40 MB / 60 s is 5.33 Mbps —
+      // far above any preset. matchSource must ignore both.
+      const file = new File(["video"], "input.mp4", { type: "video/mp4" });
+      Object.defineProperty(file, "size", { value: 40_000_000 });
+      await compressVideo(file, "whatsapp", {}, { matchSource: true });
+
+      const config = mockVideoEncoderConfigure.mock.calls[0][0];
+      expect(config.width).toBe(1920);
+      expect(config.height).toBe(1080);
+      expect(config.bitrate).toBe(Math.round((40_000_000 * 8) / 60));
+    });
+
+    it("encodes only the range's audio, with timestamps restarting at zero", async () => {
+      // 2048 samples at 48 kHz is ~42.7 ms; take the second 1024 of them.
+      mockDecodeAudio.mockResolvedValue(fakeAudioBuffer);
+      const file = new File(["video"], "input.mp4", { type: "video/mp4" });
+      await compressVideo(file, "web", {}, {
+        range: { start: 1024 / 48000, end: 2048 / 48000 },
+        matchSource: true,
+      });
+
+      expect(audioDataInits).toHaveLength(1);
+      expect(audioDataInits[0].numberOfFrames).toBe(1024);
+      // Lined up with the video, which the muxer also offsets to start at 0.
+      expect(audioDataInits[0].timestamp).toBe(0);
+    });
+
+    it("folds a 5.1 soundtrack into the stereo track instead of keeping only L/R", async () => {
+      /*
+        Found 2026-11-11: the AAC track is at most stereo and the encode loop
+        read source channels 0 and 1 only, so a film's centre (dialogue),
+        surrounds and LFE vanished. Each channel here is a distinct constant,
+        so the interleaved samples show exactly what was mixed where.
+      */
+      const values = [0.1, 0.02, 0.04, 0.3, 0.06, 0.08]; // L R C LFE SL SR
+      const sixChannel = {
+        length: 1024,
+        numberOfChannels: 6,
+        sampleRate: 48000,
+        getChannelData: (ch: number) => new Float32Array(1024).fill(values[ch]),
+      } as unknown as AudioBuffer;
+      mockDecodeAudio.mockResolvedValue(sixChannel);
+      const file = new File(["video"], "film.mp4", { type: "video/mp4" });
+      await compressVideo(file, "web");
+
+      const first = audioDataInits[0];
+      expect(first.numberOfChannels).toBe(2);
+      const G = Math.SQRT1_2;
+      // Interleaved [L, R, L, R, …]: centre in both, each surround its own side, no LFE.
+      expect(first.data[0]).toBeCloseTo(0.1 + G * 0.04 + G * 0.06, 6);
+      expect(first.data[1]).toBeCloseTo(0.02 + G * 0.04 + G * 0.08, 6);
+    });
+
+    it("leaves the preset path untouched when no range is given", async () => {
+      mockDecodeAudio.mockResolvedValue(fakeAudioBuffer);
+      const file = new File(["video"], "input.mp4", { type: "video/mp4" });
+      await compressVideo(file, "web");
+
+      expect(audioDataInits.map((a) => a.timestamp)).toEqual([0, Math.round((1024 / 48000) * 1e6)]);
     });
   });
 });

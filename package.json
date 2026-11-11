@@ -14,6 +14,7 @@
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
     "test:e2e:conversion": "TRANSMUTE_CONVERSION_E2E=1 playwright test",
+    "test:e2e:real": "TRANSMUTE_REAL_FILES=${TRANSMUTE_REAL_FILES:-real-files} playwright test",
     "test:e2e:pwa": "TRANSMUTE_PWA_E2E=1 playwright test",
     "test:all": "vitest run && playwright test",
     "prepare": "husky",

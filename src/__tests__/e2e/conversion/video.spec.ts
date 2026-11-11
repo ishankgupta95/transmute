@@ -11,6 +11,14 @@ import {
   toolError,
 } from "./support";
 import { assertMp4, assertMp3, assertGif } from "./validators";
+import {
+  audioTonesInPage,
+  compareGifToVideo,
+  compareVideoToSource,
+  expectDyad,
+  expectTones,
+  expectVideoMatches,
+} from "./fidelity";
 
 /**
  * The heaviest pipelines: FFmpeg.wasm (trim, audio extraction), WebCodecs +
@@ -25,6 +33,8 @@ import { assertMp4, assertMp3, assertGif } from "./validators";
  */
 
 const SOURCE = { width: 320, height: 240, seconds: 2 };
+/** Where frames are sampled for content checks: spread across the clip. */
+const FRAME_TIMES = [0.25, 0.75, 1.25, 1.7];
 
 test.describe("video conversions — real output", () => {
   test.beforeEach(async ({ page }) => {
@@ -47,34 +57,94 @@ test.describe("video conversions — real output", () => {
     expect(probe.width).toBeGreaterThan(0);
     expect(probe.height).toBeGreaterThan(0);
     expect(probe.duration).toBeGreaterThan(SOURCE.seconds - 0.5);
+
+    // Content: the frames must still be the source's frames — not black,
+    // green, colour-shifted, frozen or out of order.
+    const { matches } = await compareVideoToSource(
+      page,
+      { bytes: mp4.buffer, mime: "video/mp4" },
+      { bytes, mime: "video/mp4" },
+      { outTimes: FRAME_TIMES },
+    );
+    expectVideoMatches(matches, { label: "compress-video" });
   });
 
-  test("video-trimmer cuts a shorter clip", async ({ page }) => {
+  /*
+    THE TRIMMER, BOTH ARMS. Until 2026-11-11 this was one test asserting the
+    output was "between 0.3 and 1.7 s", and it passed a file that was wrong:
+    asked for 0.5–1.5 s, the fast copy delivered 1.51 s starting at 0.00 s
+    (the keyframe before 0.5), under a page reading "CLIP 0:01.0". A copy
+    cannot start between keyframes — so the fast arm now has to SAY where it
+    started, and the exact arm has to start where it was asked.
+  */
+  async function trimTo(
+    page: import("@playwright/test").Page,
+    mode: "Fast" | "Exact frame",
+  ): Promise<{ bytes: Buffer; name: string }> {
     await page.goto("/video-trimmer");
     await uploadFixture(page, await SAMPLES.mp4());
-
     const start = page.getByLabel("Clip start");
     const end = page.getByLabel("Clip end");
     await expect(start).toBeEnabled({ timeout: 90_000 });
     await start.fill("0.5");
     await end.fill("1.5");
-
+    await page.getByRole("group", { name: "Cut accuracy" }).getByRole("button", { name: mode, exact: true }).click();
     await primaryAction(page, /^Trim$/).click();
-
     const dl = downloadAffordance(page);
-    await expect(dl, `trim failed: ${await toolError(page)}`).toBeVisible();
-    const { bytes } = await captureDownload(page, dl);
+    await expect(dl, `trim failed: ${await toolError(page)}`).toBeVisible({ timeout: 120_000 });
+    return captureDownload(page, dl);
+  }
 
+  test("video-trimmer's fast cut says where it really starts, and is telling the truth", async ({ page }) => {
+    const mp4 = await SAMPLES.mp4();
+    const { bytes, name } = await trimTo(page, "Fast");
+    expect(name).toBe("sample-video-trimmed.mp4");
     assertMp4(bytes, { video: true });
+
+    // The fixture's keyframes are at 0 and 1.0 s, so a copy from 0.5 starts at 0.
+    const surface = page.locator("[data-tool-surface]");
+    await expect(surface.getByRole("status").filter({ hasText: "This clip starts at 0:00.0, not 0:00.5." }))
+      .toBeVisible();
+    await expect(surface, "the CLIP readout is the file, not the selection").toContainText("CLIP0:01.5");
+
+    // And the notice is TRUE: the file's frames are the source's from 0:00.0.
+    const { matches } = await compareVideoToSource(
+      page,
+      { bytes: mp4.buffer, mime: "video/mp4" },
+      { bytes, mime: "video/mp4" },
+      { outTimes: [0.1, 0.6, 1.3] },
+    );
+    expectVideoMatches(matches, { label: "fast trim, read from where it says it starts" });
+  });
+
+  test("video-trimmer's exact cut starts on the frame that was picked", async ({ page }) => {
+    const mp4 = await SAMPLES.mp4();
+    const { bytes, name } = await trimTo(page, "Exact frame");
+    expect(name).toBe("sample-video-trimmed.mp4");
+    assertMp4(bytes, { video: true });
+
     const probe = await probeVideoInPage(page, bytes, "video/mp4");
-    // A 1s cut out of a 2s source — must be meaningfully shorter.
-    expect(probe.duration).toBeLessThan(SOURCE.seconds - 0.3);
-    expect(probe.duration).toBeGreaterThan(0.3);
+    expect(Math.abs(probe.duration - 1), `exact trim lasted ${probe.duration}s`).toBeLessThan(0.15);
+    expect(probe.width).toBe(SOURCE.width);
+    expect(probe.height).toBe(SOURCE.height);
+    await expect(page.locator("[data-tool-surface]").getByText(/This clip starts at/)).toHaveCount(0);
+
+    // Output t is source t + 0.5 — the frame picked, not the keyframe before it.
+    const { matches } = await compareVideoToSource(
+      page,
+      { bytes: mp4.buffer, mime: "video/mp4" },
+      { bytes, mime: "video/mp4" },
+      { outTimes: [0.1, 0.5, 0.85], map: (t) => t + 0.5 },
+    );
+    expectVideoMatches(matches, { label: "exact trim 0.5–1.5 s" });
+    // The soundtrack was cut at the same place and still carries the dyad.
+    await expectDyad(page, bytes, { from: 0.2, to: 0.8, label: "exact trim audio" });
   });
 
   test("video-to-gif emits a multi-frame GIF", async ({ page }) => {
     await page.goto("/video-to-gif");
-    await uploadFixture(page, await SAMPLES.mp4());
+    const mp4 = await SAMPLES.mp4();
+    await uploadFixture(page, mp4);
 
     await primaryAction(page, /Convert to GIF/).click();
 
@@ -88,6 +158,27 @@ test.describe("video conversions — real output", () => {
     expect(gif.frames, "GIF should animate").toBeGreaterThan(1);
     expect(gif.width).toBeGreaterThan(0);
     expect(gif.height).toBeGreaterThan(0);
+
+    // Content: each sampled frame is the source frame at the time the GIF's
+    // own delays put it on screen — not black, not one frame repeated, not
+    // colour-swapped by the palette, and not drifting from the clip.
+    const { gif: decoded, matches } = await compareGifToVideo(
+      page,
+      { bytes: mp4.buffer, mime: "video/mp4" },
+      bytes,
+    );
+    test.info().annotations.push({
+      type: "frames vs source",
+      description: JSON.stringify({
+        frames: decoded.frames.length,
+        delays: decoded.frames.map((f) => f.delayMs),
+        matches: matches.map((m) => [m.outT, +m.mae.toFixed(2), +m.correlation.toFixed(3)]),
+      }),
+    });
+    expectVideoMatches(matches, { label: "video-to-gif" });
+    // The animation covers the whole 2 s clip, not a stretch of it.
+    const last = decoded.frames[decoded.frames.length - 1];
+    expect((last.startMs + last.delayMs) / 1000, "the GIF should run as long as the clip").toBeGreaterThan(SOURCE.seconds - 0.4);
   });
 
   test("mp4-to-mp3 extracts the AAC track as MP3", async ({ page }) => {
@@ -106,6 +197,7 @@ test.describe("video conversions — real output", () => {
     const decoded = await decodeAudioInPage(page, bytes);
     expect(decoded.duration).toBeGreaterThan(SOURCE.seconds - 0.4);
     expect(decoded.peak, "extracted audio must not be silence").toBeGreaterThan(0.02);
+    await expectDyad(page, bytes, { label: "mp4-to-mp3" });
   });
 
   test("mp4-to-mp3 can be cancelled, and still works afterwards", async ({ page }) => {
@@ -177,7 +269,8 @@ test.describe("video conversions — real output", () => {
 
   test("webm-to-mp4 re-encodes VP8/Opus into a playable MP4", async ({ page }) => {
     await page.goto("/webm-to-mp4");
-    await uploadFixture(page, await SAMPLES.webm());
+    const webm = await SAMPLES.webm();
+    await uploadFixture(page, webm);
 
     await primaryAction(page, /Convert to MP4/).click();
 
@@ -191,5 +284,16 @@ test.describe("video conversions — real output", () => {
     expect(probe.width).toBeGreaterThan(0);
     expect(probe.height).toBeGreaterThan(0);
     expect(probe.duration).toBeGreaterThan(0.5);
+
+    const { matches } = await compareVideoToSource(
+      page,
+      { bytes: webm.buffer, mime: "video/webm" },
+      { bytes, mime: "video/mp4" },
+      { outTimes: FRAME_TIMES },
+    );
+    expectVideoMatches(matches, { label: "webm-to-mp4" });
+    // And the Opus track came across as audio, at its 440 Hz.
+    const tones = await audioTonesInPage(page, bytes, [440]);
+    expectTones(tones, tones.channels.map(() => 440), { label: "webm-to-mp4 audio", minRms: 0.01 });
   });
 });

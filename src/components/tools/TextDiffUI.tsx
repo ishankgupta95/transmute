@@ -45,7 +45,18 @@ export function TextDiffUI() {
 
   const diff = useMemo(() => {
     if (!left && !right) return [];
-    return mode === "lines" ? diffLines(left, right) : diffWords(left, right);
+    /*
+      `ignoreNewlineAtEof`: jsdiff keeps each line's "\n" in its token, so a
+      last line with no newline ("gamma") and the same line followed by more
+      text ("gamma\n") are different tokens — "alpha\nbeta\ngamma" against
+      "alpha\nBETA\ngamma\ndelta" showed the untouched "gamma" as removed and
+      re-added (found 2026-11-11, pinned in e2e/dev/utilities-correctness).
+      The cost: texts that differ ONLY by a final newline compare equal, the
+      usual behaviour for a pasted-text diff.
+    */
+    return mode === "lines"
+      ? diffLines(left, right, { ignoreNewlineAtEof: true })
+      : diffWords(left, right);
   }, [left, right, mode]);
 
   const handleSwap = useCallback(() => {

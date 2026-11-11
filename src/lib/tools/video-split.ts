@@ -6,6 +6,7 @@ import {
   unmountInputFile,
 } from "./ffmpeg-loader";
 import { inputExtensionFor } from "./video-probe";
+import { dropTinyLeadingEmptyEdits, isIsoBmffExtension } from "./mp4-edit-list";
 import { throwIfAborted } from "@/lib/utils/abort";
 import type { ProcessedResult, ProcessingContext } from "@/hooks/useFileProcessor";
 
@@ -318,8 +319,11 @@ export function durationFromProbeJson(json: string): number | null {
   return Number.isFinite(seconds) ? seconds : null;
 }
 
-/** Ask ffprobe how long a file already inside the virtual FS is. */
-async function probeSecondsInPlace(ffmpeg: FFmpeg, path: string): Promise<number | null> {
+/**
+ * Ask ffprobe how long a file already inside the virtual FS is. Exported for
+ * `video-trim.ts`, which reads its own output back the same way.
+ */
+export async function probeSecondsInPlace(ffmpeg: FFmpeg, path: string): Promise<number | null> {
   // A probe left over from the previous part would be read as this part's
   // answer — the same hygiene `video-probe.ts` keeps for its own output.
   await ffmpeg.deleteFile(PROBE_OUTPUT).catch(() => {
@@ -402,7 +406,10 @@ export async function splitVideo(
             );
           }
 
-          const data = await ffmpeg.readFile(outputName);
+          const raw = (await ffmpeg.readFile(outputName)) as Uint8Array;
+          // Any part but the first usually opens with a ~1 ms empty edit
+          // that Safari draws as a black first frame. See mp4-edit-list.ts.
+          const data = isIsoBmffExtension(ext) ? dropTinyLeadingEmptyEdits(raw).bytes : raw;
           segments.push({
             index: plan.index,
             requestedStart: plan.start,

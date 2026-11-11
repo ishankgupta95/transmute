@@ -291,34 +291,88 @@ async function encodeOnLoadedModule(
 }
 
 /**
- * Reduce any channel layout to what MP3 can carry: mono stays mono, stereo
- * passes through untouched, and anything wider is folded into L/R with the
- * extra channels summed in at -3 dB.
+ * Where each source channel goes when a layout Web Audio defines is folded to
+ * stereo: [gain into LEFT, gain into RIGHT] per channel, in the order Web Audio
+ * (and WAV/FLAC) store them. ITU-R BS.775: centre at −3 dB into both sides,
+ * each surround at −3 dB into ITS OWN side, LFE dropped.
+ *
+ * Until 2026-11-11 every channel past front L/R went into BOTH sides,
+ * LFE included — measured on a 5.1 FLAC through flac-to-mp3 the back-left
+ * and back-right tones each landed in both channels at equal strength
+ * (0.167 / 0.167), so a surround mix came out with its rear image collapsed
+ * to the middle and a bass-management channel summed into the music.
  */
-function toStereoFloats(channelData: Float32Array[]): [Float32Array, Float32Array | undefined] {
+const STEREO_FOLD: Record<number, readonly (readonly [number, number])[]> = {
+  // L R C
+  3: [[1, 0], [0, 1], [SURROUND_FOLD_GAIN, SURROUND_FOLD_GAIN]],
+  // quad: L R SL SR
+  4: [[1, 0], [0, 1], [SURROUND_FOLD_GAIN, 0], [0, SURROUND_FOLD_GAIN]],
+  // 5.0: L R C SL SR
+  5: [[1, 0], [0, 1], [SURROUND_FOLD_GAIN, SURROUND_FOLD_GAIN], [SURROUND_FOLD_GAIN, 0], [0, SURROUND_FOLD_GAIN]],
+  // 5.1: L R C LFE SL SR
+  6: [
+    [1, 0],
+    [0, 1],
+    [SURROUND_FOLD_GAIN, SURROUND_FOLD_GAIN],
+    [0, 0],
+    [SURROUND_FOLD_GAIN, 0],
+    [0, SURROUND_FOLD_GAIN],
+  ],
+};
+
+/**
+ * The fold itself, with no normalisation: L/R built from 3+ channels per
+ * `STEREO_FOLD` (or, for an unknown wider layout, every extra channel into
+ * both sides at −3 dB). THE ONE COPY of this arithmetic — the MP3 encoder
+ * (`toStereoFloats`), the audio-effect tools' level reporting
+ * (`audio-effects.ts` `foldToStereo`) and the AAC encoders in
+ * `video-compress.ts` / `webm-to-mp4.ts` all call it, so what a page measures
+ * and what an encoder writes cannot drift apart. Exported for those callers.
+ */
+export function foldChannelsToStereo(channelData: readonly Float32Array[]): [Float32Array, Float32Array] {
+  const count = channelData.length;
+  const length = channelData[0].length;
+  const left = new Float32Array(length);
+  const right = new Float32Array(length);
+  const matrix =
+    STEREO_FOLD[count] ??
+    channelData.map((_, ch) =>
+      ch === 0 ? [1, 0] : ch === 1 ? [0, 1] : [SURROUND_FOLD_GAIN, SURROUND_FOLD_GAIN],
+    );
+  for (let ch = 0; ch < count; ch++) {
+    const [gl, gr] = matrix[ch];
+    if (gl === 0 && gr === 0) continue;
+    const src = channelData[ch];
+    for (let i = 0; i < length; i++) {
+      left[i] += src[i] * gl;
+      right[i] += src[i] * gr;
+    }
+  }
+  return [left, right];
+}
+
+/**
+ * Reduce any channel layout to what MP3 (or a stereo AAC track) can carry:
+ * mono stays mono, stereo passes through untouched, and anything wider goes
+ * through `foldChannelsToStereo`, then is normalised if the sum passed unity.
+ * Exported for tests and the AAC encoders.
+ */
+export function toStereoFloats(channelData: Float32Array[]): [Float32Array, Float32Array | undefined] {
   const count = channelData.length;
   if (count === 1) return [channelData[0], undefined];
   if (count === 2) return [channelData[0], channelData[1]];
 
-  const left = Float32Array.from(channelData[0]);
-  const right = Float32Array.from(channelData[1]);
-  for (let ch = 2; ch < count; ch++) {
-    const extra = channelData[ch];
-    for (let i = 0; i < left.length; i++) {
-      const folded = extra[i] * SURROUND_FOLD_GAIN;
-      left[i] += folded;
-      right[i] += folded;
-    }
-  }
+  const [left, right] = foldChannelsToStereo(channelData);
+  const length = left.length;
   // The sum can exceed unity; the bridge's `clamp_into` would catch it, but
   // normalising here keeps the stereo image intact instead of flat-topping the
   // loudest passages.
   let peak = 0;
-  for (let i = 0; i < left.length; i++) {
+  for (let i = 0; i < length; i++) {
     peak = Math.max(peak, Math.abs(left[i]), Math.abs(right[i]));
   }
   if (peak > 1) {
-    for (let i = 0; i < left.length; i++) {
+    for (let i = 0; i < length; i++) {
       left[i] /= peak;
       right[i] /= peak;
     }

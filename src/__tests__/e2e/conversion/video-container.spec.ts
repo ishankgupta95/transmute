@@ -18,6 +18,7 @@ import {
   expectVideoStreamCopied,
 } from "./support";
 import { assertMp4 } from "./validators";
+import { VIDEO_MAE, compareVideoToSource, expectVideoMatches } from "./fidelity";
 
 /**
  * The container tools — `mov-to-mp4`, `mkv-to-mp4`, `avi-to-mp4`, `mp4-to-mkv`
@@ -247,6 +248,25 @@ test.describe("video container tools — real output", () => {
     expect(parseIsoBmff(bytes).mdatBytes).toBe(parseIsoBmff(source.buffer).mdatBytes);
 
     await expect(page.locator("[data-tool-surface]")).toContainText("NOT ONE PIXEL WAS TOUCHED");
+
+    /*
+      What the user sees. A display matrix is only worth anything if players
+      honour it, so play the file back and look: it must come out 240×320 with
+      every frame the source's frame turned a quarter clockwise. A matrix
+      written the wrong way round, or one players ignore, fails here even
+      though every byte check above passes.
+    */
+    const shown = await compareVideoToSource(
+      page,
+      { bytes: source.buffer, mime: "video/mp4" },
+      { bytes, mime: "video/mp4" },
+      { outTimes: [0.25, 1, 1.7], transform: "rot90" },
+    );
+    expect({ width: shown.output.width, height: shown.output.height }, "played back upright-portrait").toEqual({
+      width: SOURCE.height,
+      height: SOURCE.width,
+    });
+    expectVideoMatches(shown.matches, { maxMae: VIDEO_MAE.copy + 2, label: "rotated playback" });
   });
 
   /*

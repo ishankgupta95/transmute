@@ -1040,17 +1040,20 @@ describe("foldToStereo — the encoder's fold, done where the page can see it", 
   it("SCALES THE WHOLE MIX when the sum crosses unity — at any gain", () => {
     /*
       The case the old code could not see: six channels at 0.5 are every one of
-      them a long way under full scale, and their fold reaches 2.03. Nothing
+      them a long way under full scale, and their fold passes unity. Nothing
       here is a clip — it is a uniform divide applied to the delivered file, and
       it happens on a run that asked for no gain change at all.
     */
     const six = Array.from({ length: 6 }, () => new Float32Array([0.5]));
     const fold = foldToStereo(six);
 
-    // 0.5 + four extras at 0.5 x SQRT1_2 = 1.9142 — nearly 6 dB of level the
-    // encoder has to take back out of a mix whose loudest sample was 0.5.
-    const expectedPeak = 0.5 + 4 * 0.5 * Math.SQRT1_2;
-    expect(expectedPeak).toBeCloseTo(1.9142, 4);
+    // ITU-R BS.775 (audio-pcm.ts STEREO_FOLD): a side is its front + the
+    // centre + its OWN surround at -3 dB, LFE dropped — 0.5 + 2 x 0.5 x
+    // SQRT1_2 = 1.2071, ~1.6 dB the encoder takes back out of a mix whose
+    // loudest sample was 0.5. (Under the pre-2026-11-11 fold, every extra into
+    // both sides, this read 1.9142.)
+    const expectedPeak = 0.5 + 2 * 0.5 * Math.SQRT1_2;
+    expect(expectedPeak).toBeCloseTo(1.2071, 4);
     expect(fold.foldPeak).toBeCloseTo(expectedPeak, 5);
     expect(fold.scale).toBeCloseTo(1 / expectedPeak, 6);
     expect(fold.channels[0][0]).toBeCloseTo(1, 5);
@@ -1092,8 +1095,8 @@ describe("changeAudioVolume — the run, not the arithmetic around it", () => {
 
   it("FOLDS A 5.1 SOURCE ITSELF ON THE MP3 ARM, AND SAYS WHAT THAT COST", async () => {
     /*
-      The defect this whole path exists to close. Six channels at 0.5 fold to
-      2.03, so the encoder divided the WHOLE mix down — on a run requesting
+      The defect this whole path exists to close. Six channels at 0.5 fold past
+      unity (1.207), so the encoder divided the WHOLE mix down — on a run requesting
       0 dB — while the page measured its peak on the six pre-fold channels,
       reported "Clipping: No", raised nothing, and printed "Channels & rate
       UNCHANGED" over a stereo download. Every one of those is now derived from
@@ -1112,14 +1115,14 @@ describe("changeAudioVolume — the run, not the arithmetic around it", () => {
     // The delivered peak, which is what the file actually holds.
     expect(result.peakAfter).toBeCloseTo(1, 4);
     // And the level the fold reached, which is why it had to be pulled back.
-    expect(result.peakProduced).toBeCloseTo(0.5 + 4 * 0.5 * Math.SQRT1_2, 4);
+    expect(result.peakProduced).toBeCloseTo(0.5 + 2 * 0.5 * Math.SQRT1_2, 4);
     expect(result.clipped).toBe(true);
     expect(result.warnings?.join(" ")).toContain("folded into stereo");
     expect(result.warnings?.join(" ")).toContain("scaled down by");
   });
 
   it("says the channels moved even when the fold did NOT have to be scaled", async () => {
-    // Six quiet channels fold to 0.51, under unity, so no level change — but
+    // Six quiet channels fold to 0.30, under unity, so no level change — but
     // four channels still stopped existing, and "UNCHANGED" is still false.
     const six = Array.from({ length: 6 }, () => new Float32Array([0.125, -0.125]));
     vi.mocked(decodeAudioFile).mockResolvedValue(decoded(six, 44100));

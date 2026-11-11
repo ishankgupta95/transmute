@@ -130,6 +130,19 @@ export function assertWebCodecsSupported(): void {
 /**
  * Pick an H.264 encoder config the current device actually supports, trying
  * high → main → baseline profiles and hardware → software acceleration.
+ *
+ * "Supports" is MEASURED, not taken from `isConfigSupported`. Measured
+ * 2026-11-11 in Playwright's WebKit: `isConfigSupported` answers TRUE for High
+ * (avc1.640034) and Main (avc1.4D4028), yet an encoder configured with either
+ * accepts every frame, emits nothing, and never resolves `flush()` — so
+ * compress-video, webm-to-mp4 and the trimmer's Exact frame sat at 15–32%
+ * forever, with no error to show. Baseline (avc1.42E01E) encodes normally
+ * there. The failure is not tied to the frame source (NV12 from <video>,
+ * BGRA from canvas or ImageBitmap, I420 and RGBA buffers all stall alike),
+ * and up to four frames come back normally — short probes pass High and are
+ * fooled (measured; see PROBE_FRAMES). So each candidate the browser claims
+ * must encode a run of frames AND finish `flush()` with every one accounted
+ * for.
  */
 export async function pickH264Config(base: {
   width: number;
@@ -144,13 +157,106 @@ export async function pickH264Config(base: {
       const config: VideoEncoderConfig = { codec, ...base, hardwareAcceleration };
       try {
         const support = await VideoEncoder.isConfigSupported(config);
-        if (support.supported) return config;
+        if (support.supported && (await encodesAFrame(config))) return config;
       } catch {
         /* try the next combination */
       }
     }
   }
   throw new Error("This browser can't encode H.264 video. Please try Chrome or Edge.");
+}
+
+/**
+ * Frames the probe encodes. Measured 2026-11-11 in Playwright's WebKit, I420
+ * frames at 320×240: High and Main encode and flush 1, 2, 3 and 4 frames
+ * normally and deadlock from the FIFTH on (0 chunks, flush never settles) —
+ * consistent with a B-frame reorder window Baseline does not have. A probe of
+ * 1 or 3 frames passed High there and the real job then hung (both measured),
+ * so this is twice the boundary.
+ */
+const PROBE_FRAMES = 8;
+
+/**
+ * How long the probe's frames may take to come back. A working encoder answers
+ * in tens of milliseconds (Chromium: one keyframe at 320×240 well under 100 ms);
+ * a broken one never answers at all, so this only bounds the wait for a
+ * config that is about to be rejected anyway.
+ */
+export const ENCODE_PROBE_TIMEOUT_MS = 1500;
+
+/** Probe results per config, so a page pays for each probe once. */
+const probeCache = new Map<string, Promise<boolean>>();
+
+/**
+ * Does an encoder with this config encode a short run of frames and finish
+ * flushing? Exported for tests.
+ */
+export function encodesAFrame(config: VideoEncoderConfig): Promise<boolean> {
+  const key = JSON.stringify(config);
+  let cached = probeCache.get(key);
+  if (!cached) {
+    cached = probeEncode(config);
+    probeCache.set(key, cached);
+  }
+  return cached;
+}
+
+/** Forget cached probe results. Exported for tests only. */
+export function resetEncodeProbeCache(): void {
+  probeCache.clear();
+}
+
+async function probeEncode(config: VideoEncoderConfig): Promise<boolean> {
+  let encoder: VideoEncoder | null = null;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    let outputs = 0;
+    let failed = false;
+    const enc = new VideoEncoder({
+      output: () => {
+        outputs++;
+      },
+      error: () => {
+        failed = true;
+      },
+    });
+    encoder = enc;
+    enc.configure(config);
+    const { width, height } = config;
+    // I420 at the real size: the profile/level limits are size-dependent, so a
+    // smaller probe could pass a config the real job then fails.
+    const bytes = width * height + 2 * Math.ceil(width / 2) * Math.ceil(height / 2);
+    for (let i = 0; i < PROBE_FRAMES; i++) {
+      const frame = new VideoFrame(new Uint8Array(bytes), {
+        format: "I420",
+        codedWidth: width,
+        codedHeight: height,
+        timestamp: i * 33_333,
+      });
+      enc.encode(frame, { keyFrame: i === 0 });
+      frame.close();
+    }
+    const flushed = await Promise.race([
+      enc.flush().then(
+        () => true,
+        () => false,
+      ),
+      new Promise<false>((resolve) => {
+        timer = setTimeout(() => resolve(false), ENCODE_PROBE_TIMEOUT_MS);
+      }),
+    ]);
+    return flushed && !failed && outputs >= PROBE_FRAMES;
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(timer);
+    try {
+      const e = encoder as VideoEncoder | null;
+      if (e && e.state !== "closed") e.close();
+    } catch {
+      /* already closed */
+    }
+  }
 }
 
 /**

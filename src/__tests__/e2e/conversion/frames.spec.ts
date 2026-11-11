@@ -6,6 +6,7 @@ import { animatedGif, animatedWebp, multiPageTiff, tinyWebp } from "../fixtures"
 // and image-frames is a leaf module, so nothing app-side comes with it.
 import { firstFrameWarning } from "../../../lib/tools/image-frames";
 import { convert, probeImageInPage } from "./support";
+import { IMAGE_MAE, decodeGif, diffGrids, expectSameImage, gifFrameGrid, imageGridInPage } from "./fidelity";
 import { assertJpeg, assertPng, assertWebp } from "./validators";
 
 /**
@@ -131,6 +132,17 @@ test.describe("first-frame and first-page warnings", () => {
     // Strictly smaller — proves the download is a re-encode, not the
     // never-grow original (which would carry no warning and both frames).
     expect(bytes.length).toBeLessThan(fixture.buffer.length);
+    // And the still IS frame 0. The two frames are different seeded noise,
+    // so frame 1 (or a blend of both) cannot pass the correlation floor.
+    const gif = await decodeGif(fixture.buffer);
+    const grid = { width: 32, height: 32 };
+    const out = await imageGridInPage(page, { bytes, mime: "image/jpeg" }, grid);
+    expectSameImage(diffGrids(gifFrameGrid(gif, 0, grid), out.rgb, grid), {
+      maxMae: IMAGE_MAE.lossy,
+      label: "compressed still vs frame 0",
+    });
+    const vsFrame1 = diffGrids(gifFrameGrid(gif, 1, grid), out.rgb, grid);
+    expect(vsFrame1.correlation, "control: the still must not also look like frame 1").toBeLessThan(0.5);
     await expect(
       page.getByText("This GIF is animated — only its first frame was kept. To keep every frame, use Split GIF into Frames.", { exact: true }),
     ).toBeVisible();
@@ -158,6 +170,15 @@ test.describe("first-frame and first-page warnings", () => {
     assertPng(bytes);
     const dims = await probeImageInPage(page, bytes, "image/png");
     expect(dims).toEqual({ width: 8, height: 8 });
+
+    // The kept frame is frame 0 (red), not frame 1 (blue).
+    const gif = await decodeGif(animatedGif().buffer);
+    const grid = { width: 8, height: 8 };
+    const out = await imageGridInPage(page, { bytes, mime: "image/png" }, grid);
+    expectSameImage(diffGrids(gifFrameGrid(gif, 0, grid), out.rgb, grid), {
+      maxMae: IMAGE_MAE.lossy,
+      label: "resized still vs frame 0",
+    });
   });
 
   test("tiff-to-jpg keeps page one of a multi-page scan and says so", async ({ page }) => {

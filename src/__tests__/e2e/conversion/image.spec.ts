@@ -9,6 +9,21 @@ import {
   toolError,
 } from "./support";
 import { assertJpeg, assertPng, assertWebp, hasExifSegment } from "./validators";
+import { IMAGE_MAE, compareImages, expectSameImage } from "./fidelity";
+
+/** The fixture as a comparison source. */
+async function photo() {
+  const jpg = await SAMPLES.jpg();
+  return { file: jpg, ref: { bytes: jpg.buffer, mime: jpg.mimeType } };
+}
+
+/**
+ * Cropper.js opens on `autoCropArea: 0.8`, centred. Derived from the output's
+ * own size so the check is about WHERE the crop came from, not its exact size.
+ */
+function centredCrop(out: { width: number; height: number }) {
+  return { x: (800 - out.width) / 2, y: (600 - out.height) / 2, width: out.width, height: out.height };
+}
 
 /**
  * Image pipelines run on canvas + pica, neither of which exists in jsdom, so
@@ -18,8 +33,9 @@ import { assertJpeg, assertPng, assertWebp, hasExifSegment } from "./validators"
 
 test.describe("image conversions — real output", () => {
   test("resize-image produces an image at the requested width", async ({ page }) => {
+    const { file, ref } = await photo();
     await page.goto("/resize-image");
-    await uploadFixture(page, await SAMPLES.jpg());
+    await uploadFixture(page, file);
 
     // Width is the first number input in DIMENSIONS; aspect lock is on by
     // default, so height should follow from the 4:3 source.
@@ -38,6 +54,8 @@ test.describe("image conversions — real output", () => {
     const dims = await probeImageInPage(page, bytes, "image/jpeg");
     expect(dims.width).toBe(400);
     expect(dims.height).toBe(300); // 800x600 locked to 400 wide
+    // The right picture, the right way up, without a colour cast.
+    expectSameImage(await compareImages(page, ref, { bytes, mime: "image/jpeg" }), { label: "resize-image" });
   });
 
   test("compress-image returns a smaller, still-decodable image", async ({ page }) => {
@@ -60,6 +78,10 @@ test.describe("image conversions — real output", () => {
     // Dimensions must survive compression — only quality should change.
     const dims = await probeImageInPage(page, bytes, "image/jpeg");
     expect(dims).toEqual({ width: 800, height: 600 });
+    expectSameImage(
+      await compareImages(page, { bytes: jpg.buffer, mime: jpg.mimeType }, { bytes, mime: "image/jpeg" }),
+      { label: "compress-image" },
+    );
   });
 
   test("compress-image in target-size mode actually shrinks the file", async ({ page }) => {
@@ -94,6 +116,12 @@ test.describe("image conversions — real output", () => {
     // Only quality should change — the binary search must not resize.
     const dims = await probeImageInPage(page, bytes, "image/jpeg");
     expect(dims).toEqual({ width: 800, height: 600 });
+    // A 20 KB target is a hard squeeze, so the looser ceiling — but still the
+    // same picture, and still no colour cast.
+    expectSameImage(
+      await compareImages(page, { bytes: jpg.buffer, mime: jpg.mimeType }, { bytes, mime: "image/jpeg" }),
+      { maxMae: IMAGE_MAE.heavy, label: "compress-image to 20 KB" },
+    );
   });
 
   test("compress-image reaches a tiny KB target by scaling down", async ({ page }) => {
@@ -169,8 +197,9 @@ test.describe("image conversions — real output", () => {
   });
 
   test("crop-image emits a genuinely cropped image", async ({ page }) => {
+    const { file, ref } = await photo();
     await page.goto("/crop-image");
-    await uploadFixture(page, await SAMPLES.jpg());
+    await uploadFixture(page, file);
 
     await primaryAction(page, /^Crop$/).click();
 
@@ -192,13 +221,20 @@ test.describe("image conversions — real output", () => {
     expect(dims.width).toBeLessThanOrEqual(800);
     expect(dims.height).toBeGreaterThan(0);
     expect(dims.height).toBeLessThanOrEqual(600);
+    // The pixels are the centre of the photo, not its corner or a stretch of
+    // the whole thing squeezed into the crop box.
+    expectSameImage(
+      await compareImages(page, ref, { bytes, mime: "image/png" }, { crop: centredCrop(dims) }),
+      { label: "crop-image (PNG)" },
+    );
   });
 
   test("crop-image encodes JPG when JPG is picked, and the browser can decode it", async ({
     page,
   }) => {
+    const { file, ref } = await photo();
     await page.goto("/crop-image");
-    await uploadFixture(page, await SAMPLES.jpg());
+    await uploadFixture(page, file);
 
     // The format chips only exist before a crop — the rail gives way to the
     // download once a result lands — so the pick happens first.
@@ -216,6 +252,10 @@ test.describe("image conversions — real output", () => {
     const dims = await probeImageInPage(page, bytes, "image/jpeg");
     expect(dims.width).toBeGreaterThan(0);
     expect(dims.width).toBeLessThanOrEqual(800);
+    expectSameImage(
+      await compareImages(page, ref, { bytes, mime: "image/jpeg" }, { crop: centredCrop(dims) }),
+      { label: "crop-image (JPG)" },
+    );
   });
 
   test("crop-image never saves PNG bytes under a .webp name", async ({ page }) => {

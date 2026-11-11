@@ -12,10 +12,23 @@ npm run build        # Static export to ./out (same copy step)
 npm run lint         # ESLint (flat config, v9)
 npm test             # Vitest unit/integration tests (single run)
 npm run test:watch   # Vitest in watch mode
-npm run test:coverage # Vitest with V8 coverage (10% threshold; will rise alongside E2E)
+npm run test:coverage # Vitest with V8 coverage (floor: statements 82 / branches 76 / functions 83 / lines 83; actual ~86 / 81 / 87 / 88 as of 2026-11-11)
 npm run test:e2e     # Playwright E2E (requires dev server running)
+npm run test:e2e:conversion # Real conversions in Chromium, CONTENT-checked (~1.5 min). Runs on `git push` (.husky/pre-push)
+npm run test:e2e:real # Opt-in: your own files from ./real-files (gitignored) or TRANSMUTE_REAL_FILES=<dir>
 npm run test:all     # Unit + E2E sequentially
 ```
+
+Gates: pre-commit runs lint + tsc + unit coverage; pre-push runs the conversion suite. CI runs NO tests
+(build + deploy only), so `git push --no-verify` ships unchecked.
+
+Conversion tests must check that the output is the RIGHT content, not merely a valid file: use the
+helpers in `src/__tests__/e2e/conversion/fidelity.ts` (pixels, video frames, audio tones/levels, PDF
+pages, GIF frames). Any new helper or threshold must be proven in `fidelity.spec.ts` to FAIL on a
+deliberately broken output.
+
+Browser support: Chromium-based browsers only (decided 2026-11-11). Every e2e project is Chromium; there
+is no WebKit/Safari run. Comments in specs describing WebKit measurements are history, not a live gate.
 
 ## Architecture
 

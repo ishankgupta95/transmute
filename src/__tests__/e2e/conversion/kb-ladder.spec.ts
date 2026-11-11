@@ -9,6 +9,7 @@ import {
   toolError,
 } from "./support";
 import { assertJpeg } from "./validators";
+import { compareImages, expectSameImage } from "./fidelity";
 
 /**
  * The Wave 1 KB-ladder variant pages are pure registry config over the
@@ -49,6 +50,10 @@ test.describe("KB ladder variant pages", () => {
     // 800×600 reaches 50 KB on quality alone — dimensions must survive.
     const dims = await probeImageInPage(page, bytes, "image/jpeg");
     expect(dims).toEqual({ width: 800, height: 600 });
+    expectSameImage(
+      await compareImages(page, { bytes: jpg.buffer, mime: jpg.mimeType }, { bytes, mime: "image/jpeg" }),
+      { label: "compress-image-to-50kb" },
+    );
   });
 
   test("resize-image-to-20kb reaches 20 KB and discloses the downscale", async ({ page }) => {

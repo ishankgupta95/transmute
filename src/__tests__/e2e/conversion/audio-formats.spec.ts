@@ -13,6 +13,7 @@ import {
   toolError,
 } from "./support";
 import { assertMp3, assertWav } from "./validators";
+import { DYAD, audioTonesInPage, expectDyad, expectTones } from "./fidelity";
 
 /**
  * The audio *source format* matrix, and the two tools that pull audio out of a
@@ -187,6 +188,9 @@ test.describe("audio source formats — real decode, real re-encode", () => {
       // whatever was fed to the encoder. Asserting 44100 for it would be
       // asserting a resample.
       rate: 48000,
+      // A stream copy of the WebM fixture's track, which MediaRecorder took
+      // from ONE 440 Hz oscillator: 440 Hz in both channels, not the dyad.
+      tones: [440, 440],
     },
     {
       // No browser decodes Windows Media Audio; this one is entirely the
@@ -229,6 +233,9 @@ test.describe("audio source formats — real decode, real re-encode", () => {
         decoded.peak,
         "output decoded to digital silence — the source was never really decoded",
       ).toBeGreaterThan(0.05);
+      // Content: each channel still carries its own tone at its own pitch.
+      const tones: readonly number[] = "tones" in c ? c.tones : [DYAD.left, DYAD.right];
+      expectTones(await audioTonesInPage(page, bytes, [...new Set(tones)]), [...tones], { label: c.slug });
     });
   }
 
@@ -253,6 +260,7 @@ test.describe("audio source formats — real decode, real re-encode", () => {
     const decoded = await decodeAudioInPage(page, bytes);
     expectDuration(decoded.duration, SOURCE_SECONDS.m4a);
     expect(decoded.peak).toBeGreaterThan(0.05);
+    await expectDyad(page, bytes, { label: "m4a-to-wav" });
   });
 
   test("wav-to-flac writes a real FLAC, not a renamed WAV", async ({ page }) => {
@@ -291,6 +299,7 @@ test.describe("audio source formats — real decode, real re-encode", () => {
     expectDuration(decoded.duration, SOURCE_SECONDS.wav);
     expect(decoded.channels).toBe(2);
     expect(decoded.peak, "output decoded to digital silence").toBeGreaterThan(0.05);
+    await expectDyad(page, bytes, { label: "wav-to-flac" });
   });
 
   test("extract-audio lifts a Matroska track out without re-encoding it", async ({ page }) => {
@@ -351,6 +360,8 @@ test.describe("audio source formats — real decode, real re-encode", () => {
     const decoded = await decodeAudioInPage(page, bytes);
     expect(decoded.duration).toBeGreaterThan(1.6);
     expect(decoded.peak, "extracted audio must not be silence").toBeGreaterThan(0.02);
+    // The MKV carries the MP4 fixture's AAC track: the stereo dyad.
+    await expectDyad(page, bytes, { label: "extract-audio → MP3" });
 
     // Asked for a re-encode, so the page must not be claiming a copy.
     await expect(page.locator("[data-tool-surface]").getByText(/NOTHING WAS RE-ENCODED/i)).toHaveCount(0);
@@ -375,6 +386,9 @@ test.describe("audio source formats — real decode, real re-encode", () => {
     expect(decoded.duration).toBeGreaterThan(1.5);
     expect(decoded.duration).toBeLessThan(2.6);
     expect(decoded.peak).toBeGreaterThan(0.02);
+    // The WebM's audio is one 440 Hz oscillator, so 440 Hz in every channel.
+    const tones = await audioTonesInPage(page, bytes, [440]);
+    expectTones(tones, tones.channels.map(() => 440), { label: "video-to-wav", minRms: 0.01 });
   });
 
   test("flac-to-mp3 surfaces an error on undecodable bytes instead of a download", async ({

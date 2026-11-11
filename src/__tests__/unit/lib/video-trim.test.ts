@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-const { mockWriteFile, mockExec, mockReadFile, mockDeleteFile } = vi.hoisted(() => ({
+const { mockWriteFile, mockExec, mockReadFile, mockDeleteFile, mockFfprobe } = vi.hoisted(() => ({
+  mockFfprobe: vi.fn().mockResolvedValue(-1),
   mockWriteFile: vi.fn().mockResolvedValue(undefined),
   mockExec: vi.fn().mockResolvedValue(0),
   mockReadFile: vi.fn().mockResolvedValue(new Uint8Array([0x00, 0x00, 0x00])),
@@ -31,6 +32,7 @@ vi.mock("@/lib/tools/ffmpeg-loader", () => ({
         exec: mockExec,
         readFile: mockReadFile,
         deleteFile: mockDeleteFile,
+        ffprobe: mockFfprobe,
       }),
   ),
   // The source is MOUNTED, never written: `mountInputFile` answers with the
@@ -41,13 +43,28 @@ vi.mock("@/lib/tools/ffmpeg-loader", () => ({
   unmountInputFile: mockUnmountInputFile,
 }));
 
+const mockCompressVideo = vi.hoisted(() => vi.fn());
+vi.mock("@/lib/tools/video-compress", () => ({ compressVideo: mockCompressVideo }));
+
 import { trimVideo } from "@/lib/tools/video-trim";
+
+/** The output bytes for `output.*`, and an ffprobe JSON body for the probe file. */
+function fsWith(probedSeconds: number | null) {
+  return (path: string) =>
+    Promise.resolve(
+      path === "split-probe.json"
+        ? probedSeconds === null
+          ? "{\n\n}\n"
+          : JSON.stringify({ format: { duration: String(probedSeconds) } })
+        : new Uint8Array([0x00, 0x00, 0x00]),
+    );
+}
 
 describe("trimVideo", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockExec.mockResolvedValue(0);
-    mockReadFile.mockResolvedValue(new Uint8Array([0x00, 0x00, 0x00]));
+    mockReadFile.mockImplementation(fsWith(null));
     mockMountInputFile.mockImplementation((_ffmpeg: unknown, _file: File, name: string) =>
       Promise.resolve(`/mnt-input/${name}`),
     );
@@ -161,9 +178,10 @@ describe("trimVideo", () => {
     const file = new File(["video"], "clip.mp4", { type: "video/mp4" });
     await trimVideo(file, { startTime: 0, endTime: 5 });
 
-    // Only the output is a real MEMFS file now; the input is a mount.
-    expect(mockDeleteFile).toHaveBeenCalledTimes(1);
+    // Only the output is a real MEMFS file now; the input is a mount. (The
+    // other deletion is the probe clearing a stale JSON before it writes.)
     expect(mockDeleteFile).toHaveBeenCalledWith("output.mp4");
+    expect(mockDeleteFile).not.toHaveBeenCalledWith("input.mp4");
     expect(mockUnmountInputFile).toHaveBeenCalledTimes(1);
   });
 
@@ -265,5 +283,71 @@ describe("trimVideo", () => {
     await trimVideo(file, { startTime: 0, endTime: 5 });
 
     expect(mockReadFile).toHaveBeenCalledWith("output.mp4");
+  });
+
+  describe("reports what the copy really produced", () => {
+    it("flags a copy that began at an earlier keyframe, with where it began", async () => {
+      // The measured case: 0.5–1.5 s asked, a 1.51 s file starting at 0.
+      mockReadFile.mockImplementation(fsWith(1.51));
+      const file = new File(["video"], "clip.mp4", { type: "video/mp4" });
+      const result = await trimVideo(file, { startTime: 0.5, endTime: 1.5 });
+
+      expect(mockFfprobe).toHaveBeenCalledTimes(1);
+      expect(mockFfprobe.mock.calls[0][0]).toContain("output.mp4");
+      expect(result.trim.mode).toBe("copy");
+      expect(result.trim.actualSeconds).toBe(1.51);
+      expect(result.trim.actualStart).toBe(0);
+      expect(result.trim.startedEarly).toBe(true);
+    });
+
+    it("does not flag a copy that starts within a frame of the request", async () => {
+      // A cut that lands on a keyframe comes back ~the selection's length.
+      mockReadFile.mockImplementation(fsWith(1.02));
+      const file = new File(["video"], "clip.mp4", { type: "video/mp4" });
+      const result = await trimVideo(file, { startTime: 1, endTime: 2 });
+
+      expect(result.trim.actualStart).toBeCloseTo(0.98, 5);
+      expect(result.trim.startedEarly).toBe(false);
+    });
+
+    it("says nothing rather than guess when the probe returns nothing", async () => {
+      mockReadFile.mockImplementation(fsWith(null));
+      const file = new File(["video"], "clip.mp4", { type: "video/mp4" });
+      const result = await trimVideo(file, { startTime: 0.5, endTime: 1.5 });
+
+      expect(result.trim.actualSeconds).toBeNull();
+      expect(result.trim.actualStart).toBeNull();
+      expect(result.trim.startedEarly).toBe(false);
+    });
+  });
+
+  describe("exact mode", () => {
+    it("re-encodes just the selection through WebCodecs, never FFmpeg", async () => {
+      const blob = new Blob([new Uint8Array(42)], { type: "video/mp4" });
+      mockCompressVideo.mockResolvedValue({ blob, fileName: "x-compressed.mp4", originalSize: 5, newSize: 42 });
+      const file = new File(["video"], "holiday.webm", { type: "video/webm" });
+      const result = await trimVideo(file, { startTime: 0.5, endTime: 1.5, exact: true });
+
+      expect(mockCompressVideo).toHaveBeenCalledTimes(1);
+      expect(mockCompressVideo.mock.calls[0][3]).toEqual({
+        range: { start: 0.5, end: 1.5 },
+        matchSource: true,
+      });
+      // No FFmpeg job at all — no libx264 argv, no stream-copy size cap.
+      expect(mockExec).not.toHaveBeenCalled();
+      expect(mockValidateFFmpegInput).not.toHaveBeenCalled();
+      // H.264 cannot go in a WebM, so the name has to say MP4.
+      expect(result.fileName).toBe("holiday-trimmed.mp4");
+      expect(result.blob).toBe(blob);
+      expect(result.trim).toMatchObject({ mode: "exact", actualStart: 0.5, startedEarly: false });
+    });
+
+    it("still refuses a zero-length selection", async () => {
+      const file = new File(["video"], "clip.mp4", { type: "video/mp4" });
+      await expect(trimVideo(file, { startTime: 2, endTime: 2, exact: true })).rejects.toThrow(
+        "Select a clip longer than zero seconds.",
+      );
+      expect(mockCompressVideo).not.toHaveBeenCalled();
+    });
   });
 });

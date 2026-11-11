@@ -9,6 +9,7 @@ import {
   toolError,
 } from "./support";
 import { assertPdf, assertZip } from "./validators";
+import { expectPdfPages } from "./fidelity";
 
 /**
  * The PDF page-geometry and extraction cluster: extract-pdf-pages,
@@ -170,6 +171,8 @@ test.describe("extract-pdf-pages — real output", () => {
 
     expect(name).toBe("extracted-pages.pdf");
     const info = await assertPdf(bytes, { pages: 2 });
+    // The pages that were PICKED — not the first two, not in another order.
+    await expectPdfPages(bytes, [2, 4], "extracted-pages.pdf");
     // Pages are grafted whole, so the A4 geometry has to survive the copy.
     for (const size of info.sizes) {
       expect(Math.round(size.width)).toBe(A4.width);
@@ -212,6 +215,8 @@ test.describe("extract-pdf-pages — real output", () => {
     for (const entry of names) {
       const member = await zip.files[entry].async("nodebuffer");
       await assertPdf(member, { pages: 1 });
+      // page-3.pdf must actually hold page 3.
+      await expectPdfPages(member, [Number(entry.match(/\d+/)![0])], entry);
     }
   });
 });
@@ -249,6 +254,8 @@ test.describe("delete-pdf-pages — real output", () => {
     // 5 − 2. The complement is derived inside the engine from the real
     // document, so this also pins that it never trusted a stale UI count.
     await assertPdf(bytes, { pages: 3 });
+    // And the RIGHT three: 2 and 4 went, 1, 3 and 5 stayed, in order.
+    await expectPdfPages(bytes, [1, 3, 5], "pages-removed.pdf");
   });
 
   test("refuses to hand back a document with no pages left", async ({ page }) => {

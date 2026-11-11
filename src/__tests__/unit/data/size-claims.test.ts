@@ -190,6 +190,11 @@ describe("size claims — the absolute claim and the known ceilings stay disjoin
     // VideoThumbnailUI deliberately are NOT here — they decode video through a
     // <video> element, which none of the four entry points models — and they
     // carry a note anyway, for the frames they hold in memory.
+    //
+    // VideoTrimmerUI joined 2026-11-11 with its "Exact frame" arm, which
+    // re-encodes through `compressVideo` and so decodes the whole soundtrack
+    // in the tab. Its drop-zone cap is the stream copy's; the exact arm's
+    // memory bound is stated beside the choice itself.
     const bound = toolUIs
       .filter((ui) => reachesAnInTabDecode(ui.rel) !== null)
       .map((ui) => ui.file)
@@ -203,6 +208,7 @@ describe("size claims — the absolute claim and the known ceilings stay disjoin
       "NormalizeAudioUI.tsx",
       "RemoveSilenceUI.tsx",
       "ReverseAudioUI.tsx",
+      "VideoTrimmerUI.tsx",
       "WebmToMp4UI.tsx",
     ]);
   });

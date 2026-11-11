@@ -1,7 +1,8 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ErrorMessage } from "@/components/tools/ErrorMessage";
+import { WarningMessage } from "@/components/tools/WarningMessage";
 import { DropZone } from "@/components/tools/DropZone";
 import { DownloadButton } from "@/components/tools/DownloadButton";
 import { ProgressBar } from "@/components/tools/ProgressBar";
@@ -12,6 +13,7 @@ import {
   ToolActions,
   ToolAside,
   ToolAsideSection,
+  ToolChoice,
   ToolOutput,
   ToolResetLink,
 } from "@/components/tools/ToolAside";
@@ -25,8 +27,20 @@ import {
 import { extractFilmstrip } from "@/lib/tools/media-preview";
 import { CANVAS_COLUMN, STAGE_GROW, STAGE_MEDIA } from "@/components/workspace/shared";
 import { cn } from "@/lib/utils/cn";
+import {
+  isWebCodecsEncodeSupported,
+  WEBCODECS_UNSUPPORTED_MESSAGE,
+} from "@/lib/utils/webcodecs-support";
 import { StatusMessage } from "@/components/tools/StatusMessage";
 import { getToolBySlug } from "@/data/tools";
+import type { VideoTrimResult } from "@/lib/tools/video-trim";
+
+type CutMode = "fast" | "exact";
+
+const CUT_MODES: readonly { value: CutMode; label: string }[] = [
+  { value: "fast", label: "Fast" },
+  { value: "exact", label: "Exact frame" },
+];
 
 /** Frame count the doc's strip draws. */
 const FILMSTRIP_FRAMES = 16;
@@ -37,6 +51,15 @@ const FILMSTRIP_FRAMES = 16;
   same number, and the number is derived (see the block at the top of
   src/lib/tools/ffmpeg-loader.ts) rather than picked.
 */
+/**
+  How long an Exact cut may sit on one progress value before the page says it
+  looks stuck. MEASURED 2026-11-11 in Playwright's WebKit: the encoder passes
+  the pre-flight below, yet the real pipeline parks at 15-32% with no error and
+  never finishes (compress-video parks the same way, at 16%). A probe cannot see
+  that, so the one honest thing left is to notice it happening.
+*/
+const STALL_MS = 20_000;
+
 const SIZE_CAP_MB = getToolBySlug("video-trimmer")?.maxSizeMB;
 
 export function VideoTrimmerUI() {
@@ -48,6 +71,35 @@ export function VideoTrimmerUI() {
   const [duration, setDuration] = useState(0);
   const [startTime, setStartTime] = useState(0);
   const [endTime, setEndTime] = useState(0);
+  const [chosenCutMode, setCutMode] = useState<CutMode>("fast");
+  /*
+    Exact frame re-encodes through WebCodecs, so it is only as available as the
+    encoder. The SAME pre-flight compress-video uses, asked before anything
+    starts: Safari's encoder returns no codec description, which fails the
+    muxer only after a click. Only an explicit refusal sets this; a probe that
+    throws is inconclusive and leaves the choice on offer. The module is
+    imported on demand so the trimmer's own chunk does not carry the whole
+    compress page.
+  */
+  const [exactProblem, setExactProblem] = useState<string | null>(null);
+  useEffect(() => {
+    if (!isWebCodecsEncodeSupported()) {
+      setExactProblem(WEBCODECS_UNSUPPORTED_MESSAGE);
+      return;
+    }
+    let live = true;
+    import("@/components/tools/CompressVideoUI")
+      .then((m) => m.encodePipelineProblem())
+      .then((message) => {
+        if (live && message) setExactProblem(message);
+      })
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, []);
+  // A refusal that lands after Exact was clicked still wins.
+  const cutMode: CutMode = exactProblem ? "fast" : chosenCutMode;
   const videoRef = useRef<HTMLVideoElement | null>(null);
   /** One duration probe per loaded file (see `handleVideoLoadedMetadata`). */
   const probedRef = useRef(false);
@@ -55,15 +107,24 @@ export function VideoTrimmerUI() {
   const processFn = useCallback(
     async (f: File, _options: void, ctx: FileProcessorContext) => {
       const { trimVideo } = await import("@/lib/tools/video-trim");
-      return trimVideo(f, { startTime, endTime }, ctx);
+      return trimVideo(f, { startTime, endTime, exact: cutMode === "exact" }, ctx);
     },
-    [startTime, endTime],
+    [startTime, endTime, cutMode],
   );
 
   // `void` options: `processFn` closes over the selection. The hook's signal
   // reaches FFmpeg, where cancelling means terminating the worker.
   const { status, result, error, progress, process, cancel, reset } =
     useFileProcessor<void>(processFn);
+
+  // Exact cut only: has the progress value stopped moving? See STALL_MS.
+  const [stalled, setStalled] = useState(false);
+  useEffect(() => {
+    setStalled(false);
+    if (status !== "processing" || cutMode !== "exact") return;
+    const timer = setTimeout(() => setStalled(true), STALL_MS);
+    return () => clearTimeout(timer);
+  }, [status, progress, cutMode]);
 
   const handleFiles = useCallback(
     (files: File[]) => {
@@ -143,6 +204,14 @@ export function VideoTrimmerUI() {
     [result, reset],
   );
 
+  const handleCutModeChange = useCallback(
+    (v: CutMode) => {
+      if (result) reset();
+      setCutMode(v);
+    },
+    [result, reset],
+  );
+
   const handleReset = useCallback(() => {
     setFile(null);
     setDuration(0);
@@ -166,6 +235,23 @@ export function VideoTrimmerUI() {
       />
     );
   }
+
+  /*
+    What the download really is, read back off the file by the engine. The
+    CLIP readout used to show the SELECTION after a run, so a copy that had
+    snapped back to an earlier keyframe — 1.5 s of footage starting at 0:00.0
+    for a 0:00.5–0:01.5 pick — was presented as exactly what was asked for.
+  */
+  const trim = (result as VideoTrimResult | null)?.trim ?? null;
+  const clipSeconds = trim?.actualSeconds ?? Math.max(0, endTime - startTime);
+  const snapNotice =
+    trim?.startedEarly && trim.actualStart !== null
+      ? `This clip starts at ${formatTime(trim.actualStart)}, not ${formatTime(trim.requestedStart)}. ` +
+        `A fast trim copies the video without re-encoding it, and a copy can only begin on a keyframe — ` +
+        `the nearest one before your start is at ${formatTime(trim.actualStart)}, so the clip runs ` +
+        `${formatTime(clipSeconds)}. Choose Exact frame to start at ${formatTime(trim.requestedStart)}: ` +
+        `it re-encodes to MP4, takes about as long as the clip plays, and re-compresses the picture.`
+      : null;
 
   // The filmstrip overlay works in percentages of the clip.
   const startPct = duration ? (startTime / duration) * 100 : 0;
@@ -217,15 +303,27 @@ export function VideoTrimmerUI() {
           </div>
         )}
 
+        {status === "processing" && stalled && (
+          <WarningMessage
+            message={`No progress for ${STALL_MS / 1000} seconds. Exact frame may not work in this browser. Cancel and use Fast, or try Chrome or Edge.`}
+          />
+        )}
+
         {status === "error" && (
           <ErrorMessage message={error} />
         )}
+
+        {status === "done" && <WarningMessage message={snapNotice} />}
 
         <StatStrip
           stats={[
             { label: "IN", value: formatFileSize(file.size), tone: "neutral" },
             { label: "OUT", value: result ? formatFileSize(result.newSize) : "—" },
-            { label: "CLIP", value: formatTime(Math.max(0, endTime - startTime)), tone: "ok" },
+            {
+              label: "CLIP",
+              value: formatTime(clipSeconds),
+              tone: trim?.startedEarly ? "accent" : "ok",
+            },
             {
               label: "PROGRESS",
               value: status === "processing" ? `${progress}%` : status === "done" ? "100%" : "—",
@@ -263,10 +361,31 @@ export function VideoTrimmerUI() {
           </>
         }
       >
+        <ToolAsideSection label="CUT">
+          <ToolChoice
+            label="Cut accuracy"
+            disabled={status === "processing"}
+            value={cutMode}
+            onChange={handleCutModeChange}
+            options={exactProblem ? CUT_MODES.filter((m) => m.value === "fast") : CUT_MODES}
+          />
+          {exactProblem && (
+            <span className="font-body text-[10.5px] leading-[1.5] text-warning">
+              Exact frame is not available here. {exactProblem}
+            </span>
+          )}
+          <span className="font-body text-[10.5px] leading-[1.5] text-text-muted">
+            {cutMode === "fast"
+              ? "Copies the video without re-encoding: near-instant and lossless, but it can only start on a keyframe, so it may begin a little before your start. If it does, you will be told where."
+              : "Re-encodes from exactly your start frame to an MP4. Slower — about as long as the clip plays — and the picture is compressed again. The whole soundtrack is decoded in this tab, so a very long video can run out of memory; use Fast for those."}
+          </span>
+        </ToolAsideSection>
+
         <ToolAsideSection label="OUTPUT">
           <ToolOutput
             rows={[
               ["Selected", formatTime(Math.max(0, endTime - startTime))],
+              ["Starts at", trim?.actualStart != null ? formatTime(trim.actualStart) : "—"],
               ["Trimmed", result ? formatFileSize(result.newSize) : "—"],
               ["Progress", status === "processing" ? `${progress}%` : status === "done" ? "100%" : "—"],
             ]}

@@ -4,23 +4,6 @@ dependency tree, followed transitively. Each section reproduces that package's
 own licence file verbatim.
 
 ==============================================================================
-@breezystack/lamejs 1.2.7  —  LGPL-3.0
-https://github.com/shijinyu/lamejs#readme
-==============================================================================
-Can I use LAME in my commercial program?  
-
-Yes, you can, under the restrictions of the LGPL.  The easiest
-way to do this is to:
-
-1. Link to LAME as separate jar (lame.min.js or lame.all.js)
-
-2. Fully acknowledge that you are using LAME, and give a link
-   to our web site, lame.sourceforge.net
-
-3. If you make modifications to LAME, you *must* release these
-   these modifications back to the LAME project, under the LGPL.
-
-==============================================================================
 @jsquash/oxipng 2.3.0  —  Apache-2.0
 jamsinclair/jSquash/packages/oxipng
 ==============================================================================
@@ -255,32 +238,6 @@ PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
 LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
 NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-
-==============================================================================
-@noble/hashes 2.4.0  —  MIT
-https://paulmillr.com/noble/
-==============================================================================
-The MIT License (MIT)
-
-Copyright (c) 2022 Paul Miller (https://paulmillr.com)
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the “Software”), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in
-all copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-THE SOFTWARE.
 
 ==============================================================================
 @pdf-lib/standard-fonts 1.0.0  —  MIT
@@ -3813,6 +3770,49 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 ==============================================================================
+hash-wasm 4.13.0  —  MIT
+https://github.com/Daninet/hash-wasm#readme
+==============================================================================
+MIT License
+
+Copyright (c) 2020 Dani Biró
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+Embedded C implementations might use other, similarly permissive licenses.
+Check the beginning of the files from the /src directory.
+
+Special thank you to the authors of original C algorithms:
+- Alexander Peslyak <solar@openwall.com>
+- Aleksey Kravchenko <rhash.admin@gmail.com>
+- Colin Percival
+- Stephan Brumme <create@stephan-brumme.com>
+- Steve Reid <steve@edmweb.com>
+- Samuel Neves <sneves@dei.uc.pt>
+- Solar Designer <solar@openwall.com>
+- Project Nayuki
+- ARM Limited
+- Yanbo Li dreamfly281@gmail.com, goldboar@163.comYanbo Li
+- Mark Adler
+- Yann Collet
+
+==============================================================================
 hast-util-to-html 9.0.5  —  MIT
 syntax-tree/hast-util-to-html
 ==============================================================================
@@ -3977,31 +3977,6 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
-
-==============================================================================
-js-md5 0.8.3  —  MIT
-https://github.com/emn178/js-md5
-==============================================================================
-Copyright 2014-2023 Chen, Yi-Cyuan
-
-Permission is hereby granted, free of charge, to any person obtaining
-a copy of this software and associated documentation files (the
-"Software"), to deal in the Software without restriction, including
-without limitation the rights to use, copy, modify, merge, publish,
-distribute, sublicense, and/or sell copies of the Software, and to
-permit persons to whom the Software is furnished to do so, subject to
-the following conditions:
-
-The above copyright notice and this permission notice shall be
-included in all copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
-EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
-MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
-NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE
-LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
-OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
-WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 ==============================================================================
 js-yaml 4.3.2  —  MIT

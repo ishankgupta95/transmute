@@ -998,10 +998,11 @@ export function expectLevels(
  * in page order. `assertPdf`'s `text` is the raw file bytes, which shows
  * nothing of a compressed content stream; this is the real text layer.
  */
-export async function pdfPageTexts(buf: Buffer): Promise<string[]> {
+export async function pdfPageTexts(buf: Buffer, password?: string): Promise<string[]> {
   const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
   const doc = await pdfjs.getDocument({
     data: new Uint8Array(buf),
+    password,
     isEvalSupported: false,
     useSystemFonts: false,
     verbosity: 0,
@@ -1029,16 +1030,21 @@ export async function pdfPageTexts(buf: Buffer): Promise<string[]> {
  * Which source page each output page is, read from the "Page N" heading every
  * PDF fixture draws at the top of each page. null where a page has none.
  */
-export async function pdfPageNumbers(buf: Buffer): Promise<(number | null)[]> {
-  return (await pdfPageTexts(buf)).map((t) => {
+export async function pdfPageNumbers(buf: Buffer, password?: string): Promise<(number | null)[]> {
+  return (await pdfPageTexts(buf, password)).map((t) => {
     const m = t.match(/\bPage (\d+)\b/);
     return m ? Number(m[1]) : null;
   });
 }
 
 /** Assert the output's pages are exactly these source pages, in this order. */
-export async function expectPdfPages(buf: Buffer, expected: number[], label = "output"): Promise<void> {
-  expect(await pdfPageNumbers(buf), `${label}: which source page each output page holds`).toEqual(expected);
+export async function expectPdfPages(
+  buf: Buffer,
+  expected: number[],
+  label = "output",
+  password?: string,
+): Promise<void> {
+  expect(await pdfPageNumbers(buf, password), `${label}: which source page each output page holds`).toEqual(expected);
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -1134,4 +1140,109 @@ export async function expectFixturePageRasters(
 
 function round(o: Record<string, number>): Record<string, number> {
   return Object.fromEntries(Object.entries(o).map(([k, v]) => [k, +v.toFixed(2)]));
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Images embedded in a PDF
+// ────────────────────────────────────────────────────────────────────────────
+
+export interface PdfEmbeddedImage {
+  page: number;
+  width: number;
+  height: number;
+  filter: string;
+  /** The image as a standalone file `compareImages` can decode. */
+  file: EncodedImage;
+}
+
+const CRC_TABLE = (() => {
+  const t = new Int32Array(256);
+  for (let n = 0; n < 256; n++) {
+    let c = n;
+    for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+    t[n] = c;
+  }
+  return t;
+})();
+
+function crc32(buf: Uint8Array): number {
+  let c = -1;
+  for (const b of buf) c = CRC_TABLE[(c ^ b) & 0xff] ^ (c >>> 8);
+  return (c ^ -1) >>> 0;
+}
+
+/** 8-bit gray / RGB / RGBA rows as a PNG (filter 0 on every row). */
+export async function rawToPng(width: number, height: number, channels: 1 | 3 | 4, raw: Uint8Array): Promise<Buffer> {
+  const zlib = await import("node:zlib");
+  const stride = width * channels;
+  const rows = Buffer.alloc((stride + 1) * height);
+  for (let y = 0; y < height; y++) Buffer.from(raw.subarray(y * stride, (y + 1) * stride)).copy(rows, y * (stride + 1) + 1);
+  const chunk = (type: string, data: Buffer) => {
+    const out = Buffer.alloc(12 + data.length);
+    out.writeUInt32BE(data.length, 0);
+    out.write(type, 4, "latin1");
+    data.copy(out, 8);
+    out.writeUInt32BE(crc32(out.subarray(4, 8 + data.length)), 8 + data.length);
+    return out;
+  };
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(width, 0);
+  ihdr.writeUInt32BE(height, 4);
+  ihdr[8] = 8;
+  ihdr[9] = channels === 1 ? 0 : channels === 3 ? 2 : 6;
+  return Buffer.concat([
+    Buffer.from("89504e470d0a1a0a", "hex"),
+    chunk("IHDR", ihdr),
+    chunk("IDAT", zlib.deflateSync(rows)),
+    chunk("IEND", Buffer.alloc(0)),
+  ]);
+}
+
+/**
+ * Every image XObject drawn on each page, in page order, as a decodable file.
+ *
+ * `assertPdf` and a `DCTDecode` grep say an image is embedded; this says WHICH
+ * picture, so a test can `compareImages` it against the source and catch a
+ * wrong, sideways (EXIF ignored — PDF readers do not apply it), mirrored or
+ * colour-swapped page. JPEG streams are handed over as-is; Flate streams are
+ * inflated and re-wrapped as PNG. A filter or predictor this does not model
+ * throws, rather than handing back something it guessed at.
+ */
+export async function pdfEmbeddedImages(buf: Buffer): Promise<PdfEmbeddedImage[]> {
+  const { PDFDocument, PDFName, PDFRawStream, PDFDict, PDFArray } = await import("pdf-lib");
+  const zlib = await import("node:zlib");
+  const doc = await PDFDocument.load(new Uint8Array(buf), { ignoreEncryption: true });
+  const out: PdfEmbeddedImage[] = [];
+  const name = (v: unknown) => (v ? String(v).replace(/^\//, "") : "");
+  for (const [index, pdfPage] of doc.getPages().entries()) {
+    const resources = pdfPage.node.Resources();
+    const xobjects = resources?.lookup(PDFName.of("XObject"), PDFDict);
+    if (!xobjects) continue;
+    for (const key of xobjects.keys()) {
+      const stream = xobjects.lookup(key);
+      if (!(stream instanceof PDFRawStream)) continue;
+      const dict = stream.dict;
+      if (name(dict.get(PDFName.of("Subtype"))) !== "Image") continue;
+      const width = Number(String(dict.get(PDFName.of("Width"))));
+      const height = Number(String(dict.get(PDFName.of("Height"))));
+      const rawFilter = dict.lookup(PDFName.of("Filter"));
+      const filter = rawFilter instanceof PDFArray ? rawFilter.asArray().map(name).join("+") : name(rawFilter);
+      const bytes = stream.getContents();
+      if (filter === "DCTDecode") {
+        out.push({ page: index + 1, width, height, filter, file: { bytes: Buffer.from(bytes), mime: "image/jpeg" } });
+        continue;
+      }
+      if (filter !== "FlateDecode" || dict.get(PDFName.of("DecodeParms"))) {
+        throw new Error(`pdfEmbeddedImages: page ${index + 1} image uses ${filter || "no filter"}${dict.get(PDFName.of("DecodeParms")) ? " with DecodeParms" : ""}, not modelled`);
+      }
+      const space = name(dict.lookup(PDFName.of("ColorSpace")));
+      const channels = space === "DeviceGray" ? 1 : space === "DeviceRGB" ? 3 : 0;
+      if (!channels || Number(String(dict.get(PDFName.of("BitsPerComponent")))) !== 8) {
+        throw new Error(`pdfEmbeddedImages: page ${index + 1} colour space ${space} is not modelled`);
+      }
+      const png = await rawToPng(width, height, channels as 1 | 3, zlib.inflateSync(bytes));
+      out.push({ page: index + 1, width, height, filter, file: { bytes: png, mime: "image/png" } });
+    }
+  }
+  return out;
 }

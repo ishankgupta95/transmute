@@ -99,6 +99,15 @@ export default defineConfig({
         {
           name: "conversion",
           testDir: "./src/__tests__/e2e/conversion",
+          /*
+            One retry, because this suite is the PRE-PUSH GATE and a one-off
+            flake would block a push for nothing. Measured 2026-11-11: the
+            fidelity.spec animation self-test (it seeks a <video> to build its
+            reference frames) failed once in four full runs under load and
+            never in isolation. A retried pass is still reported as "flaky",
+            so it stays visible; a real regression fails both attempts.
+          */
+          retries: 1,
           // WASM cores load and encode in real time; the default 30s is far
           // too tight even with the FFmpeg core served from a local cache.
           timeout: 240_000,

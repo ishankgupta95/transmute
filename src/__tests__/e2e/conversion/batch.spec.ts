@@ -113,11 +113,8 @@ test.describe("worker-pool batch", () => {
     }
   });
 
-  test("main thread stays responsive during a batch (no long task > 200 ms)", async ({
-    page,
-    browserName,
-  }) => {
-    test.skip(browserName !== "chromium", "longtask PerformanceObserver is Chromium-only");
+  // `longtask` PerformanceObserver entries are a Chromium feature.
+  test("main thread stays responsive during a batch (no long task > 200 ms)", async ({ page }) => {
 
     await page.goto("/compress-image");
     await injectBatch(page, FILE_COUNT);

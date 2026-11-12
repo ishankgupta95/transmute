@@ -187,14 +187,8 @@ test.describe("workspace mounts real tools", () => {
     await expect(page.getByText(/Contains location data/i)).toBeVisible();
   });
 
-  test("record: screen-recorder produces a clip in the workspace", async ({
-    page,
-    browserName,
-  }) => {
-    test.skip(
-      browserName !== "chromium",
-      "display capture needs the Chromium fake-media launch flags",
-    );
+  // Needs the fake-media launch flags the `conversion` project sets.
+  test("record: screen-recorder produces a clip in the workspace", async ({ page }) => {
     await gotoWorkspaceTool(page, "screen-recorder");
 
     const start = page.getByRole("button", { name: /Start Recording/i });

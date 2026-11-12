@@ -10,6 +10,7 @@ import {
   toolError,
 } from "./support";
 import { assertPdf } from "./validators";
+import { expectPdfPages } from "./fidelity";
 import type { FixtureFile } from "../helpers";
 
 /**
@@ -566,6 +567,8 @@ test.describe("watermark-pdf — real output", () => {
     const { name, bytes } = await runTool(page, /Add watermark/);
     expect(name).toBe("sample-doc-watermarked.pdf");
     await assertPdf(bytes, { pages: 5 });
+    // Each page still carries its own content, in order — not only five pages.
+    await expectPdfPages(bytes, [1, 2, 3, 4, 5], "watermarked");
 
     const content = await pageContent(bytes, 0);
     /*
@@ -804,6 +807,8 @@ test.describe("add-image-to-pdf — real output", () => {
     const { name, bytes } = await runTool(page, /Place image/);
     expect(name).toBe("sample-doc-with-image.pdf");
     await assertPdf(bytes, { pages: 5 });
+    // Each page still carries its own content, in order — not only five pages.
+    await expectPdfPages(bytes, [1, 2, 3, 4, 5], "with image");
 
     // ── Embedded, as a real image XObject with the fixture's own sample grid ──
     const images = await pageImages(bytes, 0);
@@ -960,6 +965,8 @@ test.describe("sign-pdf — real output", () => {
     const { name, bytes } = await runTool(page, /Sign PDF/);
     expect(name).toBe("sample-doc-signed.pdf");
     await assertPdf(bytes, { pages: 5 });
+    // Each page still carries its own content, in order — not only five pages.
+    await expectPdfPages(bytes, [1, 2, 3, 4, 5], "signed");
 
     // ── On page 1 only, at the placement the three fields hold ──
     const width = 0.26 * A4.width;
@@ -1044,6 +1051,8 @@ test.describe("annotate-pdf — real output", () => {
     const { name, bytes } = await runTool(page, /Annotate page/);
     expect(name).toBe("sample-doc-annotated.pdf");
     await assertPdf(bytes, { pages: 5 });
+    // Each page still carries its own content, in order — not only five pages.
+    await expectPdfPages(bytes, [1, 2, 3, 4, 5], "annotated");
 
     const content = await pageContent(bytes, 0);
 

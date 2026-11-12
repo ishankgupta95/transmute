@@ -9,6 +9,7 @@ import {
   toolError,
 } from "./support";
 import { assertPdf, assertJpeg } from "./validators";
+import { IMAGE_MAE, compareImages, expectSameImage } from "./fidelity";
 
 /**
  * `recompress-pdf-images` — the explicitly lossy PDF image compressor.
@@ -184,8 +185,11 @@ const refusedIn = (images: DocImage[]) => images.filter((i) => i.filter !== "/DC
  * arrived as.
  */
 async function assertRecompressed(
+  page: Page,
   produced: Buffer,
   source: Buffer,
+  /** Pixel-error ceiling for the photo; layout and colour cast stay strict. */
+  maxMae: number = IMAGE_MAE.heavy,
 ): Promise<{ photo: DocImage }> {
   await assertPdf(produced, { pages: FIXTURE.pages });
 
@@ -223,6 +227,13 @@ async function assertRecompressed(
   expect(photo.width).toBeGreaterThan(0);
   expect(photo.height).toBeGreaterThan(0);
 
+  // …and still the SAME photo: a re-encode may lose detail, not turn, mirror,
+  // recolour or swap the picture. Heavy ceiling — shrinking it is the point.
+  expectSameImage(
+    await compareImages(page, { bytes: photosIn(before)[0].bytes, mime: "image/jpeg" }, { bytes: photo.bytes, mime: "image/jpeg" }),
+    { maxMae, label: "recompressed photo vs the original stream" },
+  );
+
   // The refusal, stated as bytes. `sample-photo-doc.pdf` carries a FlateDecode
   // PNG and a PNG plus its DeviceGray /SMask; all three must come through
   // untouched, because re-encoding a mask or a non-JPEG through a JPEG encoder
@@ -257,7 +268,7 @@ test.describe("recompress-pdf-images — real output", () => {
     const { name, bytes } = await runAndCapture(page);
 
     expect(name).toBe("sample-photo-doc-recompressed.pdf");
-    const { photo } = await assertRecompressed(bytes, source);
+    const { photo } = await assertRecompressed(page, bytes, source);
 
     // The point of the tool. WebKit's weakest column still lands 22% under the
     // source stream, so 10% is a floor no working implementation can miss and
@@ -378,7 +389,7 @@ test.describe("recompress-pdf-images — real output", () => {
       bytes.length,
       "a ceiling the tool reported as met must actually hold in the bytes",
     ).toBeLessThanOrEqual(32 * 1024);
-    const { photo } = await assertRecompressed(bytes, source);
+    const { photo } = await assertRecompressed(page, bytes, source);
     // Whether or not it needed to scale, it may never grind the picture away:
     // MIN_LONGEST_SIDE is 64, and the source is 800 × 600.
     expect(photo.width).toBeGreaterThanOrEqual(64);
@@ -420,7 +431,11 @@ test.describe("recompress-pdf-images — real output", () => {
     // The closest achievable size is a real, valid, smaller document.
     expect(bytes.length).toBeGreaterThan(4 * 1024);
     expect(bytes.length).toBeLessThan(source.length);
-    await assertRecompressed(bytes, source);
+    // An unreachable target squeezes as far as it can: measured 2026-11-11 at
+    // MAE 14.2 with correlation 0.972 and no colour cast (|bias| < 1.2) — the
+    // same picture, heavily degraded. 20 allows that; a wrong, turned or
+    // recoloured photo still fails on correlation and bias.
+    await assertRecompressed(page, bytes, source, 20);
 
     /*
       And it must SAY so. The wording is the UI's; the claim is not optional.

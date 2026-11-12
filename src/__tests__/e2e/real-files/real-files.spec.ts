@@ -612,13 +612,30 @@ function expectSameRecording(src: AudioProfile, out: AudioProfile, label = "outp
 
   // Long-term levels: wrong sample rate, a resample applied twice, or a filter shows as a shifted spectrum.
   const worst = { diff: 0, freq: 0 };
+  const spurious = { db: -Infinity, freq: 0 };
   src.freqs.forEach((f, k) => {
-    // A band holding < 0.01 % of the programme's power is noise floor or a tone's skirt: codec noise
-    // differs there by many dB without anything being wrong. Real material has energy in its bands.
-    if (src.bandsDb[k] < src.totalDb - 40 && out.bandsDb[k] < src.totalDb - 40) return;
+    /*
+      A band holding < 0.01 % of the SOURCE's power is its noise floor or a
+      tone's skirt. A lossy encode lifts that floor by tens of dB without
+      anything being wrong — measured 2026-11-11: a pure-tone Opus source at
+      −74 dB in its empty 100/200 Hz bands came back from MP3 at −52/−54 dB,
+      the tone itself within 0.3 dB. The old rule skipped a band only when
+      BOTH files were under the line, so that case passed or failed on a few
+      dB of coding noise. Such a band is now judged on one question only: did
+      the output put REAL energy there (≥ 0.3 % of the total, the size of a
+      misplaced or extra tone)? Bands the source uses keep the 4 dB limit.
+    */
+    if (src.bandsDb[k] < src.totalDb - 40) {
+      if (out.bandsDb[k] > spurious.db) { spurious.db = out.bandsDb[k]; spurious.freq = f; }
+      return;
+    }
     const diff = Math.abs(src.bandsDb[k] - out.bandsDb[k]);
     if (diff > worst.diff) { worst.diff = diff; worst.freq = f; }
   });
+  expect(
+    spurious.db,
+    `${label}: ${spurious.freq} Hz is empty in the source but carries ${(spurious.db - src.totalDb).toFixed(1)} dB re total in the output`,
+  ).toBeLessThan(src.totalDb - 25);
   note("band-levels-db", { src: src.bandsDb.map((v) => +v.toFixed(1)), out: out.bandsDb.map((v) => +v.toFixed(1)), worst });
   expect(worst.diff, `${label}: spectrum differs by ${worst.diff.toFixed(1)} dB at ${worst.freq} Hz`).toBeLessThan(4);
 }
@@ -758,7 +775,7 @@ test.describe("real-file audio verdict — self-test", () => {
     return out;
   }
 
-  test("passes a faithful copy and fails reversed, re-pitched, quieter and truncated audio", async ({ page }) => {
+  test("passes a faithful copy and fails reversed, re-pitched, quieter, truncated and polluted audio", async ({ page }) => {
     await page.goto("/");
     const wav = readFileSync(SRC);
     expect(wav.readUInt16LE(34), "fixture must be 16-bit PCM").toBe(16);
@@ -779,6 +796,16 @@ test.describe("real-file audio verdict — self-test", () => {
       // −12 dB: a gain applied by mistake. Contour intact, every band 12 dB down.
       "12 dB quieter": variant((p) => p.map((v) => Math.round(v / 4))),
       "last second missing": variant((p) => p.slice(0, p.length - 44_100 * CHANNELS)),
+      // Energy where the source has none, WITHOUT changing the loudness
+      // contour: 0.3 x the signal ring-modulated at 240 Hz puts sidebands at
+      // 200 and 680 Hz that follow the original's own envelope. Measured
+      // 2026-11-11: the 800 Hz band (empty in the source, −74.8 dB) reads
+      // −18.9 dB re total and the "spurious energy" rule fails it. (The 200 Hz
+      // band is NOT empty in this fixture, −51.7 dB, so the strict 4 dB rule
+      // catches that sideband too — disabling either rule alone still fails.)
+      "sidebands in empty bands": variant((p) =>
+        p.map((v, i) => Math.round(v * (1 + 0.3 * Math.sin((2 * Math.PI * 240 * Math.floor(i / CHANNELS)) / 44_100)))),
+      ),
     };
     for (const [what, bytes] of Object.entries(broken)) {
       const out = await analyseAudio(page, bytes);

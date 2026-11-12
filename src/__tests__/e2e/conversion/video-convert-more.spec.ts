@@ -118,8 +118,7 @@ test.describe("more video conversions — real output", () => {
     await expectDyad(page, bytes, { label: "mp4-to-wav" });
   });
 
-  test("compress-video-to-size lands under the target without losing the picture", async ({ page }, testInfo) => {
-    test.skip(testInfo.project.name.includes("webkit"), "WebCodecs encoding is Chromium-only (see video.spec.ts)");
+  test("compress-video-to-size lands under the target without losing the picture", async ({ page }) => {
     const mp4 = await SAMPLES.mp4();
     await page.goto("/compress-video-to-size");
     await page.locator('input[type="file"]').first().setInputFiles(mp4);

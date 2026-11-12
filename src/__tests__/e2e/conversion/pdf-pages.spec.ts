@@ -330,6 +330,8 @@ test.describe("crop-pdf — real output", () => {
 
     expect(name).toBe("sample-doc-cropped.pdf");
     await assertPdf(bytes, { pages: 5 });
+    // Each page still carries its own content, in order — not only five pages.
+    await expectPdfPages(bytes, [1, 2, 3, 4, 5], "cropped");
 
     const boxes = await pageBoxes(bytes);
     expect(boxes).toHaveLength(5);
@@ -476,6 +478,8 @@ test.describe("crop-pdf — real output", () => {
     const { bytes } = await captureDownload(page, dl);
 
     await assertPdf(bytes, { pages: 5 });
+    // Each page still carries its own content, in order — not only five pages.
+    await expectPdfPages(bytes, [1, 2, 3, 4, 5], "cropped off-centre");
     const boxes = await pageBoxes(bytes);
     expect(boxes).toHaveLength(5);
 
@@ -536,6 +540,8 @@ test.describe("change-pdf-page-size — real output", () => {
 
     expect(scaled.name).toBe("sample-doc-letter.pdf");
     await assertPdf(scaled.bytes, { pages: 5 });
+    // Each page still carries its own content, in order — not only five pages.
+    await expectPdfPages(scaled.bytes, [1, 2, 3, 4, 5], "Letter, scaled");
 
     for (const { media, crop } of await pageBoxes(scaled.bytes)) {
       expect(media).toEqual({ width: 612, height: 792 });
@@ -568,6 +574,8 @@ test.describe("change-pdf-page-size — real output", () => {
     const unscaled = await captureDownload(page, dl2);
 
     await assertPdf(unscaled.bytes, { pages: 5 });
+    // Each page still carries its own content, in order — not only five pages.
+    await expectPdfPages(unscaled.bytes, [1, 2, 3, 4, 5], "Letter, unscaled");
     for (const { media } of await pageBoxes(unscaled.bytes)) {
       expect(media).toEqual({ width: 612, height: 792 });
     }
@@ -606,6 +614,8 @@ test.describe("pdf-resizer — real output", () => {
     const resized = await captureDownload(page, dl);
 
     await assertPdf(resized.bytes, { pages: 5 });
+    // Each page still carries its own content, in order — not only five pages.
+    await expectPdfPages(resized.bytes, [1, 2, 3, 4, 5], "resized");
     for (const { media, crop } of await pageBoxes(resized.bytes)) {
       expect(media).toEqual({ width: 612, height: 1008 });
       expect(crop).toEqual({ x: 0, y: 0, width: 612, height: 1008 });
@@ -632,6 +642,8 @@ test.describe("pdf-resizer — real output", () => {
     // that is already packed, but it must never drop a page and must never
     // hand back MORE bytes than it was given.
     await assertPdf(shrunk.bytes, { pages: 5 });
+    // Each page still carries its own content, in order — not only five pages.
+    await expectPdfPages(shrunk.bytes, [1, 2, 3, 4, 5], "resized then compressed");
     expect(shrunk.bytes.length).toBeLessThanOrEqual(source.buffer.length);
   });
 });

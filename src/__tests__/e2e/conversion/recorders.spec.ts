@@ -13,22 +13,16 @@ import {
  * real: a microphone recording and a camera recording, each taken through
  * start → stop → download and then decoded.
  *
- * CHROMIUM ONLY, and deliberately. Both need `--use-fake-device-for-media-stream`
- * (plus `--use-fake-ui-for-media-stream` to answer the permission prompt), and
- * only the `conversion` project sets them — `playwright.config.ts:35-45`. The
- * skip is written as `test.skip(browserName !== "chromium", …)` rather than a
- * `testIgnore` so the case is still COLLECTED in WebKit and shows up as a
- * declared skip, which is how `workspace.spec.ts:190` handles the screen
- * recorder and is the only form that makes the exclusion visible in a run.
+ * Both need `--use-fake-device-for-media-stream` (plus
+ * `--use-fake-ui-for-media-stream` to answer the permission prompt), which the
+ * `conversion` project sets in `playwright.config.ts`. (The suite is
+ * Chromium-only since 2026-11-11, so the WebKit skips these once carried are
+ * gone.)
  *
  * These three pages share one `MediaRecorderShell`, so this file is also the
  * only end-to-end evidence that the refactor left the shell's capture, timer,
  * stop and download path working for a stream it did not previously see (an
  * audio-only one, and one carrying a live preview element).
- *
- * TITLE TRAP — `playwright.config.ts:63` sets `grepInvert: /gif|FFmpeg|MP4/i`
- * on `conversion-webkit`. None of those tokens may appear in this file's name
- * or in any title below.
  */
 
 /** WebM/Matroska's EBML magic — what `MediaRecorder` writes in Chromium. */
@@ -77,14 +71,7 @@ async function stopAndCapture(
 }
 
 test.describe("in-tab capture", () => {
-  test("audio-recorder captures the microphone and hands back a playable file", async ({
-    page,
-    browserName,
-  }) => {
-    test.skip(
-      browserName !== "chromium",
-      "a synthetic microphone needs the Chromium fake-media launch flags",
-    );
+  test("audio-recorder captures the microphone and hands back a playable file", async ({ page }) => {
     test.setTimeout(180_000);
 
     await page.goto("/audio-recorder");
@@ -127,14 +114,7 @@ test.describe("in-tab capture", () => {
     ).toContainText(/Your browser wrote this recording as [A-Z]/);
   });
 
-  test("webcam-recorder captures the camera and hands back a playable clip", async ({
-    page,
-    browserName,
-  }) => {
-    test.skip(
-      browserName !== "chromium",
-      "a synthetic camera needs the Chromium fake-media launch flags",
-    );
+  test("webcam-recorder captures the camera and hands back a playable clip", async ({ page }) => {
     test.setTimeout(180_000);
 
     await page.goto("/webcam-recorder");

@@ -10,6 +10,7 @@ import {
 } from "./support";
 import type { QpdfEngineWatch } from "./support";
 import { assertEncryptedPdf, assertNotEncryptedPdf, openPdfAsReader } from "./validators";
+import { expectPdfPages } from "./fidelity";
 import type { FixtureFile } from "../helpers";
 
 /**
@@ -205,6 +206,9 @@ test.describe("PDF security tools produce genuinely encrypted, genuinely repaire
     ).toBeNull();
     const opened = await openPdfAsReader(bytes, PASSWORD);
     expect(opened?.pages, "the password must open it, with every page intact").toBe(SOURCE_PAGES);
+    // …and each page decrypts to its OWN content, in order — a page count
+    // survives an encrypt/decrypt that garbled every page.
+    await expectPdfPages(bytes, [1, 2, 3, 4, 5], "protected, opened with the password", PASSWORD);
 
     watch.assertSelfHostedAndUsed();
   });
@@ -227,6 +231,7 @@ test.describe("PDF security tools produce genuinely encrypted, genuinely repaire
 
     // No /Encrypt at all, and the document parses the ordinary way again.
     await assertNotEncryptedPdf(bytes, { pages: SOURCE_PAGES });
+    await expectPdfPages(bytes, [1, 2, 3, 4, 5], "unlocked");
     // `getPermissions()` is null exactly when a document carries no encryption
     // dictionary — the restrictions come off with the password, because both
     // live in the same dictionary.
@@ -321,6 +326,7 @@ test.describe("PDF security tools produce genuinely encrypted, genuinely repaire
     expect(opened?.pages, "a restrictions-only document must open with no password").toBe(
       SOURCE_PAGES,
     );
+    await expectPdfPages(bytes, [1, 2, 3, 4, 5], "restricted, opened with no password");
     expect(opened?.allowed, "printing must be denied").not.toContain("PRINT");
     expect(opened?.allowed).not.toContain("PRINT_HIGH_QUALITY");
     expect(opened?.allowed, "copying must be denied").not.toContain("COPY");
@@ -340,6 +346,8 @@ test.describe("PDF security tools produce genuinely encrypted, genuinely repaire
     const { name, bytes } = await runAndCapture(page, "Repair PDF");
     expect(name).toBe("damaged-doc-repaired.pdf");
     await assertNotEncryptedPdf(bytes, { pages: SOURCE_PAGES });
+    // Rebuilt, not merely re-indexed: every page's own content came back.
+    await expectPdfPages(bytes, [1, 2, 3, 4, 5], "repaired");
 
     /*
       qpdf exits 3 on this file — "completed with warnings", which IS a success
@@ -367,6 +375,7 @@ test.describe("PDF security tools produce genuinely encrypted, genuinely repaire
 
     const { bytes } = await runAndCapture(page, "Repair PDF");
     await assertNotEncryptedPdf(bytes, { pages: SOURCE_PAGES });
+    await expectPdfPages(bytes, [1, 2, 3, 4, 5], "re-saved sound document");
 
     // qpdf exits 0 with an empty stderr on an undamaged file (measured), so
     // there is nothing to report — and nothing to report must not be dressed up
